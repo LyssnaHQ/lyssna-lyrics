@@ -1,0 +1,7 @@
+{
+  "type": "extension",
+  "name": "Lyssna Lyrics",
+  "description": "Synchronized lyrics with Lyssna’s renderer.",
+  "main": "extension.js",
+  "version": "1.0.0"
+}

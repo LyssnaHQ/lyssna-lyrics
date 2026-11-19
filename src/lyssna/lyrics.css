@@ -1,0 +1,615 @@
+@scope (.lyssna-lyrics-view) {
+.lyrics-page {
+  container-type: inline-size;
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+  height: 100%;
+  display: grid;
+  grid-template-columns: minmax(180px, 0.85fr) minmax(220px, 1.15fr);
+  grid-template-rows: minmax(0, 1fr);
+  align-items: center;
+  gap: 3%;
+  padding: 0 5%;
+  overflow: hidden;
+}
+.lyrics-album {
+  /* Artwork takes the same share of the page at any resolution, about
+     half its height as in Spicy Lyrics, never wider than its column. The
+     title and artists keep to the artwork's width. */
+  --lyrics-art: min(100%, 44vh);
+  min-width: 0;
+  text-align: center;
+}
+.lyrics-page:not(.narrow, .canvas-lyrics)
+  .lyrics-album
+  :is(.lyrics-title, .lyrics-artists) {
+  max-width: var(--lyrics-art);
+  margin-inline: auto;
+}
+.lyrics-album > .cover {
+  width: 100%;
+  box-shadow: 0 18px 50px #0003;
+  border-radius: 8px;
+  max-width: 460px;
+  margin: 0 auto;
+}
+
+.lyrics-details {
+  display: contents;
+}
+.lyrics-title {
+  margin-top: 24px;
+  text-align: center;
+}
+.lyrics-title:not(.scrolling) .marquee-content,
+.lyrics-artists .marquee:not(.scrolling) .marquee-content {
+  margin-inline: auto;
+}
+/* Italic glyphs can extend beyond their advance width. Keep that ink
+   inside the marquee clip at both ends, including after scrolling. */
+.lyrics-title .marquee-content,
+.lyrics-artists .marquee-content {
+  padding-inline: 0.4em;
+}
+.lyrics-title .song-title {
+  font-size: clamp(22px, 2.9cqw, 38px);
+  line-height: 1.35;
+  letter-spacing: -0.8px;
+}
+.lyrics-artists {
+  display: flex;
+  justify-content: center;
+  align-items: baseline;
+  min-width: 0;
+  font-size: clamp(14px, 1.8cqw, 21px);
+  margin-top: 10px;
+  color: light-dark(#131313cf, #ecececcf);
+  text-align: center;
+}
+.lyrics-year {
+  flex: none;
+  white-space: pre;
+}
+.lyrics-year-dot {
+  margin-left: 0.4em;
+}
+.lyrics-artists .marquee {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.lyrics-album-name {
+  font-size: 14px;
+  line-height: 1.6;
+  margin-top: 9px;
+  color: light-dark(#0d0d0d8c, #f2f2f28c);
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+  text-align: left;
+}
+/* Stacked lyrics header for narrow lyric views, chosen from the page's own
+   width so a wide window with both side panels open also stacks. */
+.lyrics-page.narrow {
+  grid-template-columns: 1fr;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 0;
+  /* Room on the right for the toolbar's column. */
+  padding: 18px max(8%, 64px) 0 8%;
+}
+.lyrics-page.narrow .lyrics-album {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  column-gap: 15px;
+  text-align: left;
+  padding: 8px 0 5px;
+  align-items: center;
+}
+.lyrics-page.narrow .lyrics-album > .cover,
+.lyrics-page.narrow .lyrics-album > .dj-art {
+  grid-row: 1/3;
+  width: 56px;
+  height: 56px;
+  margin: 0;
+}
+.lyrics-page.narrow .lyrics-title {
+  margin: 0;
+  align-self: end;
+}
+.lyrics-page.narrow .lyrics-title:not(.scrolling) .marquee-content,
+.lyrics-page.narrow .lyrics-artists .marquee:not(.scrolling) .marquee-content {
+  margin-inline: 0;
+}
+.lyrics-page.narrow .lyrics-title .song-title {
+  font-size: 20px;
+}
+/* Left-aligned, the marquee's italic padding pushed the title in from the
+   year beside the artists. Pull it back by that padding so the text lines
+   up, keeping the room for italic overhang. */
+.lyrics-page.narrow
+  :is(.lyrics-title, .lyrics-artists > .marquee:first-child) {
+  margin-inline-start: -0.4em;
+}
+.lyrics-page.narrow .lyrics-artists {
+  justify-content: flex-start;
+  font-size: 14px;
+  margin: 2px 0 0;
+  align-self: start;
+}
+.lyrics-page.narrow .lyrics-album-name {
+  display: none;
+}
+.lyrics-page.narrow .lyrics-body {
+  height: 100%;
+}
+/* Compact lyrics: the toolbar runs top to bottom along the right edge,
+   clear of the song header and the lyrics. */
+.lyrics-page.narrow > .lyrics-toolbar {
+  top: 12px;
+  right: 12px;
+  left: auto;
+  flex-direction: column;
+  max-height: calc(100% - 24px);
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.lyrics-page.narrow > .lyrics-toolbar .toolbar-divider {
+  width: 18px;
+  height: 1px;
+  margin: 2px 0;
+}
+.lyrics-page.narrow .lyrics-message {
+  padding-top: 30px;
+}
+.lyrics-page.narrow .lyrics-message h2 {
+  font-size: 28px;
+}
+.lyrics-page.narrow .lyrics-message p {
+  font-size: 15px;
+}
+.lyrics-body {
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+}
+.lyrics-display {
+  height: 100%;
+  position: relative;
+  min-height: 0;
+}
+
+.lyric-scroll {
+  overflow-anchor: none;
+  position: relative;
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  overflow-anchor: none;
+  scrollbar-width: none;
+  padding-inline: calc(var(--lyric-size) * 0.35);
+  /* The bottom edge fades in and out instead of switching at the end. */
+  --lyric-end-alpha: 0;
+  mask-image: linear-gradient(
+    transparent,
+    #000 10%,
+    #000 88%,
+    rgb(0 0 0 / var(--lyric-end-alpha))
+  );
+  transition: --lyric-end-alpha 0.45s ease;
+}
+@property --lyric-end-alpha {
+  syntax: "<number>";
+  inherits: false;
+  initial-value: 0;
+}
+/* Popping and glowing words can reach past the text column. On the lyrics
+   page the scroller reaches into the gap around it, so only the page box
+   clips them. */
+.lyrics-page .lyric-scroll {
+  --lyric-bleed: 48px;
+  margin-inline: calc(-1 * var(--lyric-bleed));
+  padding-inline: calc(var(--lyric-size) * 0.35 + var(--lyric-bleed));
+}
+.lyric-scroll::-webkit-scrollbar {
+  display: none;
+}
+.lyric-scroll[data-at-end="true"],
+.lyric-scroll[data-hold-end] {
+  --lyric-end-alpha: 1;
+}
+.compact .lyric-scroll[data-at-end="true"],
+.compact .lyric-scroll[data-hold-end] {
+  mask-image: none;
+}
+.lyric-spacer {
+  height: var(--lead-top, 40px);
+}
+/* Every line paints its text with the same gradient fill, so a line ending
+   or starting only fades opacity and blur; nothing swaps paint modes. Unsung
+   text is fainter than sung text. */
+.lyric-line {
+  --sung-alpha: 0.85;
+  --unsung-alpha: 0.5;
+  --blur: 0px;
+  font-family: var(--lyric-font, inherit);
+  display: block;
+  width: 100%;
+  text-align: left;
+  font-size: var(--lyric-size);
+  font-weight: 700;
+  line-height: 1.1818;
+  letter-spacing: 0;
+  padding: 0.16em 0;
+  margin: 0;
+  transform: none;
+  transform-origin: left center;
+  --line-fill: -20%;
+  --line-gradient: -0.2;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  opacity: 0.51;
+  filter: blur(calc(var(--blur) / 2));
+  transition:
+    opacity 0.4s cubic-bezier(0.61, 1, 0.88, 1),
+    filter 0.5s cubic-bezier(0.61, 1, 0.88, 1);
+}
+.lyrics-page .lyric-line,
+.lyrics-page .lyric-wait {
+  --lead-lyric-size: clamp(23px, 3.6cqw, var(--lyric-size));
+  font-size: var(--lead-lyric-size);
+}
+.lyrics-page .lyric-line.background-vocal {
+  font-size: calc(var(--lead-lyric-size) * 0.58);
+}
+/* Stacked (narrow) layouts give lyrics the full width, so size them from it. */
+.lyrics-page.narrow .lyric-line,
+.lyrics-page.narrow .lyric-wait {
+  --lead-lyric-size: clamp(30px, 6.2cqw, var(--lyric-size));
+}
+.lyric-line:focus,
+.lyric-line:focus-visible {
+  outline: none;
+}
+.lyric-line:hover {
+  opacity: 1 !important;
+  --blur: 0px !important;
+}
+.lyric-line.past {
+  --line-fill: 100%;
+  --line-gradient: 1;
+  opacity: 0.497;
+}
+.lyric-line.active {
+  opacity: 1;
+}
+.lyric-plain {
+  -webkit-text-fill-color: rgb(255 255 255 / var(--unsung-alpha));
+}
+.lyric-line:is(.active, .past) .lyric-plain {
+  -webkit-text-fill-color: rgb(255 255 255 / var(--sung-alpha));
+}
+.lyric-main {
+  display: block;
+}
+.lyric-line:disabled {
+  opacity: 0.9;
+  cursor: default;
+}
+.lyric-line.opposite {
+  text-align: right;
+  transform-origin: right center;
+}
+.lyric-line.background-vocal {
+  --sung-alpha: 0.6;
+  --unsung-alpha: 0.3;
+  font-size: calc(var(--lyric-size) * 0.58);
+  font-weight: 600;
+  padding-top: 0;
+  padding-bottom: 0.2em;
+  letter-spacing: -0.2px;
+  margin-top: -0.1em;
+}
+.lyric-word {
+  display: inline-block;
+  white-space: pre-wrap;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.lyric-word-group {
+  white-space: normal;
+}
+/* Text outside the active line sits at full size so lines stay aligned. On
+   the active line unsung syllables and held letters rest slightly low; LyricAnimator eases them there and overrides scale and translate
+   while a line is sung or settling. Text scales from near its baseline, so a
+   resting piece of a split word sits level with a sung one. Pieces scale
+   from their joints and middle pieces keep full size, so no seam opens. A
+   line's first word keeps its left edge on the margin. */
+.lyric-syllable {
+  display: inline-block;
+  max-width: 100%;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  transform-origin: center 75%;
+}
+.lyric-line.active .lyric-syllable {
+  translate: 0 0.01em;
+}
+/* Text not sung yet rests at the height the animator holds unsung words
+   at, so a line never drops as it starts; the animator's own values take
+   over while a line plays. Keyed to lines not yet finished, not to the
+   active class: Early scroll marks a line active before it starts. Unsung
+   text rests at full size, so spacing never changes as a line is sung. */
+.lyrics-display:not(.reduce-motion) .lyric-line:not(.past) .lyric-syllable {
+  translate: 0 0.01em;
+}
+.lyric-syllable.emphasis {
+  display: inline-flex;
+}
+.lyric-syllable.joined-start {
+  transform-origin: right 75%;
+}
+.lyric-syllable.joined-end {
+  transform-origin: left 75%;
+}
+/* Lyssna and Custom presets: split syllables keep full size while more of
+   the line follows, so no gaps open; the line's final syllable and Space
+   Gravity keep their scale. Lyssna (legacy) scales every piece. */
+:root:not([data-animator="Legacy"])
+  .lyric-word
+  > .lyric-syllable:not(
+    :only-child,
+    .lyric-main > .lyric-word-group:last-child .lyric-syllable:last-child,
+    .space-gravity *
+  ),
+:root:not([data-animator="Legacy"])
+  .lyric-word
+  > .lyric-syllable:not(
+    :only-child,
+    .lyric-main > .lyric-word-group:last-child .lyric-syllable:last-child,
+    .space-gravity *
+  )
+  .lyric-letter {
+  scale: none !important;
+}
+.lyric-line:not(.opposite)
+  .lyric-main
+  > .lyric-word-group:first-child
+  :is(
+    .lyric-syllable:first-child:not(.joined-start),
+    .lyric-syllable:first-child > .lyric-letter:first-child
+  ) {
+  transform-origin: left 75%;
+}
+.lyric-line.opposite
+  .lyric-main
+  > .lyric-word-group:last-child
+  :is(
+    .lyric-syllable:last-child:not(.joined-end),
+    .lyric-syllable:last-child > .lyric-letter:last-child
+  ) {
+  transform-origin: right 75%;
+}
+/* Lines still springing after they end keep their layers too: dropped
+   mid-spring, the text is redrawn and its words jump. The animator keeps
+   them a few lines longer, as dropping them at rest still shifts the text
+   by a fraction of a pixel. */
+.lyric-line:is(.active, [data-settling]) .lyric-syllable,
+.lyric-line:is(.active, [data-settling]) .lyric-letter {
+  will-change: transform;
+}
+/* Avoid retaining one compositing layer per animated glyph over live video. */
+.application.macos
+  .lyric-line:is(.active, [data-settling])
+  :is(.lyric-syllable, .lyric-letter) {
+  will-change: auto;
+}
+/* Filtered, moving text over video can retain stale WebKit tiles. Keep word
+   timing, gradients and motion, using opacity for inactive lines on macOS. */
+.application.macos .lyric-line {
+  filter: none;
+  transition: opacity 0.4s cubic-bezier(0.61, 1, 0.88, 1);
+}
+.application.macos .lyrics-display {
+  caret-color: transparent;
+}
+/* Registered so the container-relative lyric size resolves once on the row
+   and the dots inherit plain pixels. Unregistered, every per-frame dot
+   transform re-resolved cqw, which drops frame rates. */
+@property --dot-lyric-size {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 32px;
+}
+/* Sized from the lyrics: a sung dot is about 0.42 of the
+   lyric size, dots sit 0.7 apart and lift by lyric-size units. */
+.lyric-wait {
+  --dot-lyric-size: var(--lead-lyric-size, var(--lyric-size, 32px));
+  --dot-size: calc(var(--dot-lyric-size) * 0.31);
+  transition:
+    opacity 0.3s ease,
+    height 0.45s cubic-bezier(0.2, 0.7, 0.25, 1),
+    padding 0.45s cubic-bezier(0.2, 0.7, 0.25, 1);
+  overflow: visible;
+  display: flex;
+  justify-content: flex-start;
+  gap: calc(var(--dot-lyric-size) * 0.39);
+  align-items: center;
+  height: calc(var(--dot-lyric-size) * 1.3);
+  padding: calc(var(--dot-lyric-size) * 0.2) 4px;
+}
+.lyric-wait[aria-hidden="true"] {
+  /* No clipping: the exit swell and glow would be cut off as the row
+     closes. The dots end at scale 0, so nothing is left to show. */
+  overflow: visible;
+  opacity: 0;
+  pointer-events: none;
+  height: 0;
+  padding-block: 0;
+  /* Stay fully bright while the dots collapse, then vanish. */
+  transition:
+    opacity 0s linear 0.4s,
+    height 0.45s cubic-bezier(0.2, 0.7, 0.25, 1) 0.15s,
+    padding 0.45s cubic-bezier(0.2, 0.7, 0.25, 1) 0.15s;
+}
+/* With the credits held at the bottom, the lyrics move up exactly as the
+   dots open, so they open evenly instead of with a quick start. */
+/* Scrolling moves in whole pixels and the dots grow in fractions, so
+   layout pins the held credits to the bottom exactly. */
+.lyric-scroll[data-hold-end] > .lyric-end-credits {
+  position: sticky;
+  bottom: 0;
+}
+.lyric-scroll[data-hold-end] .lyric-wait:not([aria-hidden="true"]) {
+  transition:
+    opacity 0.3s ease,
+    height 0.7s cubic-bezier(0.45, 0, 0.25, 1),
+    padding 0.7s cubic-bezier(0.45, 0, 0.25, 1);
+}
+.lyric-wait.opposite {
+  justify-content: flex-end;
+}
+.lyric-wait-dots {
+  display: flex;
+  align-items: center;
+  gap: inherit;
+  scale: 1;
+  transform-origin: center;
+  transition: scale 0.3s cubic-bezier(0.2, 0.7, 0.25, 1);
+}
+/* Exit: the finished group swells about 19%, then collapses
+   toward its centre in 0.4 s. */
+.lyric-wait[aria-hidden="true"] .lyric-wait-dots {
+  scale: 0;
+  transition: scale 0.4s
+    linear(
+      0,
+      -0.006 9.4%,
+      -0.029 18%,
+      -0.157 43.3%,
+      -0.185 51.4%,
+      -0.189 55.9%,
+      -0.182 60%,
+      -0.163 63.9%,
+      -0.133 67.6%,
+      -0.074 72.3%,
+      0.006 76.7%,
+      0.238 85%,
+      0.566 92.7%,
+      1
+    );
+}
+.reduce-motion .lyric-wait-dots {
+  transition: none;
+}
+.lyric-wait i {
+  display: block;
+  width: var(--dot-size);
+  height: var(--dot-size);
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: light-dark(#000, #fff);
+  opacity: var(--dot-opacity);
+  transform: translateY(calc(var(--dot-lift) * var(--dot-lyric-size) * -1))
+    scale(var(--dot-scale));
+  /* A compact halo follows the fork's text-shadow rather than a wide bloom. */
+  box-shadow: 0 0 calc(4px + var(--dot-glow) * 6px)
+    rgb(255 255 255 / calc(var(--dot-glow) * 0.9));
+}
+.reduce-motion .lyric-wait i {
+  animation: none;
+}
+/* Each syllable, or each letter of a held word, is filled with a gradient
+   whose 20% soft edge sweeps across as it is sung. LyricAnimator sets the
+   edge and a white glow while a line is sung or settling; other text rests
+   fully unsung or fully sung. */
+/* A filter, not text-shadow: Chromium re-lays out the page for every
+   text-shadow change, which the per-frame glow made hundreds a second. */
+.lyric-syllable:not(.emphasis),
+.lyric-letter {
+  filter: drop-shadow(var(--glow));
+}
+/* Italics and display fonts can paint beyond their advance width. Keep that
+   ink inside the gradient without widening syllables or changing line wraps.
+   Gradient stops stay relative to the original text width, excluding bleed. */
+.lyric-paint {
+  --glyph-bleed: 0.35em;
+  /* Paint bleed must not intercept clicks on adjacent lyric rows. */
+  pointer-events: none;
+  padding: 1em var(--glyph-bleed);
+  margin: -1em calc(-1 * var(--glyph-bleed));
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  /* Many fonts draw past each glyph's advance into the bleed: slanted
+     tops to the right, tails to the left. At each end of the sweep the
+     edge runs out through the bleed, so sung text is painted to its tips
+     and unsung text shows no sung paint. */
+  --sweep: var(--gradient-ratio, var(--line-gradient, -0.2));
+  --sweep-overrun: calc(
+    (max(0, var(--sweep) - 0.95) - max(0, -0.15 - var(--sweep))) * 20 *
+      (var(--glyph-bleed) + (100% - 2 * var(--glyph-bleed)) * 0.2)
+  );
+  background-image: linear-gradient(
+    90deg,
+    rgb(var(--lyric-rgb, 255 255 255) / var(--sung-alpha))
+      calc(
+        var(--glyph-bleed) + (100% - 2 * var(--glyph-bleed)) * var(--sweep) +
+          var(--sweep-overrun)
+      ),
+    rgb(var(--lyric-rgb, 255 255 255) / var(--unsung-alpha))
+      calc(
+        var(--glyph-bleed) + (100% - 2 * var(--glyph-bleed)) *
+          (var(--sweep) + var(--sweep-soft, 0.2)) + var(--sweep-overrun)
+      )
+  );
+  background-clip: text;
+  -webkit-background-clip: text;
+}
+.lyric-line.active:hover .lyric-syllable:not(.emphasis),
+.lyric-line.active:hover .lyric-letter {
+  text-shadow: 0 0 12px rgb(255 255 255 / 0.8);
+}
+.lyric-letter {
+  display: inline-block;
+  transform-origin: center 75%;
+}
+.lyric-translation,
+.lyric-romanization {
+  -webkit-text-fill-color: currentColor;
+  text-shadow: none;
+  display: block;
+  font-size: 0.43em;
+  font-weight: 550;
+  color: light-dark(#161616a6, #e9e9e9a6);
+  letter-spacing: 0;
+  line-height: 1.5;
+  margin-top: 9px;
+}
+/* The reading under a line paints its words as they are sung. */
+.lyric-romanization.sung {
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  opacity: 0.85;
+}
+
+.static-lyrics .lyric-line {
+  --blur: 0px;
+  --line-fill: 100%;
+  --line-gradient: 1;
+  opacity: 1;
+}
+.reduce-motion .lyric-line {
+  --blur: 0px !important;
+  transition: none;
+}
+.reduce-motion .lyric-word,
+.reduce-motion .lyric-syllable,
+.reduce-motion .lyric-letter {
+  scale: none !important;
+  translate: none !important;
+}
+}

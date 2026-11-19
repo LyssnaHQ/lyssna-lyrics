@@ -1,0 +1,84 @@
+.lyssna-lyrics-view {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  container-type: inline-size;
+  isolation: isolate;
+  overflow: hidden;
+  color: #fff;
+  color-scheme: dark;
+  background: #181818;
+  --lyric-size: 58px;
+  --lead-top: 31vh;
+}
+
+.lyssna-lyrics-view .lyrics-background {
+  position: absolute;
+  inset: -15%;
+  width: 130%;
+  height: 130%;
+  object-fit: cover;
+  filter: blur(70px) brightness(0.43) saturate(1.4);
+  pointer-events: none;
+}
+
+.lyssna-lyrics-view .lyrics-page {
+  box-sizing: border-box;
+}
+
+.lyssna-lyrics-view .lyrics-album > .cover {
+  display: block;
+  width: var(--lyrics-art);
+  aspect-ratio: 1;
+  object-fit: cover;
+}
+
+.lyssna-lyrics-view .lyrics-title,
+.lyssna-lyrics-view .lyrics-artists {
+  overflow-wrap: anywhere;
+}
+
+.lyssna-lyrics-view .lyrics-actions {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lyssna-lyrics-view .lyrics-actions > :is(button, select) {
+  border: 1px solid #ffffff30;
+  border-radius: 12px;
+  padding: 8px 12px;
+  background: #15151590;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.lyssna-lyrics-view .lyrics-message {
+  align-content: center;
+  height: 100%;
+  font-size: 1.2rem;
+}
+
+.lyssna-lyrics-view .lyric-scroll > .lyric-spacer:last-child {
+  height: 60%;
+}
+
+@container (width < 650px) {
+  .lyssna-lyrics-view .lyrics-page {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
+    padding-top: 60px;
+  }
+
+  .lyssna-lyrics-view .lyrics-album > .cover {
+    width: min(100%, 24vh);
+  }
+
+  .lyssna-lyrics-view .lyric-scroll {
+    --lead-top: 15vh;
+  }
+}
