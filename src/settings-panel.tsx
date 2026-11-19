@@ -6,6 +6,7 @@ import { visualRows } from "./lyssna/visual-settings";
 import type { Settings } from "./settings";
 
 export type Channel = "stable" | "beta" | "canary";
+export const channelLabels: Record<Channel, string> = { stable: "Stable", beta: "Beta", canary: "Canary" };
 export type BuildOptions = {
   channel: Channel;
   channels: Record<Channel, string | null>;
@@ -122,7 +123,7 @@ export function SettingsPanel({ settings, change, close, options, trackId }: {
                 <select className="settings-select" aria-label="Build channel" value={options.channel} disabled={switching}
                   onChange={(event) => void select(event.target.value as Channel)}>
                   {(Object.keys(options.channels) as Channel[]).map((channel) => <option key={channel} value={channel} disabled={!options.channels[channel]}>
-                    {channel[0].toUpperCase() + channel.slice(1)}{options.channels[channel] ? "" : " (no build)"}
+                    {channelLabels[channel]}{options.channels[channel] ? "" : " (no build)"}
                   </option>)}
                 </select>
                 {error && <span role="alert">Couldn’t load that build.</span>}

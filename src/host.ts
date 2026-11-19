@@ -219,12 +219,12 @@ export function getHost() {
       for (const event of events) spice?.Player.addEventListener(event, listener);
       return () => events.forEach((event) => spice?.Player.removeEventListener(event, listener));
     },
-    button(click: () => void): Removal {
+    button(label: string, click: () => void): Removal {
       if (kit) {
-        const button = (kit.Playbar ?? kit.Topbar).add({ label: "Lyssna Lyrics", icon, onClick: click });
+        const button = (kit.Playbar ?? kit.Topbar).add({ label, icon, onClick: click });
         return () => button.remove();
       }
-      const button = new spice!.Playbar.Button("Lyssna Lyrics", icon, click, false, false, false);
+      const button = new spice!.Playbar.Button(label, icon, click, false, false, false);
       button.register();
       return () => button.deregister();
     },

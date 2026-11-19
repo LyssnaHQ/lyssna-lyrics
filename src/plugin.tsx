@@ -14,7 +14,7 @@ import { setWindowActivity, setWindowPosition } from "./lyssna/window-activity";
 import { filterWords } from "./lyssna/word-filter";
 import { displayLyrics } from "./lyssna/word-sync";
 import { readSettings, saveSettings, settingsEvent, type Settings } from "./settings";
-import { SettingsPanel, type BuildOptions } from "./settings-panel";
+import { channelLabels, SettingsPanel, type BuildOptions } from "./settings-panel";
 import { readSpicyLyrics, startSpicyProvider } from "./spicy";
 import { LyricCredits } from "./credits";
 import { CanvasArtwork, nowPlayingSelector, SpotifyVisualiser, useCanvas } from "./spotify-artwork";
@@ -336,7 +336,7 @@ export default function start(options: BuildOptions) {
 
   let removeButton: () => void;
   try {
-    removeButton = host.button(open);
+    removeButton = host.button(`Lyssna Lyrics (${channelLabels[options.channel]})`, open);
   } catch (error) {
     stopProvider();
     stylesheet.remove();

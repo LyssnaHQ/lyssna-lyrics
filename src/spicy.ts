@@ -6,6 +6,13 @@ const api = "https://api.spicylyrics.org/bp/loader/";
 const cacheName = "SpicyLyrics_LyricsStore_g1";
 const spicyName = /spicy[\W_]*lyrics/i;
 
+function legacyProviderAvailable() {
+  const legacy = (window as Window & {
+    __LYSSNA_SPICY_BACKGROUND__?: { ready?: Promise<Window | null>; frameWindow?: Window | null };
+  }).__LYSSNA_SPICY_BACKGROUND__;
+  return !!legacy?.ready && legacy.frameWindow !== null;
+}
+
 function standaloneInstalled() {
   const globals = window as Window & { _spicy_lyrics?: unknown; SpicyLyrics?: unknown };
   if (globals._spicy_lyrics || globals.SpicyLyrics) return true;
@@ -18,6 +25,10 @@ function standaloneInstalled() {
     const addon = entry as { name?: string; id?: string; path?: string; enabled?: boolean };
     return addon.enabled !== false && [addon.name, addon.id, addon.path].some((value) => value && spicyName.test(value));
   });
+}
+
+function externalProviderAvailable() {
+  return standaloneInstalled() || legacyProviderAvailable();
 }
 
 type ProviderHost = Pick<Spicetify, "Config" | "Platform" | "CosmosAsync"> & {
@@ -162,7 +173,7 @@ export function startSpicyProvider() {
   let retryAt = 0;
 
   async function reconcile() {
-    if (standaloneInstalled()) {
+    if (externalProviderAvailable()) {
       background?.stop();
       background = undefined;
       return;
@@ -181,7 +192,7 @@ export function startSpicyProvider() {
       const info = await response.json() as { branches?: { tag: string; version: string }[] };
       const version = info.branches?.find((branch) => branch.tag === "public")?.version;
       if (!version) throw new Error("Spicy Lyrics public version unavailable");
-      if (controller.signal.aborted || standaloneInstalled()) return;
+      if (controller.signal.aborted || externalProviderAvailable()) return;
       const instance = background = makeBackground(host);
       instance.sandbox._spicy_lyrics_metadata = { LoadedVersion: version };
       const script = instance.doc.createElement("script");
