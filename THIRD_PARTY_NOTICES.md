@@ -25,3 +25,7 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+The Lucide icons are distributed under the ISC license. Some are derived from Feather under MIT. The [Lucide license](https://github.com/lucide-icons/lucide/blob/main/LICENSE) accompanies the built plugin.
+
+Lyssna's gibberish dictionary and filter, and the full screen transport glyphs, come from [the pixels-spicy-lyrics fork](https://github.com/iPixelGalaxy/spicy-lyrics) under AGPL-3.0. The app snapshot records the source revision in `src/lyssna/UPSTREAM`.

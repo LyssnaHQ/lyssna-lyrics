@@ -1,4 +1,5 @@
 export interface Word {
+  romanization?: string;
   start_ms: number;
   end_ms: number;
   text: string;

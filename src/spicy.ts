@@ -1,6 +1,6 @@
 import { spicetify, spotikit, type Spicetify } from "./host";
 import * as jsxRuntime from "./host-jsx";
-import type { Line, Lyrics, Word } from "./lyssna/types";
+import type { Contributor, Line, Lyrics, Word } from "./lyssna/types";
 
 const api = "https://api.spicylyrics.org/bp/loader/";
 const cacheName = "SpicyLyrics_LyricsStore_g1";
@@ -216,6 +216,7 @@ type Vocal = {
   StartTime?: number;
   EndTime?: number;
   TranslatedText?: string;
+  TransliteratedText?: string;
   Syllables?: (Vocal & { IsPartOfWord?: boolean })[];
 };
 type VocalEntry = Vocal & { Type?: string; Lead?: Vocal; Background?: Vocal[]; OppositeAligned?: boolean };
@@ -223,36 +224,48 @@ type Payload = Vocal & {
   Type?: string;
   Lines?: VocalEntry[];
   Content?: VocalEntry[];
+  SongWriters?: (string | { name?: string })[];
+  UploadAttribution?: { Uploader?: Contributor; Maker?: Contributor };
 };
 
 function normalize(data: Payload): Lyrics | undefined {
   if (data.Type === "Instrumental") return { source: "Spicy Lyrics", lines: [], synced: false, instrumental: true };
   const lines: Line[] = [];
   const timed = data.Type === "Syllable" || data.Type === "Line";
-  const ms = (time = 0) => Number.isFinite(time) ? Math.max(0, time * 1000) : 0;
+  const ms = (time = 0) => Number.isFinite(time) ? Math.max(0, Math.round(time * 1000)) : 0;
 
-  function add(vocal: Vocal, opposite = false, background = false) {
+  function add(vocal: Vocal, entry: VocalEntry, background = false) {
     const syllables = vocal.Syllables ?? [];
-    const words: Word[] = syllables.map((part, index) => ({
-      text: (index && !syllables[index - 1].IsPartOfWord ? " " : "") + (part.Text ?? ""),
-      start_ms: ms(part.StartTime), end_ms: ms(part.EndTime),
-    }));
-    const text = vocal.Text ?? words.map((word) => word.text).join("");
+    const start = vocal.StartTime ?? entry.StartTime ?? 0;
+    const end = vocal.EndTime ?? entry.EndTime ?? start;
+    const words: Word[] = syllables.map((part, index) => {
+      const space = index && !syllables[index - 1].IsPartOfWord ? " " : "";
+      return {
+        text: space + (part.Text ?? ""), romanization: part.TransliteratedText ? space + part.TransliteratedText : undefined,
+        start_ms: ms(part.StartTime ?? start), end_ms: ms(part.EndTime ?? end),
+      };
+    });
+    const text = words.length ? words.map((word) => word.text).join("") : (vocal.Text || entry.Text || "");
     if (!text.trim()) return;
     lines.push({
-      text, words, background, opposite, translation: vocal.TranslatedText ?? "", romanization: "",
-      start_ms: ms(vocal.StartTime ?? syllables[0]?.StartTime),
-      end_ms: ms(vocal.EndTime ?? syllables.at(-1)?.EndTime),
+      text, words, background, opposite: !!entry.OppositeAligned, translation: vocal.TranslatedText ?? "", romanization: vocal.TransliteratedText ?? "",
+      start_ms: words[0]?.start_ms ?? ms(start),
+      end_ms: words.at(-1)?.end_ms ?? ms(end),
     });
   }
 
-  for (const entry of data.Content ?? data.Lines ?? []) {
+  const entries = data.Content ?? data.Lines ?? [];
+  const start = (entry: VocalEntry) => entry.StartTime ?? entry.Lead?.StartTime ?? 0;
+  for (const entry of timed ? entries.toSorted((left, right) => start(left) - start(right)) : entries) {
     if (entry.Type === "Interlude") continue;
-    add(entry.Lead ?? entry, entry.OppositeAligned);
-    for (const vocal of entry.Background ?? []) add(vocal, entry.OppositeAligned, true);
+    add(entry.Lead ?? entry, entry);
+    for (const vocal of entry.Background ?? []) add(vocal, entry, true);
   }
-  lines.sort((left, right) => left.start_ms - right.start_ms);
-  if (lines.length) return { source: "Spicy Lyrics", lines, synced: timed, instrumental: false };
+  if (lines.length) return {
+    source: "Spicy Lyrics", lines, synced: timed, instrumental: false,
+    songwriters: data.SongWriters?.flatMap((writer) => typeof writer === "string" ? [writer] : (writer?.name ? [writer.name] : [])),
+    attribution: { maker: data.UploadAttribution?.Maker, uploader: data.UploadAttribution?.Uploader },
+  };
 }
 
 export async function readSpicyLyrics(trackId: string) {

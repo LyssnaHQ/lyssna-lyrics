@@ -1,4 +1,33 @@
 @scope (.lyssna-lyrics-view) {
+.ambience {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  isolation: isolate;
+  z-index: -1;
+  background: light-dark(#ededed, #121212);
+  pointer-events: none;
+}
+.ambient-layer {
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  /* Kawarp blurs a small source texture; avoid full-panel CSS filters. */
+}
+.ambient-shade {
+  position: absolute;
+  inset: 0;
+  /* Spicy Lyrics' brightness(0.65), as a flat layer instead of a filter. */
+  background: #00000059;
+}
+.now-playing .ambient-shade {
+  /* Its side panel's brightness(0.6). */
+  background: light-dark(#fff6, #0006);
+}
+
 .lyrics-page {
   container-type: inline-size;
   position: relative;
@@ -33,6 +62,129 @@
   border-radius: 8px;
   max-width: 460px;
   margin: 0 auto;
+}
+
+.lyric-credits-row {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+.lyric-credits-row > .lyric-source {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.lyrics-up-next {
+  flex: 0 1 280px;
+  max-width: 50%;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  font-size: 15px;
+  /* Small type over a bright cover or Canvas needs a little lift. */
+  text-shadow: 0 1px 12px #00000047;
+}
+.lyrics-up-next-body {
+  grid-area: 1 / 1;
+  display: flex;
+  align-items: center;
+  gap: 0.75em;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    opacity 180ms ease-out,
+    filter 180ms ease-out;
+}
+/* A queue change while it shows: the new song crossfades over the old,
+   with a touch of blur so the two read as one line changing. */
+.lyrics-up-next-body:not(.first) {
+  animation: up-next-swap 180ms ease-out;
+}
+@keyframes up-next-swap {
+  from {
+    opacity: 0;
+    filter: blur(2px);
+  }
+}
+.lyrics-up-next-body.leaving {
+  opacity: 0;
+  filter: blur(2px);
+  pointer-events: none;
+}
+/* The reveal: cover and text rise into place, the text a beat behind.
+   They leave the way they came, faster. */
+.lyrics-up-next-body > :is(.cover, .lyrics-up-next-text) {
+  transition:
+    opacity 180ms ease-out,
+    translate 220ms ease-out;
+}
+.lyrics-up-next-body.first > :is(.cover, .lyrics-up-next-text) {
+  animation:
+    up-next-fade 400ms ease-out backwards,
+    up-next-rise 450ms ease-out backwards;
+}
+.lyrics-up-next-body.first > .lyrics-up-next-text {
+  animation-delay: 50ms;
+}
+@keyframes up-next-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes up-next-rise {
+  from {
+    translate: 0 8px;
+  }
+}
+.lyrics-up-next.leaving .lyrics-up-next-body > * {
+  opacity: 0;
+  translate: 0 8px;
+}
+.reduce-motion .lyrics-up-next-body.first > * {
+  animation: up-next-fade 400ms ease-out backwards;
+}
+.reduce-motion .lyrics-up-next.leaving .lyrics-up-next-body > * {
+  translate: none;
+}
+.reduce-motion .lyrics-up-next-body {
+  animation-name: none;
+  filter: none;
+}
+.lyrics-up-next-body > .cover {
+  flex: none;
+  width: 2.9em;
+  height: 2.9em;
+  border-radius: 0.4em;
+  background: #ffffff14;
+  box-shadow: 0 0.15em 0.6em #00000038;
+}
+.lyrics-up-next-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+}
+.lyrics-up-next-text > * {
+  max-width: 100%;
+  line-height: 1.25;
+}
+.lyrics-up-next-text small {
+  font-size: 0.7em;
+  font-weight: 600;
+  opacity: 0.7;
+}
+.lyrics-up-next-title {
+  font-weight: 600;
+  color: light-dark(#000000f5, #fffffff5);
+}
+.lyrics-up-next-artist {
+  font-size: 0.84em;
+  color: light-dark(#000000a3, #ffffffa3);
 }
 
 .lyrics-details {
@@ -181,7 +333,39 @@
   position: relative;
   min-height: 0;
 }
-
+.lyrics-display.has-pinned-footer {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+.has-pinned-footer .lyric-scroll {
+  padding-bottom: 24px;
+}
+/* Like Spicy Lyrics, the credits grow with the lyrics, so they stay
+   readable on large screens, and sit well clear of the bottom edge. */
+.lyric-pinned-footer {
+  max-height: min(240px, 35vh);
+  overflow-y: auto;
+  /* Inset like the end credits in the scroller, so lines align. */
+  padding: 12px calc(var(--lyric-size, 58px) * 0.35 + 2px)
+    clamp(32px, 4.5vh, 64px);
+  font-size: clamp(
+    15px,
+    calc(min(var(--lyric-size, 58px), 4.6cqw) * 0.3),
+    24px
+  );
+}
+.lyric-pinned-footer p {
+  margin-bottom: 0.4em;
+}
+/* The provider line matches the writers line above it. */
+.lyric-pinned-footer .lyric-source {
+  font-size: 1em;
+  color: inherit;
+}
+.has-pinned-footer .follow-lyrics {
+  grid-row: 1 / 2;
+  grid-column: 1 / 2;
+}
 .lyric-scroll {
   overflow-anchor: none;
   position: relative;
@@ -595,6 +779,83 @@
   -webkit-text-fill-color: transparent;
   opacity: 0.85;
 }
+.follow-lyrics {
+  display: grid;
+  place-items: center;
+  position: absolute;
+  bottom: 35px;
+  right: 16px;
+  width: 52px;
+  height: 52px;
+  border: 1px solid light-dark(#00000045, #ffffff45);
+  border-radius: 16px;
+  background: color-mix(
+    in srgb,
+    var(--lyrics-cover-color, light-dark(#acacac, #535353)) 48%,
+    light-dark(#eaeaea66, #15151566)
+  );
+  -webkit-backdrop-filter: blur(18px) saturate(150%);
+  backdrop-filter: blur(18px) saturate(150%);
+  box-shadow:
+    0 6px 16px -8px #0006,
+    inset 0 1px 0 #ffffff38;
+  color: light-dark(#000, #fff);
+  z-index: 2;
+  transition:
+    background 0.2s ease,
+    transform 0.16s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.follow-lyrics:hover {
+  background: color-mix(
+    in srgb,
+    var(--lyrics-cover-color, light-dark(#acacac, #535353)) 60%,
+    light-dark(#00000016, #ffffff16)
+  );
+}
+.follow-lyrics:active {
+  transform: scale(0.94);
+}
+.reduce-motion .follow-lyrics {
+  transition: none;
+}
+.compact .follow-lyrics {
+  bottom: 12px;
+  right: 12px;
+  width: 42px;
+  height: 42px;
+  border-radius: 13px;
+}
+.page-hero .eyebrow {
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: capitalize;
+}
+.lyric-source {
+  position: absolute;
+  bottom: 18px;
+  width: 100%;
+  text-align: left;
+  color: light-dark(#16161690, #e9e9e990);
+  font-size: 12px;
+  line-height: 1.5;
+  padding: 0 2px;
+  z-index: 2;
+}
+.compact .lyric-source {
+  position: relative;
+  bottom: auto;
+  padding: 0;
+  font-size: 11px;
+  background: transparent;
+}
+.compact .lyric-end-credits {
+  /* Bottom room lets the credits scroll clear of the follow button. */
+  padding: 12px 0 72px;
+  font-size: 14px;
+  line-height: 1.45;
+}
 
 .static-lyrics .lyric-line {
   --blur: 0px;
@@ -612,4 +873,1561 @@
   scale: none !important;
   translate: none !important;
 }
+/* Space Gravity: words float over the whole lyrics page. The stage spans
+   the page so words can drift around the artwork, which they avoid. */
+.lyrics-page.space-gravity .lyrics-body {
+  position: static;
+}
+.gravity-lyrics {
+  height: 100%;
+}
+.gravity-stage {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  overflow: hidden;
+  pointer-events: none;
+}
+/* Words take the normal lyric size and fill. As in the fork, the sung line
+   shows fully, the next line at 34% and earlier lines at 22%; lines blur by
+   distance from the sung one. A word stays hidden until placed, then fades
+   in; leaving words fade out. */
+.gravity-word {
+  --role-opacity: 1;
+  --presence-opacity: 1;
+  position: absolute;
+  left: 0;
+  top: 0;
+  padding: 0;
+  border: 0;
+  font: inherit;
+  white-space: nowrap;
+  color: transparent;
+  background: none;
+  transform-origin: center;
+  will-change: transform;
+  pointer-events: auto;
+  cursor: pointer;
+  opacity: calc(var(--role-opacity) * var(--presence-opacity));
+  filter: blur(calc(var(--blur, 0px) / 2)) var(--hover-filter,);
+  transition: opacity 180ms ease;
+}
+/* Rotated words painted with a text-clipped gradient left a faint line at
+   the paint box's edge on the GPU, past the last letter; edge masks, clips
+   and a tighter box did not remove it. Floating words instead fill their
+   glyphs with the lyric colour and fade the unsung part with a mask, which
+   paints nothing of its own, so no box edge can show. */
+.gravity-word .lyric-paint {
+  --glyph-bleed: 0em;
+  --sweep-edge: calc(100% * var(--sweep) + var(--sweep-overrun));
+  padding: 0;
+  margin: 0;
+  background-image: none;
+  -webkit-text-fill-color: rgb(var(--lyric-rgb, 255 255 255));
+  -webkit-mask-image: linear-gradient(
+    90deg,
+    rgb(0 0 0 / var(--sung-alpha)) var(--sweep-edge),
+    rgb(0 0 0 / var(--unsung-alpha)) calc(var(--sweep-edge) + 20%)
+  );
+  mask-image: linear-gradient(
+    90deg,
+    rgb(0 0 0 / var(--sung-alpha)) var(--sweep-edge),
+    rgb(0 0 0 / var(--unsung-alpha)) calc(var(--sweep-edge) + 20%)
+  );
+}
+.gravity-word:not([data-spawned]) {
+  visibility: hidden;
+  --presence-opacity: 0;
+  pointer-events: none;
+  transition: none;
+}
+.gravity-word.exiting {
+  --presence-opacity: 0;
+  pointer-events: none;
+}
+.gravity-word.next {
+  --role-opacity: 0.34;
+}
+.gravity-word.previous {
+  --role-opacity: 0.22;
+}
+.gravity-word:hover {
+  --role-opacity: 1;
+}
+.gravity-word.current:hover {
+  --hover-filter: drop-shadow(0 0 10px rgb(255 255 255 / 0.85));
+}
+.gravity-word.opposite.current:hover {
+  --hover-filter: drop-shadow(0 0 10px rgb(255 140 168 / 0.85));
+}
+/* Box-less line wrappers: the lyric animator finds a line's syllables
+   through them, and the normal lyric styles and fill apply inside. */
+.gravity-line.lyric-line {
+  display: contents;
+}
+/* The second duet voice gets its own colour so the two singers read apart. */
+.gravity-word.opposite {
+  --lyric-rgb: 255 140 168;
+}
+.gravity-word:focus-visible {
+  outline: 2px solid light-dark(#0009, #fff9);
+  border-radius: 6px;
+}
+.gravity-wait {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: max-content;
+  transform-origin: center;
+  will-change: transform;
+  pointer-events: none;
+}
+/* Sized and placed exactly like the end credits beside normal lyrics:
+   the script lines the box up with the lyrics column, and the padding
+   matches that column's text inset. */
+.gravity-credits {
+  position: absolute;
+  right: 5%;
+  bottom: clamp(32px, 4.5vh, 64px);
+  z-index: 3;
+  width: 42%;
+  box-sizing: border-box;
+  padding-inline: calc(var(--lyric-size, 58px) * 0.35 + 2px);
+  max-height: 160px;
+  overflow: auto;
+  color: light-dark(#0000008c, #ffffff8c);
+  font-size: clamp(
+    15px,
+    calc(min(var(--lyric-size, 58px), 4.6cqw) * 0.34),
+    26px
+  );
+  line-height: 1.35;
+}
+.gravity-credits p {
+  margin: 0;
+}
+.gravity-credits .writer-credits {
+  margin-bottom: 0.2em;
+}
+.gravity-credits .lyric-source {
+  position: static;
+  padding: 0;
+  font-size: 1em;
+  font-weight: 600;
+  color: inherit;
+}
+
+.lyrics-page.no-artwork:not(.narrow) {
+  grid-template-columns: minmax(0, 1fr);
+  padding-inline: 10%;
+}
+.lyrics-page.no-artwork:not(.narrow) .lyrics-album {
+  display: none;
+}
+.lyrics-page.narrow.no-artwork .lyrics-album {
+  display: none;
+}
+.lyrics-page.narrow.no-artwork {
+  grid-template-rows: minmax(0, 1fr);
+}
+.lyrics-page.artwork-right:not(.narrow):not(.no-artwork) {
+  grid-template-columns: minmax(220px, 1.15fr) minmax(180px, 0.85fr);
+}
+.lyrics-page.artwork-right:not(.narrow) .lyrics-album {
+  order: 2;
+}
+.lyrics-toolbar .icon-button.active {
+  color: light-dark(#000, #fff);
+}
+/* Wide lyrics: the toolbar sits over the cover-art side and follows the
+   artwork when it is flipped, as it does with Canvas. */
+.lyrics-page:not(.narrow):not(.no-artwork):not(.canvas-lyrics)
+  > .lyrics-toolbar {
+  left: 16px;
+  right: auto;
+}
+.lyrics-page.artwork-right:not(.narrow):not(.no-artwork):not(.canvas-lyrics)
+  > .lyrics-toolbar {
+  left: auto;
+  right: 16px;
+}
+.toolbar-divider {
+  align-self: center;
+  width: 1px;
+  height: 18px;
+  margin: 0 2px;
+  background: light-dark(#00000026, #ffffff26);
+}
+
+/* Lyrics display options from Lyrics settings. */
+.lyrics-right .lyric-line {
+  text-align: right;
+  transform-origin: right center;
+}
+.lyrics-right .lyric-line.opposite {
+  text-align: left;
+  transform-origin: left center;
+}
+.lyrics-flip-duet .lyric-line {
+  text-align: right;
+  transform-origin: right center;
+}
+.lyrics-flip-duet .lyric-line.opposite {
+  text-align: left;
+  transform-origin: left center;
+}
+.lyrics-wide-duet.has-duet .lyric-line:not(.opposite) {
+  padding-right: 14%;
+}
+.lyrics-wide-duet.has-duet .lyric-line.opposite {
+  padding-left: 14%;
+}
+.lyrics-flip-duet.lyrics-wide-duet.has-duet .lyric-line:not(.opposite) {
+  padding-right: 0;
+  padding-left: 14%;
+}
+.lyrics-flip-duet.lyrics-wide-duet.has-duet .lyric-line.opposite {
+  padding-left: 0;
+  padding-right: 14%;
+}
+.lyrics-line-hover .lyric-line {
+  border-radius: 10px;
+  transition:
+    opacity 0.4s cubic-bezier(0.61, 1, 0.88, 1),
+    filter 0.5s cubic-bezier(0.61, 1, 0.88, 1),
+    background-color 0.15s;
+}
+.lyrics-line-hover .lyric-line:hover {
+  background-color: light-dark(#0000000f, #ffffff0f);
+}
+/* "Cover colour" background: one colour from the artwork, fading down. */
+.lyrics-page.colour-background {
+  background: linear-gradient(var(--hero, light-dark(#d7d7d7, #282828)), light-dark(#f4f4f4, #0b0b0b) 85%);
+}
+/* Lyrics loading skeleton: ragged bars where the lines will land, swept by a
+   light that only moves transforms and opacity, so it keeps running while the
+   lyrics build. */
+.lyrics-skeleton {
+  position: relative;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  animation: lyrics-skeleton-in 0.2s ease-out both;
+}
+.lyrics-skeleton-lines {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--lyric-size) * 0.5);
+  height: 100%;
+  padding: 28% calc(var(--lyric-size) * 0.35) 0;
+  mask-image: linear-gradient(transparent, #000 10%, #000 72%, transparent 97%);
+}
+.lyrics-page.narrow .lyrics-skeleton-lines {
+  padding-top: 12%;
+}
+.lyrics-skeleton-lines span {
+  position: relative;
+  flex: none;
+  max-width: 100%;
+  height: calc(var(--lyric-size) * 0.72);
+  border-radius: calc(var(--lyric-size) * 0.18);
+  background: light-dark(#00000017, #ffffff17);
+  overflow: hidden;
+}
+/* Translucent placeholders let the visualiser's bars show through, so they
+   looked drawn under them; solid ones sit visibly on top. */
+.lyrics-page:has(> .lyrics-visualiser) .lyrics-skeleton-lines span {
+  background: color-mix(
+    in srgb,
+    var(--lyrics-cover-color, #808080) 14%,
+    light-dark(#e2e2e2, #262626)
+  );
+}
+.lyrics-skeleton-lines span::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    light-dark(#0000001a, #ffffff1a) 45%,
+    light-dark(#0000001a, #ffffff1a) 55%,
+    transparent
+  );
+  transform: translateX(-100%);
+  animation: lyrics-skeleton-sweep 1.6s cubic-bezier(0.45, 0, 0.55, 1)
+    calc(var(--line, 0) * 0.06s) infinite;
+}
+.lyrics-skeleton p {
+  position: absolute;
+  left: 20px;
+  bottom: 18px;
+  display: flex;
+  align-items: baseline;
+  font-size: 13px;
+  font-weight: 600;
+  color: light-dark(#000000b8, #ffffffb8);
+}
+.lyrics-skeleton-dots {
+  display: inline-flex;
+  gap: 0.2em;
+  margin-left: 0.3em;
+}
+.lyrics-skeleton-dots i {
+  width: 0.3em;
+  height: 0.3em;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.25;
+  animation: lyrics-skeleton-dot 1.2s ease-in-out infinite;
+}
+.lyrics-skeleton-dots i:nth-child(2) {
+  animation-delay: 0.16s;
+}
+.lyrics-skeleton-dots i:nth-child(3) {
+  animation-delay: 0.32s;
+}
+.reduce-motion .lyrics-skeleton-lines span::after {
+  animation: none;
+  opacity: 0;
+}
+.reduce-motion .lyrics-skeleton-dots i {
+  animation: none;
+  opacity: 0.6;
+}
+@keyframes lyrics-skeleton-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes lyrics-skeleton-sweep {
+  to {
+    transform: translateX(100%);
+  }
+}
+@keyframes lyrics-skeleton-dot {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: none;
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-0.18em);
+  }
+}
+/* Credits follow the last singer: a song ending on a line sung from the
+   right keeps its credits on that side. */
+.credits-right .lyric-end-credits,
+.credits-right .lyric-end-credits .lyric-source {
+  text-align: right;
+}
+/* Minimal lyrics mode, full screen only as in Spicy Lyrics: sung lines
+   shrink away, lines to come wait dimmed and a touch smaller, and once the
+   song's lines are all sung they settle back at the sung opacity. */
+.immersive .lyrics-display.minimal:not(.static-lyrics) .lyric-line {
+  transition:
+    scale 0.4s ease-in-out,
+    opacity 0.4s linear,
+    filter 0.5s cubic-bezier(0.61, 1, 0.88, 1);
+}
+.immersive .lyrics-display.minimal:not(.static-lyrics) .lyric-line:not(.active) {
+  scale: 0.965;
+  opacity: 0.5;
+}
+.immersive .lyrics-display.minimal:not(.static-lyrics) .lyric-line.past {
+  scale: 0.95;
+  opacity: 0;
+}
+/* Keep overlapping lines: a line sung while an earlier one still plays
+   stays faintly visible at full size instead of fading away. */
+.immersive .lyrics-display.minimal.keep-overlaps:not(.static-lyrics) .lyric-line.active ~ .lyric-line.past {
+  scale: 1;
+  opacity: 0.45;
+}
+.immersive .lyrics-display.minimal.all-sung .lyric-line.past {
+  scale: 1;
+  opacity: 0.497;
+}
+/* Cover Art Animation: the old artwork sits over the new one and fades out
+   once the new one has loaded. */
+.cover .cover-previous {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.cover .cover-previous.fading {
+  animation: cover-fade-out 0.5s ease forwards;
+}
+@keyframes cover-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+/* View controls at the bottom: outside full screen the toolbar moves to the
+   bottom corner of the lyrics side, clear of the song details. */
+.application:not(.immersive) .lyrics-page.toolbar-bottom > .lyrics-toolbar {
+  top: auto;
+  bottom: 14px;
+  left: auto;
+  right: 16px;
+}
+.application:not(.immersive)
+  .lyrics-page.toolbar-bottom.artwork-right:not(.narrow):not(.no-artwork)
+  > .lyrics-toolbar {
+  left: 16px;
+  right: auto;
+}
+.application:not(.immersive) .lyrics-page.narrow.toolbar-bottom > .lyrics-toolbar {
+  bottom: 12px;
+  right: 12px;
+}
+/* Release year after the artists: the dot sits on the year's near side. */
+.lyrics-year.right .lyrics-year-dot {
+  margin: 0 0.4em 0 0;
+}
+/* Cover art and Artist header backgrounds: the picture fills the page,
+   darkened for the lyrics, with the chosen blur. Scaled up a little so a
+   blur never shows soft edges. */
+.lyrics-image-background {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-position: center;
+  background-size: cover;
+  filter: blur(var(--background-blur, 0px)) brightness(0.45);
+  transform: scale(1.08);
+}
+
+/* Visualiser bars: drawn after the ambience, picture and Canvas backdrop,
+   so over them but under the lyrics and artwork; tinted by the cover. */
+.lyrics-visualiser {
+  position: absolute;
+  inset: auto 0 0;
+  width: 100%;
+  height: 42%;
+  z-index: -1;
+  pointer-events: none;
+  color: color-mix(in srgb, var(--lyrics-cover-color, #fff) 55%, #fff);
+}
+
+/* Highlighter lyrics player (highlighter.tsx lays out the strokes): one
+   slanted, rounded band of ink behind each row of text, its strength set
+   by a mask, and a brighter rounded pen tip at its end. Text over the ink
+   takes a faint tint of it. */
+.lyrics-display.highlighter {
+  --highlighter-ink: #d4b80f;
+}
+.highlighter-words {
+  position: relative;
+  display: block;
+  isolation: isolate;
+}
+.highlighter-word {
+  display: inline-block;
+  max-width: 100%;
+}
+.highlighter-piece {
+  position: relative;
+  z-index: 1;
+  display: inline-block;
+  max-width: 100%;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  -webkit-text-fill-color: rgb(255 255 255 / var(--unsung-alpha));
+}
+.lyric-line.active .highlighter-piece {
+  -webkit-text-fill-color: light-dark(#000, #fff);
+}
+.lyric-line.active .highlighter-piece[style*="--ink: 1"] {
+  -webkit-text-fill-color: color-mix(
+    in srgb,
+    light-dark(#000, #fff) 90%,
+    var(--highlighter-ink)
+  );
+}
+.highlighter-ink {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+.highlighter-stroke,
+.highlighter-tip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+}
+.highlighter-stroke {
+  /* How dark the ink has turned (set per row), fine grain, then the ink. */
+  background:
+    var(--shade, none),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.1 0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23g)'/%3E%3C/svg%3E")
+      0 0 / 140px 140px,
+    var(--highlighter-ink);
+  /* Felt lays a little more ink along the top and bottom edges. */
+  box-shadow:
+    inset 0 0.04em 0 color-mix(in srgb, var(--highlighter-ink) 86%, #000),
+    inset 0 -0.05em 0 color-mix(in srgb, var(--highlighter-ink) 86%, #000);
+  mask-repeat: no-repeat, repeat-x;
+  mask-composite: intersect;
+  -webkit-mask-repeat: no-repeat, repeat-x;
+  -webkit-mask-composite: source-in;
+}
+.highlighter-tip {
+  opacity: var(--tip-opacity, 1);
+  transition: opacity 0.3s ease-out;
+  border-radius: 0.16em 0.22em 0.22em 0.16em;
+  background: color-mix(in srgb, var(--highlighter-ink) 88%, transparent);
+}
+.highlighter-tip.lifted {
+  opacity: 0;
+}
+.lyrics-display.reduce-motion .highlighter-tip {
+  transition: none;
+}
+
+/* Your Library's search with the "Recents ☰" sort and view menu. */
+.library-tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px 12px 16px;
+}
+.library-tools .library-search {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+}
+.compact-library .library-tools {
+  display: none;
+}
+.library-sort .sort-menu-button {
+  height: 28px;
+  font-size: 13px;
+}
+.library-sort-menu {
+  min-width: 200px;
+}
+.library-sort-menu > button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.library-view-picker {
+  display: flex;
+  gap: 2px;
+  padding: 4px 8px 8px;
+}
+.library-view-picker button {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  height: 32px;
+  border-radius: 4px;
+  color: light-dark(#000000b3, #ffffffb3);
+}
+.library-view-picker button:hover {
+  background: light-dark(#00000014, #ffffff14);
+  color: light-dark(#000, #fff);
+}
+.library-view-picker button.active {
+  background: light-dark(#0000001f, #ffffff1f);
+  color: var(--spotify-green);
+}
+
+/* Compact view: no artwork, one slim line per row. */
+.library-panel:not(.compact-library) .library-view-compact .library-item {
+  min-height: 32px;
+  padding: 4px 8px;
+}
+.library-panel:not(.compact-library)
+  .library-view-compact
+  .library-item
+  > :is(.cover, .liked-cover, .folder-cover, .dj-art),
+.library-panel:not(.compact-library)
+  .library-view-compact
+  .library-cover-play {
+  display: none;
+}
+.library-panel:not(.compact-library)
+  .library-view-compact
+  .library-item
+  > div:last-child {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.library-panel:not(.compact-library) .library-view-compact .library-item strong {
+  flex: 0 1 auto;
+  font-size: 14px;
+}
+.library-panel:not(.compact-library) .library-view-compact .library-item small {
+  flex: 1 1 0;
+  margin: 0;
+  font-size: 13px;
+}
+.library-panel:not(.compact-library)
+  .library-view-compact
+  .library-item
+  small::before {
+  content: "• ";
+}
+
+/* Grid views: artwork tiles with the name below. */
+.library-panel:not(.compact-library)
+  .library-list:is(.library-view-grid, .library-view-large_grid) {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+  align-content: start;
+  gap: 2px;
+}
+.library-panel:not(.compact-library) .library-list.library-view-large_grid {
+  grid-template-columns: repeat(auto-fill, minmax(136px, 1fr));
+}
+.library-panel:not(.compact-library)
+  .library-list:is(.library-view-grid, .library-view-large_grid)
+  > :is(.library-folder-header, .library-folder, .empty-library, p) {
+  grid-column: 1 / -1;
+}
+.library-panel:not(.compact-library)
+  .library-list:is(.library-view-grid, .library-view-large_grid)
+  .library-item {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  height: 100%;
+  min-height: 0;
+}
+.library-panel:not(.compact-library)
+  .library-list:is(.library-view-grid, .library-view-large_grid)
+  .library-item
+  > :is(.cover, .liked-cover, .folder-cover, .dj-art) {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+}
+.library-panel:not(.compact-library)
+  .library-list:is(.library-view-grid, .library-view-large_grid)
+  .library-item
+  > div:last-child {
+  flex: none;
+}
+.library-panel:not(.compact-library)
+  .library-list.library-view-grid
+  .library-item
+  :is(strong, small) {
+  font-size: 12px;
+}
+.library-panel:not(.compact-library)
+  .library-list.library-view-grid
+  .library-item
+  small {
+  display: none;
+}
+.library-panel:not(.compact-library)
+  .library-list:is(.library-view-grid, .library-view-large_grid)
+  :is(.library-pin, .library-playing, .library-cover-play) {
+  display: none;
+}
+
+/* Space Gravity with the Highlighter: marker lines joining sung words. */
+.gravity-links {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.gravity-links path {
+  fill: none;
+  stroke: var(--highlighter-ink);
+  /* The same ink as the words' bands; its width is set per link. */
+  stroke-width: 11px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1 1;
+  transition: opacity 1.2s ease-out;
+}
+.gravity-links path.leaving {
+  opacity: 0;
+}
+.gravity-links stop {
+  stop-color: var(--highlighter-ink);
+}
+/* In Space Gravity the connecting lines carry the pen on from each word,
+   so lead words drop the pen tip; backing vocals, which have no lines,
+   keep it, as do all words with the lines turned off. */
+.gravity-lyrics.linked .gravity-word:not(.background) .highlighter-tip {
+  display: none;
+}
+
+.lyrics-display.simple-lyrics .lyric-line {
+  --sweep-soft: 0.3;
+  --sung-alpha: 1;
+  --unsung-alpha: 0.3;
+  opacity: 0.45;
+}
+.lyrics-display.simple-lyrics .lyric-line.past {
+  opacity: 0.35;
+}
+.lyrics-display.simple-lyrics .lyric-line.active {
+  opacity: 1;
+}
+
+/* A line-synced line being sung fills top to bottom. */
+.lyric-plain {
+  display: inline-block;
+}
+.lyric-line.active .lyric-plain {
+  --wipe: var(--line-wipe, 100%);
+  -webkit-text-fill-color: transparent;
+  background-image: linear-gradient(
+    180deg,
+    rgb(255 255 255 / var(--sung-alpha)) var(--wipe),
+    rgb(255 255 255 / var(--unsung-alpha)) calc(var(--wipe) + 20%)
+  );
+  background-clip: text;
+  -webkit-background-clip: text;
+}
+.lyrics-media {
+  position: relative;
+  width: var(--lyrics-art, 100%);
+  max-width: none;
+  margin: 0 auto;
+  border-radius: 8px;
+}
+.lyrics-media > .cover {
+  width: 100%;
+  box-shadow: 0 18px 50px #0003;
+  border-radius: inherit;
+}
+.lyrics-page.narrow .lyrics-media {
+  grid-row: 1 / 3;
+  width: 56px;
+  height: 56px;
+  margin: 0;
+}
+.immersive .lyrics-page {
+  --fullscreen-gutter: clamp(20px, 1.6vw, 36px);
+  --lyrics-controls-opacity: 0;
+  --lyrics-controls-events: none;
+  --lyrics-dock-lift: 0px;
+}
+.immersive
+  .lyrics-page:is(
+    [data-tools="awake"],
+    [data-seeking="true"],
+    :has(:focus-visible)
+  ) {
+  --lyrics-controls-opacity: 1;
+  --lyrics-controls-events: auto;
+  --lyrics-dock-lift: 136px;
+}
+.immersive .lyrics-page .lyrics-fullscreen-controls,
+.immersive .lyrics-page .lyrics-toolbar {
+  opacity: var(--lyrics-controls-opacity);
+  pointer-events: none;
+  transition: opacity 250ms ease;
+}
+.immersive
+  .lyrics-page:is(
+    [data-tools="awake"],
+    [data-seeking="true"],
+    :has(:focus-visible)
+  )
+  :is(.lyrics-fullscreen-controls, .lyrics-toolbar) {
+  pointer-events: auto;
+}
+/* Appearing, the song details rise at once, ahead of the fading-in
+   controls; hiding, the controls fade before the details settle back, so the
+   two never overlap mid-move. */
+.immersive
+  .canvas-lyrics:not(.narrow):is(
+    [data-tools="awake"],
+    [data-seeking="true"],
+    :has(:focus-visible)
+  )
+  :is(.lyrics-title, .lyrics-artists) {
+  transition: translate 220ms cubic-bezier(0.2, 0.7, 0.25, 1);
+}
+.immersive
+  .lyrics-page:not([data-tools="awake"]):not([data-seeking="true"]):not(
+    :has(:focus-visible)
+  ),
+.immersive
+  .lyrics-page:not([data-tools="awake"]):not([data-seeking="true"]):not(
+    :has(:focus-visible)
+  )
+  * {
+  cursor: none;
+}
+/* Artwork takes the same share of the screen at any resolution: about
+   half its height, never wider than its column. */
+.immersive .lyrics-album {
+  --lyrics-art: min(100%, 52vh);
+}
+.immersive .lyrics-media {
+  container-type: inline-size;
+  width: var(--lyrics-art);
+  max-width: none;
+}
+.immersive .lyrics-media > .cover {
+  max-width: none;
+}
+.immersive .lyrics-media::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  /* Darkest under the transport and seek bar, where the controls sit. */
+  background: linear-gradient(
+    #0000004d,
+    #00000026 35%,
+    #00000040 60%,
+    #000000a6
+  );
+  opacity: var(--lyrics-controls-opacity);
+  transition: opacity 250ms ease;
+}
+.immersive .lyrics-media > .lyrics-toolbar {
+  top: 4cqw;
+  left: 50%;
+  right: auto;
+  translate: -50% 0;
+  justify-content: center;
+  flex-wrap: wrap;
+  width: max-content;
+  max-width: calc(100% - 32px);
+}
+.immersive .lyrics-media .lyrics-fullscreen-controls {
+  position: absolute;
+  z-index: 3;
+  inset: auto 10% 6%;
+  width: 80%;
+  max-width: none;
+  margin: 0;
+  grid-template-columns:
+    calc((var(--time-chars, 4) + 0.5) * 1ch) minmax(0, 1fr)
+    calc((var(--time-chars, 4) + 0.5) * 1ch);
+  gap: 12px;
+}
+.immersive .lyrics-media .lyrics-fullscreen-buttons {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  justify-content: space-between;
+  margin: 0 6% 2.5cqw;
+  gap: 10px;
+  --transport: 6.4cqw;
+}
+.immersive .lyrics-media .lyrics-fullscreen-buttons .lyrics-fullscreen-like {
+  position: absolute;
+  left: 50%;
+  /* The fork's size, 45% of the cover, centred on it: the controls sit
+     6% above its bottom edge, so 21.5cqw more puts its middle at 50cqw. */
+  bottom: 21.5cqw;
+  translate: -50% 0;
+  width: 45cqw;
+  height: auto;
+  margin: 0;
+  filter: drop-shadow(0 4px 18px #0000008c);
+}
+.immersive
+  .lyrics-media
+  .lyrics-fullscreen-buttons
+  .lyrics-fullscreen-like
+  svg {
+  width: 100%;
+  height: auto;
+}
+.immersive .lyrics-media .lyrics-glass-seek {
+  grid-row: 2;
+  grid-column: 2;
+  align-self: center;
+  height: 8px;
+}
+.immersive .lyrics-media .lyrics-fullscreen-times {
+  display: contents;
+}
+.immersive .lyrics-media .lyrics-fullscreen-times time {
+  grid-row: 2;
+  align-self: center;
+  color: #ffffffb3;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.immersive .lyrics-media .lyrics-fullscreen-times time:first-child {
+  grid-column: 1;
+  text-align: right;
+}
+.immersive .lyrics-media .lyrics-fullscreen-times time:last-child {
+  grid-column: 3;
+}
+.immersive .lyrics-fullscreen-buttons .icon-button.active {
+  filter: drop-shadow(0 0 4px #ffffff80);
+}
+/* Full screen Canvas: the video fades out a little further left than in the
+   window, and the lyrics column starts just inside that fade, as it does
+   outside full screen. */
+.immersive .canvas-lyrics:not(.narrow) {
+  --canvas-width: 45%;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  gap: 3%;
+}
+.immersive .canvas-lyrics.artwork-right:not(.narrow) {
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 0.8fr);
+}
+/* The song details and controls grow with the screen as one block, so on
+   a big screen they fill the Canvas side instead of sitting small in its
+   corner. Everything keys off the transport size. */
+.immersive .canvas-lyrics:not(.narrow) {
+  --canvas-transport: clamp(30px, 2.6vw, 60px);
+  --dock-transport: calc(var(--canvas-transport) * 0.75);
+  /* The transport row's height: the heart, its tallest glyph, plus the
+     gap above it. */
+  --dock-row: calc(
+    var(--dock-transport) * 1.05 + var(--canvas-transport) * 0.3
+  );
+  --dock-drop: 0px;
+}
+/* While the transport is hidden, the seek bar drops into its place and
+   rises back above it when the controls wake. */
+.immersive
+  .canvas-lyrics.lyrics-page:not(.narrow):not([data-tools="awake"]):not(
+    [data-seeking="true"]
+  ):not(:has(:focus-visible)):not(
+    [data-always-show="controls"],
+    [data-always-show="both"]
+  ) {
+  --dock-drop: var(--dock-row);
+}
+.immersive
+  .canvas-lyrics.lyrics-page:not(.narrow):is(
+    [data-tools="awake"],
+    [data-seeking="true"],
+    :has(:focus-visible),
+    [data-always-show]
+  ) {
+  --lyrics-dock-lift: calc(
+    var(--canvas-transport) * 1.75 + var(--dock-row) - var(--dock-drop)
+  );
+}
+.immersive
+  .canvas-lyrics:not(.narrow)
+  .lyrics-fullscreen-controls
+  > :is(.lyrics-glass-seek, .lyrics-fullscreen-times) {
+  translate: 0 var(--dock-drop);
+  transition:
+    translate 350ms cubic-bezier(0.2, 0.7, 0.25, 1),
+    opacity 250ms ease;
+}
+.immersive .canvas-lyrics:not(.narrow) .lyrics-fullscreen-controls {
+  left: var(--fullscreen-gutter);
+  bottom: 28px;
+  width: max-content;
+  max-width: calc(var(--canvas-width) - var(--fullscreen-gutter) * 2);
+  gap: calc(var(--canvas-transport) * 0.22);
+}
+.immersive
+  .canvas-lyrics.artwork-right:not(.narrow)
+  .lyrics-fullscreen-controls {
+  width: max-content;
+  max-width: calc(var(--canvas-width) - var(--fullscreen-gutter) * 2);
+}
+/* Full screen Canvas controls read from across the room: under the seek
+   bar, the heart and transport run from the bottom-left corner and the
+   volume lies flat right after them; the seek bar spans the row. */
+.immersive .canvas-lyrics:not(.narrow) .lyrics-fullscreen-controls {
+  grid-template-columns: max-content auto;
+  column-gap: calc(var(--canvas-transport) * 0.6);
+  align-items: center;
+}
+.immersive
+  .canvas-lyrics:not(.narrow)
+  .lyrics-fullscreen-controls
+  > :is(.lyrics-glass-seek, .lyrics-fullscreen-times) {
+  grid-column: 1 / -1;
+}
+.immersive .canvas-lyrics .lyrics-fullscreen-times {
+  font-size: 15px;
+}
+.immersive .canvas-lyrics:not(.narrow) .lyrics-fullscreen-times {
+  font-size: calc(var(--canvas-transport) * 0.36);
+}
+.immersive .canvas-lyrics .lyrics-fullscreen-buttons {
+  justify-content: flex-start;
+  margin-top: 14px;
+  gap: clamp(14px, 1.4vw, 28px);
+  --transport: clamp(30px, 2.5vw, 46px);
+}
+.immersive .canvas-lyrics:not(.narrow) .lyrics-fullscreen-buttons {
+  grid-column: 1;
+  grid-row: 3;
+  margin-top: calc(var(--canvas-transport) * 0.3);
+  gap: calc(var(--dock-transport) * 0.55);
+  --transport: var(--dock-transport);
+}
+.immersive .canvas-lyrics .lyrics-fullscreen-like {
+  margin: 0;
+}
+.immersive
+  .canvas-lyrics
+  .lyrics-fullscreen-buttons
+  .lyrics-fullscreen-like
+  svg {
+  width: auto;
+  height: calc(var(--transport) * 1.05);
+}
+.immersive .canvas-lyrics:not(.narrow) :is(.lyrics-title, .lyrics-artists) {
+  left: var(--fullscreen-gutter);
+  width: calc(var(--canvas-width) - var(--fullscreen-gutter) * 2);
+  max-width: none;
+  translate: 0 calc(-1 * var(--lyrics-dock-lift));
+  transition: translate 350ms cubic-bezier(0.2, 0.7, 0.25, 1) 200ms;
+}
+.immersive .canvas-lyrics:not(.narrow) .lyrics-title {
+  bottom: calc(30px + var(--canvas-transport) * 0.9);
+}
+.immersive .canvas-lyrics:not(.narrow) .lyrics-title .song-title {
+  font-size: calc(var(--canvas-transport) * 0.75);
+}
+.immersive .canvas-lyrics:not(.narrow) .lyrics-artists {
+  bottom: 30px;
+  font-size: calc(var(--canvas-transport) * 0.45);
+}
+.immersive
+  .canvas-lyrics.artwork-right:not(.narrow)
+  :is(.lyrics-title, .lyrics-artists, .lyrics-fullscreen-controls) {
+  left: auto;
+  right: var(--fullscreen-gutter);
+}
+.immersive .lyrics-page.narrow .lyrics-media {
+  width: 56px;
+}
+.immersive .lyrics-page.narrow {
+  grid-template-columns: minmax(0, 1fr);
+}
+.immersive .lyrics-page.narrow .lyrics-fullscreen-controls {
+  grid-column: 1 / -1;
+  position: static;
+  margin: 16px auto;
+}
+.immersive .lyrics-page.no-artwork .lyrics-album {
+  display: contents;
+}
+.immersive
+  .lyrics-page.no-artwork
+  .lyrics-album
+  > :is(.lyrics-media, .lyrics-title, .lyrics-artists, .cover) {
+  display: none;
+}
+.immersive .lyrics-page.no-artwork .lyrics-fullscreen-controls {
+  position: absolute;
+  left: 50%;
+  right: auto;
+  bottom: 24px;
+  translate: -50% 0;
+  width: min(560px, calc(100% - 64px));
+  margin: 0;
+}
+/* Always show in full screen: the chosen part stays up and the song details
+   stay lifted above it, while everything else still hides on idle. */
+.immersive .lyrics-page[data-always-show] {
+  --lyrics-dock-lift: 136px;
+}
+.immersive .lyrics-page[data-always-show] .lyrics-fullscreen-controls {
+  opacity: 1;
+  pointer-events: auto;
+}
+.immersive .lyrics-page[data-always-show] .lyrics-fullscreen-controls > *,
+.immersive
+  .lyrics-page[data-always-show]
+  .lyrics-media
+  .lyrics-fullscreen-like {
+  opacity: var(--lyrics-controls-opacity);
+  pointer-events: var(--lyrics-controls-events);
+  transition: opacity 250ms ease;
+}
+.immersive
+  .lyrics-page:is([data-always-show="time"], [data-always-show="both"])
+  .lyrics-fullscreen-controls
+  > :is(.lyrics-glass-seek, .lyrics-fullscreen-times),
+.immersive
+  .lyrics-page:is([data-always-show="controls"], [data-always-show="both"])
+  .lyrics-fullscreen-controls
+  > :is(.lyrics-fullscreen-buttons, .lyrics-fullscreen-volume) {
+  opacity: 1;
+  pointer-events: auto;
+}
+/* Full screen volume, as the fork's: a frosted pill beside the cover,
+   filled white from the bottom with its speaker inside the end of the fill,
+   that grows wider while used. Below the controls it lies flat. */
+.immersive .lyrics-fullscreen-volume {
+  --pill: clamp(30px, 2.4vw, 44px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  grid-column: 1 / -1;
+  grid-row: 3;
+}
+.immersive .lyrics-media .lyrics-fullscreen-volume {
+  --pill: max(29px, 4.8cqw);
+}
+.immersive .lyrics-volume-pill {
+  position: relative;
+  overflow: hidden;
+  width: var(--pill);
+  height: 100%;
+  border-radius: 999px;
+  background: #0000001a;
+  -webkit-backdrop-filter: blur(12px) saturate(1.6) brightness(1.05);
+  backdrop-filter: blur(12px) saturate(1.6) brightness(1.05);
+  box-shadow:
+    0 8px 20px -8px #080a126b,
+    inset 0 1px 0 #ffffff5c,
+    inset 0 0 0 1px #ffffff29;
+  transition:
+    width 180ms cubic-bezier(0.23, 1, 0.32, 1),
+    height 180ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.immersive
+  .lyrics-volume-pill:is(:hover, :has(input:active), :has(:focus-visible)) {
+  width: calc(var(--pill) * 1.35);
+}
+.immersive .lyrics-volume-fill {
+  position: absolute;
+  inset: auto 0 0;
+  height: var(--range, 50%);
+  border-radius: inherit;
+  background: #fff;
+  pointer-events: none;
+  transition:
+    height 180ms cubic-bezier(0.23, 1, 0.32, 1),
+    width 180ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.immersive .lyrics-volume-pill:has(input:active) .lyrics-volume-fill {
+  transition: none;
+}
+.immersive .lyrics-volume-pill input {
+  appearance: none;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  writing-mode: vertical-lr;
+  direction: rtl;
+  background: transparent;
+  opacity: 0;
+  cursor: pointer;
+}
+/* The speaker inverts over the white fill, as the fork's does. */
+.immersive .lyrics-volume-icon {
+  position: absolute;
+  z-index: 1;
+  inset: auto 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: max(26px, calc(var(--pill) * 1.1));
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #fff;
+  mix-blend-mode: difference;
+  cursor: pointer;
+}
+.immersive .lyrics-volume-icon svg {
+  width: auto;
+  height: min(22px, calc(var(--pill) * 0.6));
+  transition: scale 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.immersive .lyrics-volume-icon:active svg {
+  scale: 0.85;
+}
+.lyrics-volume-icon :is(.volume-wave-low, .volume-wave-high, .volume-mute) {
+  transition: opacity 180ms ease;
+}
+.lyrics-volume-icon .volume-mute,
+[data-level="low"] .lyrics-volume-icon .volume-wave-high,
+[data-level="muted"]
+  .lyrics-volume-icon
+  :is(.volume-wave-low, .volume-wave-high) {
+  opacity: 0;
+}
+[data-level="muted"] .lyrics-volume-icon .volume-mute {
+  opacity: 1;
+}
+/* Below the controls, or stacked with them: a flat pill filled from the
+   left, its speaker at the start. */
+.immersive .lyrics-fullscreen-volume.below {
+  justify-self: center;
+  width: min(82%, 42rem);
+}
+.immersive .lyrics-page.narrow .lyrics-fullscreen-volume {
+  position: static;
+  justify-self: center;
+  width: min(70%, 340px);
+  height: auto;
+}
+.immersive
+  :is(
+    .lyrics-fullscreen-volume.below,
+    .narrow .lyrics-fullscreen-volume,
+    .canvas-lyrics:not(.narrow) .lyrics-fullscreen-volume
+  )
+  .lyrics-volume-pill,
+.immersive
+  :is(
+    .lyrics-fullscreen-volume.below,
+    .narrow .lyrics-fullscreen-volume,
+    .canvas-lyrics:not(.narrow) .lyrics-fullscreen-volume
+  )
+  .lyrics-volume-pill:is(:hover, :has(input:active), :has(:focus-visible)) {
+  width: 100%;
+  height: var(--pill);
+}
+.immersive
+  .lyrics-fullscreen-volume.below
+  .lyrics-volume-pill:is(:hover, :has(input:active), :has(:focus-visible)) {
+  height: calc(var(--pill) * 1.35);
+}
+.immersive
+  :is(
+    .lyrics-fullscreen-volume.below,
+    .narrow .lyrics-fullscreen-volume,
+    .canvas-lyrics:not(.narrow) .lyrics-fullscreen-volume
+  )
+  .lyrics-volume-fill {
+  inset: 0 auto 0 0;
+  width: var(--range, 50%);
+  height: auto;
+}
+.immersive
+  :is(
+    .lyrics-fullscreen-volume.below,
+    .narrow .lyrics-fullscreen-volume,
+    .canvas-lyrics:not(.narrow) .lyrics-fullscreen-volume
+  )
+  input {
+  writing-mode: horizontal-tb;
+  direction: ltr;
+}
+.immersive
+  :is(
+    .lyrics-fullscreen-volume.below,
+    .narrow .lyrics-fullscreen-volume,
+    .canvas-lyrics:not(.narrow) .lyrics-fullscreen-volume
+  )
+  .lyrics-volume-icon {
+  inset: 0 auto 0 0;
+  width: max(30px, calc(var(--pill) * 1.1));
+  height: auto;
+}
+.immersive
+  .lyrics-page:not(.narrow)
+  .lyrics-fullscreen-volume:is(.left, .right) {
+  position: absolute;
+  width: calc(var(--pill) * 1.35);
+}
+/* Over the artwork, an upright pill runs beside the cover, inset 14px at
+   both ends as the fork's sits beside its media box. */
+.immersive .lyrics-media .lyrics-fullscreen-volume:is(.left, .right) {
+  top: auto;
+  bottom: calc(14px - 6cqw);
+  height: calc(100cqw - 28px);
+}
+.immersive .lyrics-media .lyrics-fullscreen-volume.left {
+  left: calc(-10cqw - 24px - var(--pill) * 1.35);
+}
+.immersive .lyrics-media .lyrics-fullscreen-volume.right {
+  right: calc(-10cqw - 24px - var(--pill) * 1.35);
+}
+/* Beside a Canvas, whichever side is chosen, the flat pill ends the
+   controls row, right of the transport. */
+.immersive .lyrics-page.canvas-lyrics:not(.narrow) .lyrics-fullscreen-volume {
+  --pill: calc(var(--canvas-transport) * 0.65);
+  position: static;
+  grid-column: 2;
+  grid-row: 3;
+  justify-self: start;
+  width: calc(var(--canvas-transport) * 5.6);
+  height: auto;
+  margin-top: calc(var(--canvas-transport) * 0.3);
+}
+.immersive
+  .lyrics-page.canvas-lyrics:not(.narrow)
+  .lyrics-fullscreen-volume
+  .lyrics-volume-pill:is(:hover, :has(input:active), :has(:focus-visible)) {
+  height: calc(var(--pill) * 1.35);
+}
+/* Transport as the fork's: filled rounded glyphs, the skips double
+   triangles; the others dim while one is hovered, and a press shrinks. */
+.immersive .lyrics-fullscreen-buttons {
+  --transport: 28px;
+}
+.immersive .lyrics-fullscreen-buttons .icon-button {
+  width: auto;
+  height: auto;
+  padding: 0;
+  color: #fff;
+  background: none;
+  transition: opacity 175ms cubic-bezier(0.37, 0, 0.63, 1);
+}
+.immersive .lyrics-fullscreen-buttons .icon-button svg {
+  display: block;
+  width: auto;
+  height: calc(var(--transport) * 0.72);
+  transition: scale 175ms cubic-bezier(0.37, 0, 0.63, 1);
+}
+.immersive .lyrics-fullscreen-buttons .lyrics-fullscreen-skip svg {
+  height: calc(var(--transport) * 0.78);
+}
+.immersive .lyrics-fullscreen-buttons .lyrics-fullscreen-play svg {
+  height: calc(var(--transport) * 1.18);
+}
+.immersive
+  .lyrics-fullscreen-buttons:hover
+  .icon-button:not(:hover, .lyrics-fullscreen-like) {
+  opacity: 0.5;
+}
+.immersive .lyrics-fullscreen-buttons .icon-button:hover {
+  background: none;
+}
+.immersive .lyrics-fullscreen-buttons .icon-button:active svg {
+  scale: 0.9;
+}
+.immersive
+  .lyrics-fullscreen-buttons
+  :is(.lyrics-fullscreen-shuffle, .lyrics-fullscreen-repeat):not(.active) {
+  color: #ffffffd9;
+}
+.immersive .lyrics-fullscreen-buttons .icon-button.active {
+  filter: drop-shadow(0 0 2px #ffffff80) drop-shadow(0 0 6px #ffffff47);
+}
+/* The heart fills once liked, and hints at it while hovered. */
+.immersive .lyrics-fullscreen-like .heart-fill {
+  opacity: 0;
+  transition: opacity 250ms;
+}
+.immersive .lyrics-fullscreen-like.is-saved .heart-fill {
+  opacity: 1;
+}
+.immersive .lyrics-fullscreen-like:not(.is-saved):hover .heart-fill {
+  opacity: 0.25;
+}
+.immersive .lyrics-fullscreen-buttons .lyrics-fullscreen-like svg {
+  transition: scale 850ms
+    linear(
+      0,
+      0.155 4.1%,
+      0.783 11.7%,
+      1.088 16.6%,
+      1.215 21.4%,
+      1.207 26%,
+      1.057 34.4%,
+      0.971 40.8%,
+      0.953 49.1%,
+      1.01 66.8%,
+      1
+    );
+}
+.immersive .lyrics-fullscreen-buttons .lyrics-fullscreen-like:hover svg {
+  scale: 0.925;
+}
+.immersive .lyrics-fullscreen-buttons .lyrics-fullscreen-like:active svg {
+  scale: 0.8;
+}
+/* Seek bar as the fork's glass capsule: a white fill and no thumb. */
+.immersive .lyrics-page:not(.flat-seek) .lyrics-glass-seek {
+  overflow: hidden;
+  background: #0000001a;
+  -webkit-backdrop-filter: blur(12px) saturate(1.6) brightness(1.05);
+  backdrop-filter: blur(12px) saturate(1.6) brightness(1.05);
+  box-shadow:
+    0 6px 18px -8px #080a1259,
+    inset 0 1px 0 #ffffff5c,
+    inset 0 0 0 1px #ffffff29,
+    inset 0 -1px 0 #ffffff2e;
+}
+.immersive .lyrics-page:not(.flat-seek) .lyrics-glass-fill {
+  background: #fff;
+  box-shadow: none;
+}
+.immersive .lyrics-glass-seek input {
+  inset: 0;
+}
+.immersive .lyrics-media .lyrics-glass-seek {
+  height: 2.2cqw;
+}
+.immersive .canvas-lyrics .lyrics-glass-seek {
+  height: clamp(10px, 0.8vw, 15px);
+}
+.immersive .canvas-lyrics:not(.narrow) .lyrics-glass-seek {
+  height: calc(var(--canvas-transport) * 0.3);
+}
+/* While the controls show, the cover dims as the fork's does, deeper with
+   the pointer on it. */
+.immersive .lyrics-media > .cover {
+  transition: filter 450ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.immersive
+  .lyrics-page:is([data-tools="awake"], [data-seeking="true"])
+  .lyrics-media:hover
+  > .cover {
+  filter: brightness(0.72);
+}
+/* Animate closing full screen: the lyrics slide down out of view before the
+   window leaves full screen. */
+.immersive .lyrics-page.fullscreen-exit {
+  translate: 0 100%;
+  pointer-events: none;
+  transition: translate 450ms cubic-bezier(0.55, 0, 1, 0.45);
+}
+/* Glass seek bar off: a plain track and fill, without blur or glow. */
+.flat-seek .lyrics-glass-seek {
+  background: #ffffff33;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: none;
+}
+.flat-seek .lyrics-glass-fill {
+  background: #fff;
+  box-shadow: none;
+}
+/* Parts kept up by Always show in full screen, and every part when the
+   song has no lyrics, sit outside the cover as the fork's do: the seek bar
+   under the artwork and the transport under the song details. */
+.immersive .lyrics-outside-controls {
+  position: static;
+  width: var(--lyrics-art);
+  max-width: none;
+  margin: 0 auto;
+}
+.immersive .lyrics-outside-controls.outside-seek {
+  grid-template-columns:
+    calc((var(--time-chars, 4) + 0.5) * 1ch) minmax(0, 1fr)
+    calc((var(--time-chars, 4) + 0.5) * 1ch);
+  gap: 12px;
+  margin-top: 18px;
+}
+.immersive .lyrics-outside-controls .lyrics-glass-seek {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: center;
+  height: 12px;
+}
+.immersive .lyrics-outside-controls .lyrics-fullscreen-times {
+  display: contents;
+}
+.immersive .lyrics-outside-controls .lyrics-fullscreen-times time {
+  grid-row: 1;
+  align-self: center;
+  color: #ffffffb3;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+.immersive .lyrics-outside-controls .lyrics-fullscreen-times time:first-child {
+  grid-column: 1;
+  text-align: right;
+}
+.immersive .lyrics-outside-controls .lyrics-fullscreen-times time:last-child {
+  grid-column: 3;
+}
+.immersive .lyrics-outside-controls.outside-transport {
+  margin-top: 14px;
+}
+.immersive .lyrics-outside-controls .lyrics-fullscreen-buttons {
+  justify-content: center;
+  gap: clamp(22px, 2.4vw, 40px);
+  --transport: clamp(28px, 2.2vw, 38px);
+}
+/* No lyrics: the cover takes the middle of the screen, its details and
+   controls beneath it. */
+.immersive .lyrics-page.no-lyrics {
+  grid-template-columns: minmax(0, 1fr);
+}
+.immersive .lyrics-page.no-lyrics .lyrics-body {
+  display: none;
+}
+.immersive .lyrics-page.no-lyrics .lyrics-album {
+  --lyrics-art: min(100%, 58vh);
+  justify-self: center;
+  width: var(--lyrics-art);
+}
+/* Compact full screen: the controls float as one centred dock at the
+   bottom, clear of the song header, so the lyrics keep the whole page. The
+   heart starts the row, the transport sits in its middle and a short
+   volume pill ends it. */
+.immersive .lyrics-page.narrow {
+  --compact-row: 44px;
+  --compact-drop: 0px;
+}
+.immersive
+  .lyrics-page.narrow:not([data-tools="awake"]):not([data-seeking="true"]):not(
+    :has(:focus-visible)
+  ):not([data-always-show="controls"], [data-always-show="both"]) {
+  --compact-drop: calc(var(--compact-row) + 6px);
+}
+.immersive .lyrics-page.narrow .lyrics-fullscreen-controls {
+  position: fixed;
+  z-index: 3;
+  left: 50%;
+  bottom: 22px;
+  translate: -50% 0;
+  width: min(760px, calc(100% - 2 * var(--fullscreen-gutter) - 64px));
+  max-width: none;
+  margin: 0;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  grid-template-rows: auto auto var(--compact-row);
+  column-gap: 0;
+  row-gap: 6px;
+  align-items: center;
+}
+.immersive
+  .lyrics-page.narrow
+  .lyrics-fullscreen-controls
+  > :is(.lyrics-glass-seek, .lyrics-fullscreen-times) {
+  grid-column: 1 / -1;
+  translate: 0 var(--compact-drop);
+  transition:
+    translate 350ms cubic-bezier(0.2, 0.7, 0.25, 1),
+    opacity 250ms ease;
+}
+.immersive .lyrics-page.narrow .lyrics-fullscreen-buttons {
+  grid-column: 1 / -1;
+  grid-row: 3;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) repeat(5, auto) minmax(0, 1fr);
+  align-items: center;
+  justify-content: stretch;
+  gap: 22px;
+  margin: 0;
+  --transport: 30px;
+}
+.immersive .lyrics-page.narrow .lyrics-fullscreen-buttons > * {
+  justify-self: center;
+}
+.immersive
+  .lyrics-page.narrow
+  .lyrics-fullscreen-buttons
+  > .lyrics-fullscreen-like {
+  justify-self: start;
+}
+.immersive .lyrics-page.narrow .lyrics-fullscreen-buttons > :nth-child(2) {
+  grid-column: 2;
+}
+.immersive .lyrics-page.narrow .lyrics-fullscreen-volume {
+  --pill: 30px;
+  grid-column: 3;
+  grid-row: 3;
+  justify-self: end;
+  width: min(170px, 100%);
+  margin: 0;
+}
+
 }

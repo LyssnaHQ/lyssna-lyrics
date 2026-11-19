@@ -1,107 +1,58 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { MicVocal, Music2, Settings2, X } from "lucide-react";
 import { getHost, type Host, type Track } from "./host";
-import { LyricAnimator } from "./lyssna/lyric-animator";
-import { lineBlur, wordGroups } from "./lyssna/lyric-motion";
-import { LyricWord } from "./lyssna/lyric-word";
+import { useArtworkColor } from "./lyssna/artwork-color";
+import { Ambience } from "./lyssna/ambience";
+import { frameDue, setFrameCap } from "./lyssna/frame-cap";
+import { FullscreenPauseIcon, FullscreenPlayIcon, SkipNextIcon, SkipPreviousIcon } from "./lyssna/fullscreen-icons";
+import { LyricsDisplay, LyricsSkeleton } from "./lyssna/renderer";
+import { markerColour } from "./lyssna/highlighter";
+import { SpaceGravityLyrics } from "./lyssna/space-gravity-lyrics";
+import { CompactIcon, FullScreenIcon, HideArtworkIcon, SwapSidesIcon, TranslateIcon, WordSyncIcon } from "./lyssna/toolbar-icons";
 import type { Lyrics } from "./lyssna/types";
+import { setWindowActivity, setWindowPosition } from "./lyssna/window-activity";
+import { filterWords } from "./lyssna/word-filter";
+import { displayLyrics } from "./lyssna/word-sync";
+import { readSettings, saveSettings, settingsEvent, type Settings } from "./settings";
+import { SettingsPanel, type BuildOptions } from "./settings-panel";
 import { readSpicyLyrics, startSpicyProvider } from "./spicy";
+import { LyricCredits } from "./credits";
+import { CanvasArtwork, nowPlayingSelector, SpotifyVisualiser, useCanvas } from "./spotify-artwork";
 import desktopCss from "./lyssna/lyrics.css?inline";
+import settingsCss from "./lyssna/settings.css?inline";
 import viewCss from "./view.css?inline";
 
-type Channel = "stable" | "beta" | "canary";
-type Options = {
-  channel: Channel;
-  channels: Record<Channel, string | null>;
-  selectChannel: (channel: Channel) => Promise<void>;
-};
-
-function SyncedLyrics({ lyrics, host }: { lyrics: Lyrics; host: Host }) {
-  const scroller = useRef<HTMLDivElement>(null);
-  const lines = useRef<(HTMLButtonElement | null)[]>([]);
-
+function usePosition(host: Host, playing: boolean) {
+  const [position, setPosition] = useState(host.position);
   useEffect(() => {
-    if (!lyrics.synced) return;
-    const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const animator = new LyricAnimator(lyrics, (index) => lines.current[index] ?? null, reduceMotion);
-    let current = -2;
+    const update = () => setPosition(host.position());
+    const unwatch = host.watch(update, true);
+    update();
+    if (!playing) return unwatch;
     let frame = 0;
-    let inspected = 0;
-    let previousTime = -1;
-    let previousFrame = 0;
-
-    function update(now: number) {
-      frame = requestAnimationFrame(update);
-      const time = host.position();
-      if (!Number.isFinite(time) || time === previousTime) return;
-      if (previousTime < 0 || Math.abs(time - previousTime) > Math.max(600, now - previousFrame + 350)) animator.reset();
-      previousTime = time;
-      previousFrame = now;
-      if (now >= inspected) {
-        inspected = now + 40;
-        const active = lyrics.lines.findLastIndex((line) => !line.background && line.start_ms <= time + 100);
-        if (active !== current) {
-          current = active;
-          const line = lines.current[active];
-          const box = scroller.current;
-          if (line && box) {
-            box.scrollTo({ top: line.offsetTop - box.clientHeight * 0.31, behavior: reduceMotion ? "instant" : "smooth" });
-          }
-        }
-        lyrics.lines.forEach((line, index) => {
-          const button = lines.current[index];
-          const singing = line.start_ms <= time + 100 && line.end_ms > time;
-          button?.classList.toggle("active", singing);
-          button?.classList.toggle("past", !singing && line.end_ms <= time);
-          button?.style.setProperty("--blur", `${reduceMotion || singing ? 0 : lineBlur(Math.min(5, Math.abs(index - active)))}px`);
-        });
+    let last = 0;
+    function tick(now: number) {
+      if (frameDue(last, now)) {
+        last = now;
+        update();
       }
-      animator.update(time);
+      frame = requestAnimationFrame(tick);
     }
-
-    frame = requestAnimationFrame(update);
-    return () => {
-      cancelAnimationFrame(frame);
-      animator.dispose();
-    };
-  }, [host, lyrics]);
-
-  return (
-    <div className={`lyrics-display${lyrics.synced ? "" : " static-lyrics"}`}>
-      <div ref={scroller} className="lyric-scroll" data-at-end="true">
-        <div className="lyric-spacer" />
-        {lyrics.lines.map((line, index) => (
-          <button
-            key={index}
-            type="button"
-            className={`lyric-line${line.opposite ? " opposite" : ""}${line.background ? " background-vocal" : ""}`}
-            ref={(node) => { lines.current[index] = node; }}
-            disabled={!lyrics.synced}
-            onClick={() => host.seek(line.start_ms)}
-          >
-            <span className="lyric-main">
-              {line.words.length ? wordGroups(line.words).map((words, group) => (
-                <LyricWord key={group} words={words} />
-              )) : <span className="lyric-plain">{line.text}</span>}
-            </span>
-          </button>
-        ))}
-        <div className="lyric-spacer" />
-      </div>
-    </div>
-  );
+    frame = requestAnimationFrame(tick);
+    return () => { cancelAnimationFrame(frame); unwatch(); };
+  }, [host, playing]);
+  return position;
 }
 
-function LyricsForTrack({ track, host }: { track: Track; host: Host }) {
+function useTrackLyrics(trackId: string) {
   const [lyrics, setLyrics] = useState<Lyrics>();
   const [waiting, setWaiting] = useState(true);
-
   useEffect(() => {
     let live = true;
     let timer = 0;
     const deadline = Date.now() + 15_000;
-
     async function read() {
-      const lyrics = await readSpicyLyrics(track.id).catch(() => undefined);
+      const lyrics = await readSpicyLyrics(trackId).catch(() => undefined);
       if (!live) return;
       if (lyrics) {
         setLyrics(lyrics);
@@ -111,102 +62,242 @@ function LyricsForTrack({ track, host }: { track: Track; host: Host }) {
       setWaiting(pending);
       timer = window.setTimeout(read, pending ? 500 : 3_000);
     }
-
     void read();
     return () => { live = false; clearTimeout(timer); };
-  }, [track.id]);
-
-  if (lyrics && !lyrics.instrumental) return <SyncedLyrics host={host} lyrics={lyrics} />;
-  return <p className="lyrics-message" role="status">
-    {lyrics?.instrumental ? "Instrumental" : waiting ? "Waiting for Spicy Lyrics…" : "Lyrics unavailable for this track."}
-  </p>;
+  }, [trackId]);
+  return { lyrics, waiting };
 }
 
-function LyricsView({ host, options, close }: { host: Host; options: Options; close: () => void }) {
+function LyricsForTrack({ track, host, playing, settings, compact = false }: {
+  track: Track; host: Host; playing: boolean; settings: Settings; compact?: boolean;
+}) {
+  const { lyrics, waiting } = useTrackLyrics(track.id);
+  const duration = host.duration();
+  const position = usePosition(host, playing);
+  const time = position + settings.lyric_offset_ms + (settings.lyric_song_offsets[track.id] ?? 0);
+  const rendered = useMemo(() => filterWords(displayLyrics(lyrics, settings.experimental_word_sync,
+    settings.romanized && { below: settings.romanization_below && !settings.space_gravity }, duration), settings.lyrics_word_filter),
+  [lyrics, duration, settings.experimental_word_sync, settings.romanized, settings.romanization_below, settings.space_gravity, settings.lyrics_word_filter]);
+  const upcoming = !compact && settings.lyrics_up_next && duration > 0 && position >= duration - 30_000 ? host.upcoming() : undefined;
+  const upNext = upcoming && <div className="lyrics-up-next">
+    <button type="button" className="lyrics-up-next-body first" onClick={host.next}>
+      {upcoming.image && <img className="cover" src={upcoming.image} alt="" />}
+      <span className="lyrics-up-next-text"><small>Up next</small>
+        <strong className="lyrics-up-next-title">{upcoming.title}</strong>
+        <span className="lyrics-up-next-artist">{upcoming.artist}</span></span>
+    </button>
+  </div>;
+
+  if (rendered && settings.space_gravity && !compact && rendered.synced && rendered.lines.some((line) => line.words.length)) {
+    return <SpaceGravityLyrics lyrics={rendered} time={time} reduceMotion={settings.reduce_motion}
+      tuning={settings.lyrics_animator} onSeek={(ms) => host.seek(Math.max(0, ms - (settings.lyrics_seek_compensation ? 300 : 0)))}
+      highlighter={settings.lyrics_highlighter ? markerColour(settings.lyrics_highlighter_color) : undefined}
+      linkWidth={settings.gravity_links ? settings.gravity_link_width / 100 : 0}
+      credits={<>{rendered.songwriters?.length ? <p className="writer-credits">Written by {rendered.songwriters.join(", ")}</p> : null}
+        <LyricCredits lyrics={rendered} expanded />{upNext}</>} />;
+  }
+  if (rendered) return <LyricsDisplay lyrics={rendered} positionMs={time} settings={settings}
+    onSeek={host.seek} compact={compact} upNext={upNext} />;
+  if (waiting && settings.lyrics_skeleton) return <LyricsSkeleton />;
+  if (!waiting && !settings.lyrics_no_lyrics_notice) return null;
+  return <div className="lyrics-message" role="status"><MicVocal />
+    <h2>{waiting ? "Finding lyrics…" : "Lyrics unavailable"}</h2>
+  </div>;
+}
+
+function NowPlayingCard({ host, open }: { host: Host; open: () => void }) {
   const [track, setTrack] = useState(host.track);
   const [playing, setPlaying] = useState(host.playing);
-  const [switching, setSwitching] = useState(false);
-  const [error, setError] = useState(false);
-
+  const [settings, setSettings] = useState(readSettings);
   useEffect(() => host.watch(() => {
-    setTrack(host.track());
+    const next = host.track();
+    setTrack((old) => next?.id === old?.id ? old : next);
     setPlaying(host.playing());
   }), [host]);
-
-  async function select(channel: Channel) {
-    setSwitching(true);
-    setError(false);
-    try {
-      await options.selectChannel(channel);
-    } catch {
-      setError(true);
-    } finally {
-      setSwitching(false);
-    }
-  }
-
-  return (
-    <>
-      {track?.cover && <img className="lyrics-background" src={track.cover} alt="" />}
-      <section className="lyrics-page" aria-label="Lyssna Lyrics">
-        <div className="lyrics-album">
-          {track?.cover && <img className="cover" src={track.cover} alt="" />}
-          <div className="lyrics-title"><strong className="song-title">{track?.title}</strong></div>
-          <div className="lyrics-artists">{track?.artists}</div>
-        </div>
-        <div className="lyrics-body">
-          {track ? <LyricsForTrack key={track.id} track={track} host={host} /> : <p className="lyrics-message">Play a song to see its lyrics.</p>}
-        </div>
-      </section>
-      <div className="lyrics-actions">
-        {error && <span role="alert">Couldn’t load that build.</span>}
-        <button type="button" onClick={host.toggle}>{playing ? "Pause" : "Play"}</button>
-        <select aria-label="Build channel" value={options.channel} disabled={switching} onChange={(event) => void select(event.target.value as Channel)}>
-          {(Object.keys(options.channels) as Channel[]).map((channel) => (
-            <option key={channel} value={channel} disabled={!options.channels[channel]}>
-              {channel[0].toUpperCase() + channel.slice(1)}{options.channels[channel] ? "" : " (no build)"}
-            </option>
-          ))}
-        </select>
-        <button type="button" onClick={close}>Close</button>
-      </div>
-    </>
-  );
+  useEffect(() => {
+    const read = () => setSettings(readSettings());
+    window.addEventListener(settingsEvent, read);
+    return () => window.removeEventListener(settingsEvent, read);
+  }, []);
+  if (!track || settings.lyrics_hide_npv) return null;
+  return <aside className={`lyssna-now-playing-card${settings.lyrics_hide_npv_empty ? " hide-empty" : ""}`} aria-label="Lyssna Lyrics">
+    <header><h2>Lyrics</h2><button className="icon-button" type="button" aria-label="Open lyrics" onClick={open}><MicVocal size={18} /></button></header>
+    <div className="lyssna-now-playing-lines"><LyricsForTrack key={track.id} track={track} host={host} playing={playing} settings={settings} compact /></div>
+  </aside>;
 }
 
-export default function start(options: Options) {
+function clock(ms: number) {
+  const seconds = Math.max(0, Math.floor(ms / 1000));
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+function FullscreenControls({ host, playing, settings }: { host: Host; playing: boolean; settings: Settings }) {
+  const position = usePosition(host, playing);
+  const duration = host.duration();
+  const [volume, setVolume] = useState(host.volume);
+  const volumeSlider = settings.fullscreen_volume !== "off" && <input aria-label="Volume" type="range" min={0} max={1} step={0.01}
+    value={volume} onChange={(event) => { setVolume(event.target.valueAsNumber); host.setVolume(event.target.valueAsNumber); }} />;
+  const always = settings.fullscreen_always_show;
+  return <div className={`lyssna-playback${settings.glass_seek ? " glass" : ""}`} data-always={always}>
+    <div className="lyssna-seek"><span>{clock(position)}</span><input aria-label="Seek" type="range" min={0} max={duration || 1}
+      value={Math.min(position, duration)} onChange={(event) => host.seek(event.target.valueAsNumber)} /><span>{clock(duration)}</span></div>
+    <div className="lyssna-transport">
+      {settings.fullscreen_volume === "left" && volumeSlider}
+      <button type="button" className="icon-button" aria-label="Previous" onClick={host.previous}><SkipPreviousIcon /></button>
+      <button type="button" className="icon-button" aria-label={playing ? "Pause" : "Play"} onClick={host.toggle}>
+        {playing ? <FullscreenPauseIcon /> : <FullscreenPlayIcon />}
+      </button>
+      <button type="button" className="icon-button" aria-label="Next" onClick={host.next}><SkipNextIcon /></button>
+      {settings.fullscreen_volume === "right" && volumeSlider}
+    </div>
+    {settings.fullscreen_volume === "below" && volumeSlider}
+  </div>;
+}
+
+function LyricsView({ host, options, close, parent }: { host: Host; options: BuildOptions; close: () => void; parent: HTMLElement }) {
+  const [track, setTrack] = useState(host.track);
+  const [playing, setPlaying] = useState(host.playing);
+  const [settings, setSettings] = useState(readSettings);
+  const [showSettings, setShowSettings] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+  const [narrow, setNarrow] = useState(false);
+  const timer = useRef<number>(0);
+  const settingsRef = useRef(settings);
+  const coverColour = useArtworkColor(track?.cover);
+  const canvas = useCanvas(track?.id, settings.canvas_lyrics && !settings.lyrics_hide_artwork);
+
+  function change(patch: Partial<Settings>) {
+    const next = { ...settingsRef.current, ...patch };
+    settingsRef.current = next;
+    saveSettings(next);
+    setSettings(next);
+  }
+
+  function toggleFullscreen() {
+    if (!fullscreen || !settings.fullscreen_animate_close || settings.reduce_motion) {
+      setFullscreen(!fullscreen);
+      return;
+    }
+    if (leaving) return;
+    setLeaving(true);
+    timer.current = window.setTimeout(() => { setLeaving(false); setFullscreen(false); }, 180);
+  }
+
+  useEffect(() => () => clearTimeout(timer.current), []);
+  useEffect(() => host.watch(() => {
+    const next = host.track();
+    setTrack((old) => next?.id === old?.id && next?.cover === old?.cover ? old : next);
+    setPlaying(host.playing());
+  }), [host]);
+  useEffect(() => {
+    const observer = new ResizeObserver(([entry]) => setNarrow(entry.contentRect.width < 650));
+    observer.observe(parent);
+    return () => observer.disconnect();
+  }, [parent]);
+  useEffect(() => {
+    parent.classList.toggle("immersive", fullscreen);
+    parent.classList.toggle("lyssna-slide-away", leaving);
+  }, [parent, fullscreen, leaving]);
+  useEffect(() => {
+    setFrameCap(settings.animation_fps_cap_enabled ? settings.animation_fps_cap : 0);
+  }, [settings.animation_fps_cap_enabled, settings.animation_fps_cap]);
+  useEffect(() => {
+    const update = () => setWindowActivity({ minimized: document.hidden, focused: document.hasFocus() });
+    update();
+    for (const event of ["visibilitychange", "focus", "blur"]) window.addEventListener(event, update);
+    return () => { for (const event of ["visibilitychange", "focus", "blur"]) window.removeEventListener(event, update); };
+  }, []);
+  useEffect(() => {
+    const update = () => setWindowPosition(window.screenX, window.screenY);
+    update();
+    if (!settings.space_gravity || settings.reduce_motion) return;
+    const id = window.setInterval(update, 100);
+    return () => clearInterval(id);
+  }, [settings.space_gravity, settings.reduce_motion]);
+  useEffect(() => {
+    const keyboard = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" && event.key !== "F11") return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (showSettings) setShowSettings(false);
+      else if (event.key === "F11" || (fullscreen && !settings.lyrics_escape_exits)) toggleFullscreen();
+      else close();
+    };
+    document.addEventListener("keydown", keyboard);
+    return () => document.removeEventListener("keydown", keyboard);
+  });
+
+  const background = settings.lyrics_background;
+  const hasAmbience = track?.cover && (background === "animated" || background === "static");
+  const className = `lyrics-page ${narrow || settings.lyrics_compact ? "narrow" : ""} ${settings.space_gravity ? "space-gravity" : ""}
+    ${settings.lyrics_hide_artwork ? "no-artwork" : ""} ${settings.lyrics_artwork_right ? "artwork-right" : ""}
+    ${background === "color" ? "colour-background" : ""} ${settings.lyrics_toolbar_bottom ? "toolbar-bottom" : ""} ${settings.reduce_motion ? "reduce-motion" : ""}`;
+  const pageStyle = { "--lyric-size": `${Math.round(settings.lyric_size * 1.6)}px`, "--lyric-font": settings.lyric_font || undefined,
+    "--lyrics-cover-color": coverColour, "--hero": coverColour } as CSSProperties;
+  return <>
+    {hasAmbience && <Ambience image={track.cover} animate={playing && background === "animated"}
+      reduceMotion={settings.reduce_motion} followCanvas={canvas ? "window" : false} />}
+    {track?.cover && background === "cover" && <img className="lyrics-background" src={track.cover}
+      style={{ "--artwork-blur": `${settings.lyrics_background_blur}px` } as CSSProperties} alt="" />}
+    <section className={className} aria-label="Lyssna Lyrics" style={pageStyle}>
+      {track ? <>
+        <div className="lyrics-album">
+          {(canvas || track.cover) && <div className="lyrics-media">{canvas
+            ? <CanvasArtwork src={canvas} cover={track.cover} playing={playing && !settings.reduce_motion} />
+            : <img className={`cover${settings.cover_animation && !settings.reduce_motion ? " crossfade" : ""}`} key={track.cover} src={track.cover} alt="" />}</div>}
+          <div className="lyrics-details"><div className="lyrics-title"><strong className="song-title">{track.title}</strong></div>
+            <div className="lyrics-artists">{track.artists}</div></div>
+        </div>
+        <div className="lyrics-body"><LyricsForTrack key={track.id} track={track} host={host} playing={playing} settings={settings} /></div>
+      </> : <div className="lyrics-message"><Music2 /><h2>Play something you love</h2><p>Your lyrics will appear here.</p></div>}
+      {track && settings.lyrics_visualiser && <SpotifyVisualiser key={track.id} host={host} trackId={track.id}
+        opacity={settings.lyrics_visualiser_opacity} playing={playing && !settings.reduce_motion} />}
+      <div className="lyrics-toolbar" aria-label="View controls">
+        <button type="button" className="icon-button" aria-label="Show translations" aria-pressed={settings.lyrics_translations}
+          onClick={() => change({ lyrics_translations: !settings.lyrics_translations })}><TranslateIcon /></button>
+        <button type="button" className="icon-button" aria-label="Experimental word sync" aria-pressed={settings.experimental_word_sync}
+          onClick={() => change({ experimental_word_sync: !settings.experimental_word_sync })}><WordSyncIcon /></button>
+        <button type="button" className="icon-button" aria-label="Compact lyrics" aria-pressed={settings.lyrics_compact}
+          onClick={() => change({ lyrics_compact: !settings.lyrics_compact })}><CompactIcon /></button>
+        <button type="button" className="icon-button" aria-label="Hide artwork" aria-pressed={settings.lyrics_hide_artwork}
+          onClick={() => change({ lyrics_hide_artwork: !settings.lyrics_hide_artwork })}><HideArtworkIcon /></button>
+        <button type="button" className="icon-button" aria-label="Artwork on the right" aria-pressed={settings.lyrics_artwork_right}
+          onClick={() => change({ lyrics_artwork_right: !settings.lyrics_artwork_right })}><SwapSidesIcon /></button>
+        <button type="button" className="icon-button" aria-label={fullscreen ? "Exit full screen" : "Full screen"}
+          aria-pressed={fullscreen} onClick={toggleFullscreen}><FullScreenIcon /></button>
+        <button type="button" className="icon-button" aria-label="Lyssna settings" onClick={() => setShowSettings(true)}><Settings2 size={18} /></button>
+        <button type="button" className="icon-button" aria-label="Close lyrics" onClick={close}><X size={20} /></button>
+      </div>
+      {fullscreen && <FullscreenControls host={host} playing={playing} settings={settings} />}
+    </section>
+    {showSettings && <SettingsPanel settings={settings} change={change} close={() => setShowSettings(false)} options={options} trackId={track?.id} />}
+  </>;
+}
+
+export default function start(options: BuildOptions) {
   const host = getHost();
+  const settings = readSettings();
+  setFrameCap(settings.animation_fps_cap_enabled ? settings.animation_fps_cap : 0);
   const stylesheet = document.createElement("style");
-  stylesheet.textContent = desktopCss + "\n" + viewCss;
+  stylesheet.textContent = `${desktopCss}\n${settingsCss}\n${viewCss}`;
   document.head.append(stylesheet);
   const stopProvider = startSpicyProvider();
   let close: (() => void) | undefined;
+  let removeCard: (() => void) | undefined;
+  let card: HTMLElement | undefined;
 
   function open() {
-    if (close) return;
+    if (close) { close(); return; }
     const parent = document.createElement("div");
     parent.className = "lyssna-lyrics-view";
-    document.body.append(parent);
+    const main = host.mainView();
+    (main ?? document.body).append(parent);
+    if (!main) parent.classList.add("lyssna-full-window");
     const root = host.mount(parent);
-    const dismiss = () => {
-      document.removeEventListener("keydown", escape);
-      root.unmount();
-      parent.remove();
-      close = undefined;
-    };
-    const escape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") dismiss();
-    };
+    const dismiss = () => { root.unmount(); parent.remove(); close = undefined; };
     close = dismiss;
-    root.render(<LyricsView host={host} options={options} close={dismiss} />);
-    document.addEventListener("keydown", escape);
-  }
-
-  function dispose() {
-    close?.();
-    removeButton();
-    stopProvider();
-    stylesheet.remove();
+    root.render(<LyricsView host={host} options={options} close={dismiss} parent={parent} />);
   }
 
   let removeButton: () => void;
@@ -217,5 +308,26 @@ export default function start(options: Options) {
     stylesheet.remove();
     throw error;
   }
-  return { dispose, open };
+
+  function attachCard() {
+    if (card?.isConnected) return;
+    removeCard?.();
+    removeCard = undefined;
+    const panel = document.querySelector(nowPlayingSelector);
+    if (!panel) return;
+    const container = document.createElement("div");
+    card = container;
+    container.className = "lyssna-lyrics-view lyssna-npv";
+    panel.append(container);
+    const root = host.mount(container);
+    root.render(<NowPlayingCard host={host} open={() => { if (!close) open(); }} />);
+    removeCard = () => { root.unmount(); container.remove(); };
+  }
+  const observer = new MutationObserver(attachCard);
+  observer.observe(document.body, { childList: true, subtree: true });
+  attachCard();
+  return {
+    dispose() { observer.disconnect(); removeCard?.(); close?.(); removeButton(); stopProvider(); stylesheet.remove(); },
+    open,
+  };
 }

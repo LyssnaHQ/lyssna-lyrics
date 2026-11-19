@@ -42,7 +42,11 @@ mkdirSync(entrypoint, { recursive: true });
 copyFileSync("loader/lyssna-lyrics.mjs", join(output, "spotikit", "extension.js"));
 copyFileSync("loader/spotikit.json", join(output, "spotikit", "spotikit.json"));
 const notices = readFileSync("THIRD_PARTY_NOTICES.md", "utf8");
-write(join(host, "builds", filename), `/*\n${notices.trim()}\n*/\n${readFileSync(payload, "utf8")}`);
+const licenses = ["lucide-react/LICENSE", "@kawarp/core/LICENSE", "transliteration/LICENSE.txt"]
+  .map((path) => readFileSync(join("node_modules", path), "utf8").trim());
+// Use line comments so a third-party notice can contain a literal block-comment terminator.
+const header = [notices.trim(), ...licenses].join("\n\n").split(/\r?\n/).map((line) => `// ${line}`).join("\n");
+write(join(host, "builds", filename), `${header}\n${readFileSync(payload, "utf8")}`);
 copy("loader/entrypoint.mjs", join(entrypoint, "entrypoint.mjs"));
 copy("loader/lyssna-lyrics.mjs", join(host, "rewrite", "lyssna-lyrics.mjs"));
 write(channelsFile, JSON.stringify(channels, null, 2) + "\n");

@@ -8,4 +8,8 @@ export const hosts = globalThis as typeof globalThis & {
 export const hostReact = hosts.SpotiKit?.React ?? hosts.Spicetify?.React;
 if (!hostReact) throw new Error("Spotify React is unavailable");
 
-export const { createElement, Fragment, memo, useEffect, useMemo, useRef, useState } = hostReact;
+export const {
+  createContext, createElement, forwardRef, Fragment, memo, useCallback, useContext,
+  useEffect, useId, useLayoutEffect, useMemo, useRef, useState,
+} = hostReact;
+export default hostReact;
