@@ -4,7 +4,7 @@ import {
   ambienceFps,
   ambienceSize,
   onWindowActivity,
-  windowActivity,
+  windowActivity as openerActivity,
 } from "./window-activity";
 export const Ambience = memo(function Ambience({
   image,
@@ -49,6 +49,9 @@ export const Ambience = memo(function Ambience({
   useEffect(() => {
     const canvas = surface.current;
     if (!canvas) return;
+    const page = canvas.ownerDocument;
+    const view = page.defaultView ?? window;
+    const windowActivity = view === window ? openerActivity : () => ({ minimized: page.hidden, focused: page.hasFocus() });
     let engine: Kawarp;
     try {
       engine = new Kawarp(canvas, {
@@ -80,11 +83,11 @@ export const Ambience = memo(function Ambience({
       settle = 0,
       visible = true,
       disposed = false;
-    const reduced = matchMedia("(prefers-reduced-motion: reduce)"),
+    const reduced = view.matchMedia("(prefers-reduced-motion: reduce)"),
       allowed = () =>
         !disposed &&
         visible &&
-        !document.hidden &&
+        !page.hidden &&
         ambienceFps(windowActivity()) > 0 &&
         motion.current.animate &&
         !motion.current.reduceMotion &&
@@ -92,7 +95,7 @@ export const Ambience = memo(function Ambience({
     const settling = () =>
       !disposed &&
       visible &&
-      !document.hidden &&
+      !page.hidden &&
       !windowActivity().minimized &&
       performance.now() < settle;
     const tick = (time: number) => {
@@ -101,10 +104,10 @@ export const Ambience = memo(function Ambience({
         engine.renderFrame();
         last = time;
       }
-      frame = requestAnimationFrame(tick);
+      frame = view.requestAnimationFrame(tick);
     };
     const restart = () => {
-      cancelAnimationFrame(frame);
+      view.cancelAnimationFrame(frame);
       if (disposed) return;
       engine.start();
       engine.stop();
@@ -113,7 +116,7 @@ export const Ambience = memo(function Ambience({
       // the drawing, so the engine is marked playing without that loop.
       if (following.current && allowed())
         (engine as unknown as { isPlaying: boolean }).isPlaying = true;
-      if (allowed() || settling()) frame = requestAnimationFrame(tick);
+      if (allowed() || settling()) frame = view.requestAnimationFrame(tick);
     };
     resume.current = (settleMs = 0) => {
       settle = Math.max(settle, performance.now() + settleMs);
@@ -144,18 +147,24 @@ export const Ambience = memo(function Ambience({
       restart();
     });
     observer.observe(canvas);
-    document.addEventListener("visibilitychange", restart);
+    page.addEventListener("visibilitychange", restart);
     // Background windows redraw a smaller canvas at a lower frame rate.
-    const stopActivity = onWindowActivity(resize);
+    const stopActivity = view === window ? onWindowActivity(resize) : undefined;
+    if (view !== window) {
+      view.addEventListener("focus", resize);
+      view.addEventListener("blur", resize);
+    }
     reduced.addEventListener("change", restart);
     return () => {
       disposed = true;
       canvas.removeEventListener("webglcontextlost", lost);
-      cancelAnimationFrame(frame);
+      view.cancelAnimationFrame(frame);
       sizes.disconnect();
       observer.disconnect();
-      document.removeEventListener("visibilitychange", restart);
-      stopActivity();
+      page.removeEventListener("visibilitychange", restart);
+      stopActivity?.();
+      view.removeEventListener("focus", resize);
+      view.removeEventListener("blur", resize);
       reduced.removeEventListener("change", restart);
       resume.current = null;
       renderer.current = null;
@@ -201,7 +210,7 @@ export const Ambience = memo(function Ambience({
           sampleWidth: 72,
           sampleHeight: 128,
           // Background windows sample fewer frames, as they draw fewer.
-          frameRate: Math.max(1, ambienceFps(windowActivity())),
+          frameRate: Math.max(1, ambienceFps(openerActivity())),
           // Fast cuts ease in instead of flashing across the panel.
           smoothing: 100,
           onError: () => {

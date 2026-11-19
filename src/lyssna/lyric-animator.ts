@@ -84,6 +84,7 @@ export class LyricAnimator {
     private line: (index: number) => HTMLElement | null,
     private reduceMotion: boolean,
     private simple = false,
+    private view: Window = window,
   ) {
     this.ends = lyrics.lines.map(vocalEnd);
   }
@@ -116,20 +117,20 @@ export class LyricAnimator {
   }
 
   dispose() {
-    cancelAnimationFrame(this.frame);
+    this.view.cancelAnimationFrame(this.frame);
     this.reset();
   }
   private run = () => {
-    cancelAnimationFrame(this.frame);
+    this.view.cancelAnimationFrame(this.frame);
     const now = performance.now();
     // Under a frame rate cap, wait for the next allowed frame.
     if (!frameDue(this.last, now)) {
-      this.frame = requestAnimationFrame(this.run);
+      this.frame = this.view.requestAnimationFrame(this.run);
       return;
     }
     const seconds = Math.min(0.1, Math.max(0, (now - this.last) / 1000));
     this.last = now;
-    this.frame = this.step(seconds) ? requestAnimationFrame(this.run) : 0;
+    this.frame = this.step(seconds) ? this.view.requestAnimationFrame(this.run) : 0;
   };
   /** Rests a line's words. A finished line keeps their layers: dropping
    * them redraws the text a fraction of a pixel off, so its words visibly

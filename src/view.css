@@ -30,11 +30,12 @@
 
 .lyssna-lyrics-view .lyrics-background {
   position: absolute;
-  inset: -15%;
-  width: 130%;
-  height: 130%;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   object-fit: cover;
-  filter: blur(var(--artwork-blur, 70px)) brightness(0.43) saturate(1.4);
+  filter: blur(var(--artwork-blur, 0px)) brightness(0.45);
+  transform: scale(1.08);
   pointer-events: none;
 }
 
@@ -49,6 +50,39 @@
 
 .lyssna-lyrics-view .lyrics-page {
   box-sizing: border-box;
+}
+
+.lyssna-popout-view {
+  font-family: system-ui, sans-serif;
+  --lead-top: 22vh;
+}
+
+.lyssna-popout-view .lyrics-message {
+  text-align: center;
+}
+
+.lyssna-popout-view .lyrics-popout:focus-within :is(.lyrics-popout-close, .lyrics-popout-controls) {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.lyssna-popout-view .lyrics-popout:focus-within .lyrics-popout-seek {
+  padding-bottom: 76px;
+}
+
+.lyssna-popout-error {
+  position: absolute;
+  z-index: 11;
+  top: 60px;
+  right: 16px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #181818;
+}
+
+.lyssna-lyrics-view .toolbar-bottom > .lyssna-popout-error {
+  top: auto;
+  bottom: 60px;
 }
 
 .lyssna-lyrics-view .lyrics-media > .cover {

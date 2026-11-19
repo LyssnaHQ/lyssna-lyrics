@@ -2,12 +2,23 @@ import type { ReactNode } from "react";
 import { hosts } from "./host-react";
 
 type Removal = () => void;
+type RepeatMode = "off" | "context" | "track";
+type ButtonOptions = { label: string; icon: string; onClick: () => void };
+type Button = { remove(): void };
 export type AudioSegment = { start: number; duration: number; pitches: number[]; loudness_max: number };
 type AudioAnalysis = { segments?: AudioSegment[] };
+type ImageSource = { url?: string; width?: number; maxWidth?: number };
+type HeaderImages = { sources?: ImageSource[] };
+type ArtistHeaderResult = {
+  data?: { artistUnion?: {
+    headerImage?: { data?: HeaderImages };
+    visuals?: { headerImage?: HeaderImages };
+  } };
+};
 type SpotifyTrack = {
   uri?: string;
   name?: string;
-  artists?: Array<{ name?: string }>;
+  artists?: Array<{ name?: string; uri?: string; id?: string }>;
   images?: Array<{ url?: string }>;
   album?: { images?: Array<{ url?: string }> };
   metadata?: Record<string, string>;
@@ -17,6 +28,10 @@ export type Spicetify = {
   Config?: { extensions?: unknown };
   Platform?: Record<string, unknown>;
   CosmosAsync?: unknown;
+  GraphQL?: {
+    Definitions: Record<string, unknown>;
+    Request(definition: unknown, variables: Record<string, unknown>): Promise<ArtistHeaderResult>;
+  };
   getAudioData?(uri: string): Promise<AudioAnalysis | null>;
   Queue?: { nextTracks?: { contextTrack?: SpotifyTrack; uri?: string }[] };
   Player: {
@@ -25,6 +40,7 @@ export type Spicetify = {
     getProgress(): number;
     getDuration?(): number;
     getRepeat?(): number;
+    getShuffle?(): boolean;
     getVolume?(): number;
     getHeart?(): boolean;
     isPlaying(): boolean;
@@ -33,6 +49,9 @@ export type Spicetify = {
     next?(): void;
     back?(): void;
     setVolume?(level: number): void;
+    setRepeat?(mode: number): void;
+    toggleShuffle?(): void;
+    toggleHeart?(): void;
     addEventListener(event: string, callback: (event: unknown) => void): void;
     removeEventListener(event: string, callback: (event: unknown) => void): void;
   };
@@ -44,7 +63,10 @@ type SpotiKit = {
   Platform: Record<string, unknown>;
   Http: unknown;
   Audio?: { analysis(uri: string): Promise<AudioAnalysis | null> };
-  GraphQL?: { definitions?: Record<string, unknown>; request?: (...args: unknown[]) => unknown };
+  GraphQL?: {
+    definitions?: Record<string, unknown>;
+    request?(definition: unknown, variables: Record<string, unknown>): Promise<ArtistHeaderResult>;
+  };
   URI?: object;
   Queue?: { next: { title: string; artist: string; image: string }[] };
   Player: {
@@ -53,7 +75,8 @@ type SpotiKit = {
     isPlaying: boolean;
     position: number;
     duration: number;
-    repeat: "off" | "context" | "track";
+    repeat: RepeatMode;
+    shuffle: boolean;
     volume: number;
     liked: boolean;
     seek(ms: number): void;
@@ -61,13 +84,17 @@ type SpotiKit = {
     next(): void;
     previous(): void;
     setVolume(level: number): void;
+    setRepeat?(mode: RepeatMode): unknown;
+    setShuffle?(on: boolean): unknown;
+    setLiked?(liked: boolean): unknown;
     on(event: string, listener: (event: unknown) => void): Removal;
   };
-  Topbar: { add(options: { label: string; icon: string; onClick: () => void }): { remove(): void } };
+  Playbar?: { add(options: ButtonOptions): Button };
+  Topbar: { add(options: ButtonOptions): Button };
 };
 
 export type Root = { render(node: ReactNode): void; unmount(): void };
-export type Track = { id: string; title: string; artists: string; cover: string };
+export type Track = { id: string; title: string; artists: string; artistUri?: string; cover: string };
 
 export const spicetify = () => hosts.Spicetify as (typeof hosts.Spicetify & Spicetify) | undefined;
 export const spotikit = () => hosts.SpotiKit as (typeof hosts.SpotiKit & SpotiKit) | undefined;
@@ -77,6 +104,22 @@ const icon = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke
 
 function artwork(url: string) {
   return url.replace(/^spotify:image:/, "https://i.scdn.co/image/");
+}
+
+const repeatModes = ["off", "context", "track"] as const;
+
+function headerImage(result: ArtistHeaderResult) {
+  const artist = result?.data?.artistUnion;
+  const images = artist?.headerImage?.data?.sources ?? artist?.visuals?.headerImage?.sources ?? [];
+  let preferred: { url: string; width: number } | undefined;
+  for (const image of images) {
+    if (!image.url) continue;
+    const url = artwork(image.url);
+    if (!/^https:\/\/(?:i\.scdn\.co|image-cdn-[a-z0-9-]+\.spotifycdn\.com)\//i.test(url)) continue;
+    const width = image.maxWidth ?? image.width ?? 0;
+    if (!preferred || width > preferred.width) preferred = { url, width };
+  }
+  return preferred?.url;
 }
 
 export function getHost() {
@@ -89,15 +132,50 @@ export function getHost() {
   } | undefined;
   if ((!kit && !spice) || !dom) throw new Error("Spotify host is unavailable");
 
+  const spiceGraph = spice?.GraphQL;
+  const kitGraph = kit?.GraphQL;
+  const artistHeaders = new Map<string, Promise<string | undefined>>();
+  function artistHeader(artistUri: string, trackId: string) {
+    const cached = artistHeaders.get(artistUri);
+    if (cached) return cached;
+    const definitions = kitGraph?.definitions ?? spiceGraph?.Definitions;
+    const request = kitGraph?.request?.bind(kitGraph) ?? spiceGraph?.Request.bind(spiceGraph);
+    if (!definitions || !request) return;
+    const npv = definitions.queryNpvArtist;
+    const overview = definitions.queryArtistOverview;
+    if (!npv && !overview) return;
+    const pending = (async () => {
+      if (npv) {
+        const image = await request(npv, {
+          artistUri, trackUri: `spotify:track:${trackId}`, contributorsLimit: 10, contributorsOffset: 0,
+          enableRelatedVideos: false, enableRelatedAudioTracks: false,
+        }).then(headerImage).catch((error) => {
+          if (!overview) throw error;
+        });
+        if (image) return image;
+      }
+      if (overview) return headerImage(await request(overview, { uri: artistUri, locale: "", preReleaseV2: false, offset: 0, limit: 10 }));
+    })().catch(() => {
+      artistHeaders.delete(artistUri);
+      return undefined;
+    });
+    artistHeaders.set(artistUri, pending);
+    return pending;
+  }
+
   return {
     track(): Track | null {
       const track = kit ? kit.Player.track : spice?.Player.data?.item;
       const id = /^spotify:track:([A-Za-z0-9]+)$/.exec(track?.uri ?? "")?.[1];
       if (!id || !track) return null;
+      const artist = track.artists?.[0];
+      const artistUri = [artist?.uri, track.metadata?.artist_uri, artist?.id && `spotify:artist:${artist.id}`]
+        .find((uri) => uri && /^spotify:artist:[A-Za-z0-9]{22}$/.test(uri));
       return {
         id,
         title: track.name ?? track.metadata?.title ?? "",
         artists: track.artists?.map((artist) => artist.name).filter(Boolean).join(", ") || track.metadata?.artist_name || "",
+        artistUri,
         cover: artwork(track.images?.[0]?.url ?? track.album?.images?.[0]?.url ?? track.metadata?.image_url ?? ""),
       };
     },
@@ -110,6 +188,13 @@ export function getHost() {
     next: () => kit ? kit.Player.next() : spice?.Player.next?.(),
     volume: () => kit ? kit.Player.volume : spice?.Player.getVolume?.() ?? 0,
     setVolume: (level: number) => kit ? kit.Player.setVolume(level) : spice?.Player.setVolume?.(level),
+    repeat: () => kit ? kit.Player.repeat : repeatModes[spice?.Player.getRepeat?.() ?? 0] ?? "off",
+    setRepeat: (mode: RepeatMode) => kit ? kit.Player.setRepeat?.(mode) : spice?.Player.setRepeat?.(repeatModes.indexOf(mode)),
+    shuffle: () => kit ? kit.Player.shuffle : spice?.Player.getShuffle?.() ?? false,
+    toggleShuffle: () => kit ? kit.Player.setShuffle?.(!kit.Player.shuffle) : spice?.Player.toggleShuffle?.(),
+    liked: () => kit ? kit.Player.liked : spice?.Player.getHeart?.() ?? false,
+    toggleLiked: () => kit ? kit.Player.setLiked?.(!kit.Player.liked) : spice?.Player.toggleHeart?.(),
+    artistHeader,
     upcoming() {
       const next = kit?.Queue?.next[0];
       if (next) return { title: next.title, artist: next.artist, image: artwork(next.image ?? "") };
@@ -136,7 +221,7 @@ export function getHost() {
     },
     button(click: () => void): Removal {
       if (kit) {
-        const button = kit.Topbar.add({ label: "Lyssna Lyrics", icon, onClick: click });
+        const button = (kit.Playbar ?? kit.Topbar).add({ label: "Lyssna Lyrics", icon, onClick: click });
         return () => button.remove();
       }
       const button = new spice!.Playbar.Button("Lyssna Lyrics", icon, click, false, false, false);

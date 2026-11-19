@@ -115,7 +115,7 @@ return { Look: [
             <option value="animated">Animated artwork</option>
             <option value="static">Still artwork</option>
             <option value="cover">Cover art</option>
-            <option value="artist" disabled>Artist header</option>
+            <option value="artist">Artist header</option>
             <option value="color">Cover colour</option>
             <option value="none">None</option>
           </select>

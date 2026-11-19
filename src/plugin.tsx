@@ -3,12 +3,12 @@ import { MicVocal, Music2, Settings2, X } from "lucide-react";
 import { getHost, type Host, type Track } from "./host";
 import { useArtworkColor } from "./lyssna/artwork-color";
 import { Ambience } from "./lyssna/ambience";
-import { frameDue, setFrameCap } from "./lyssna/frame-cap";
+import { setFrameCap } from "./lyssna/frame-cap";
 import { FullscreenPauseIcon, FullscreenPlayIcon, SkipNextIcon, SkipPreviousIcon } from "./lyssna/fullscreen-icons";
 import { LyricsDisplay, LyricsSkeleton } from "./lyssna/renderer";
 import { markerColour } from "./lyssna/highlighter";
 import { SpaceGravityLyrics } from "./lyssna/space-gravity-lyrics";
-import { CompactIcon, FullScreenIcon, HideArtworkIcon, SwapSidesIcon, TranslateIcon, WordSyncIcon } from "./lyssna/toolbar-icons";
+import { CompactIcon, FullScreenIcon, HideArtworkIcon, PopoutIcon, SwapSidesIcon, TranslateIcon, WordSyncIcon } from "./lyssna/toolbar-icons";
 import type { Lyrics } from "./lyssna/types";
 import { setWindowActivity, setWindowPosition } from "./lyssna/window-activity";
 import { filterWords } from "./lyssna/word-filter";
@@ -18,33 +18,24 @@ import { SettingsPanel, type BuildOptions } from "./settings-panel";
 import { readSpicyLyrics, startSpicyProvider } from "./spicy";
 import { LyricCredits } from "./credits";
 import { CanvasArtwork, nowPlayingSelector, SpotifyVisualiser, useCanvas } from "./spotify-artwork";
+import { clock, usePlayback, usePosition } from "./playback";
+import { LyricsPopout, pictureInPicture } from "./popout";
 import desktopCss from "./lyssna/lyrics.css?inline";
 import settingsCss from "./lyssna/settings.css?inline";
 import viewCss from "./view.css?inline";
 
-function usePosition(host: Host, playing: boolean) {
-  const [position, setPosition] = useState(host.position);
+function useLiveSettings() {
+  const [settings, setSettings] = useState(readSettings);
   useEffect(() => {
-    const update = () => setPosition(host.position());
-    const unwatch = host.watch(update, true);
-    update();
-    if (!playing) return unwatch;
-    let frame = 0;
-    let last = 0;
-    function tick(now: number) {
-      if (frameDue(last, now)) {
-        last = now;
-        update();
-      }
-      frame = requestAnimationFrame(tick);
-    }
-    frame = requestAnimationFrame(tick);
-    return () => { cancelAnimationFrame(frame); unwatch(); };
-  }, [host, playing]);
-  return position;
+    const read = () => setSettings(readSettings());
+    window.addEventListener(settingsEvent, read);
+    read();
+    return () => window.removeEventListener(settingsEvent, read);
+  }, []);
+  return settings;
 }
 
-function useTrackLyrics(trackId: string) {
+function useTrackLyrics(trackId: string, view: Window) {
   const [lyrics, setLyrics] = useState<Lyrics>();
   const [waiting, setWaiting] = useState(true);
   useEffect(() => {
@@ -60,25 +51,25 @@ function useTrackLyrics(trackId: string) {
       }
       const pending = Date.now() < deadline;
       setWaiting(pending);
-      timer = window.setTimeout(read, pending ? 500 : 3_000);
+      timer = view.setTimeout(read, pending ? 500 : 3_000);
     }
     void read();
-    return () => { live = false; clearTimeout(timer); };
-  }, [trackId]);
+    return () => { live = false; view.clearTimeout(timer); };
+  }, [trackId, view]);
   return { lyrics, waiting };
 }
 
-function LyricsForTrack({ track, host, playing, settings, compact = false }: {
-  track: Track; host: Host; playing: boolean; settings: Settings; compact?: boolean;
+function LyricsForTrack({ track, host, playing, settings, compact = false, view = window }: {
+  track: Track; host: Host; playing: boolean; settings: Settings; compact?: boolean; view?: Window;
 }) {
-  const { lyrics, waiting } = useTrackLyrics(track.id);
+  const { lyrics, waiting } = useTrackLyrics(track.id, view);
   const duration = host.duration();
-  const position = usePosition(host, playing);
+  const position = usePosition(host, playing, view);
   const time = position + settings.lyric_offset_ms + (settings.lyric_song_offsets[track.id] ?? 0);
   const rendered = useMemo(() => filterWords(displayLyrics(lyrics, settings.experimental_word_sync,
     settings.romanized && { below: settings.romanization_below && !settings.space_gravity }, duration), settings.lyrics_word_filter),
   [lyrics, duration, settings.experimental_word_sync, settings.romanized, settings.romanization_below, settings.space_gravity, settings.lyrics_word_filter]);
-  const upcoming = !compact && settings.lyrics_up_next && duration > 0 && position >= duration - 30_000 ? host.upcoming() : undefined;
+  const upcoming = view === window && !compact && settings.lyrics_up_next && duration > 0 && position >= duration - 30_000 ? host.upcoming() : undefined;
   const upNext = upcoming && <div className="lyrics-up-next">
     <button type="button" className="lyrics-up-next-body first" onClick={host.next}>
       {upcoming.image && <img className="cover" src={upcoming.image} alt="" />}
@@ -88,7 +79,7 @@ function LyricsForTrack({ track, host, playing, settings, compact = false }: {
     </button>
   </div>;
 
-  if (rendered && settings.space_gravity && !compact && rendered.synced && rendered.lines.some((line) => line.words.length)) {
+  if (rendered && view === window && settings.space_gravity && !compact && rendered.synced && rendered.lines.some((line) => line.words.length)) {
     return <SpaceGravityLyrics lyrics={rendered} time={time} reduceMotion={settings.reduce_motion}
       tuning={settings.lyrics_animator} onSeek={(ms) => host.seek(Math.max(0, ms - (settings.lyrics_seek_compensation ? 300 : 0)))}
       highlighter={settings.lyrics_highlighter ? markerColour(settings.lyrics_highlighter_color) : undefined}
@@ -106,19 +97,8 @@ function LyricsForTrack({ track, host, playing, settings, compact = false }: {
 }
 
 function NowPlayingCard({ host, open }: { host: Host; open: () => void }) {
-  const [track, setTrack] = useState(host.track);
-  const [playing, setPlaying] = useState(host.playing);
-  const [settings, setSettings] = useState(readSettings);
-  useEffect(() => host.watch(() => {
-    const next = host.track();
-    setTrack((old) => next?.id === old?.id ? old : next);
-    setPlaying(host.playing());
-  }), [host]);
-  useEffect(() => {
-    const read = () => setSettings(readSettings());
-    window.addEventListener(settingsEvent, read);
-    return () => window.removeEventListener(settingsEvent, read);
-  }, []);
+  const { track, playing } = usePlayback(host);
+  const settings = useLiveSettings();
   if (!track || settings.lyrics_hide_npv) return null;
   return <aside className={`lyssna-now-playing-card${settings.lyrics_hide_npv_empty ? " hide-empty" : ""}`} aria-label="Lyssna Lyrics">
     <header><h2>Lyrics</h2><button className="icon-button" type="button" aria-label="Open lyrics" onClick={open}><MicVocal size={18} /></button></header>
@@ -126,9 +106,12 @@ function NowPlayingCard({ host, open }: { host: Host; open: () => void }) {
   </aside>;
 }
 
-function clock(ms: number) {
-  const seconds = Math.max(0, Math.floor(ms / 1000));
-  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+function PopoutView({ host, view, close }: { host: Host; view: Window; close: () => void }) {
+  const { track, playing } = usePlayback(host);
+  const settings = useLiveSettings();
+  return <LyricsPopout host={host} view={view} close={close} track={track} playing={playing} settings={settings}>
+    {track && <LyricsForTrack key={track.id} track={track} host={host} playing={playing} settings={settings} view={view} />}
+  </LyricsPopout>;
 }
 
 function FullscreenControls({ host, playing, settings }: { host: Host; playing: boolean; settings: Settings }) {
@@ -154,18 +137,32 @@ function FullscreenControls({ host, playing, settings }: { host: Host; playing: 
   </div>;
 }
 
-function LyricsView({ host, options, close, parent }: { host: Host; options: BuildOptions; close: () => void; parent: HTMLElement }) {
-  const [track, setTrack] = useState(host.track);
-  const [playing, setPlaying] = useState(host.playing);
+function LyricsView({ host, options, close, parent, openPopout }: {
+  host: Host; options: BuildOptions; close: () => void; parent: HTMLElement; openPopout: () => Promise<void>;
+}) {
+  const { track, playing } = usePlayback(host);
   const [settings, setSettings] = useState(readSettings);
   const [showSettings, setShowSettings] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const [narrow, setNarrow] = useState(false);
+  const [popoutError, setPopoutError] = useState(false);
+  const [artistHeader, setArtistHeader] = useState<{ uri: string; url: string }>();
   const timer = useRef<number>(0);
   const settingsRef = useRef(settings);
   const coverColour = useArtworkColor(track?.cover);
   const canvas = useCanvas(track?.id, settings.canvas_lyrics && !settings.lyrics_hide_artwork);
+  const background = settings.lyrics_background;
+  const artistUri = track?.artistUri;
+  const trackId = track?.id;
+  useEffect(() => {
+    if (background !== "artist" || !artistUri || !trackId) return;
+    let current = true;
+    void host.artistHeader(artistUri, trackId)?.then((url) => {
+      if (current && url) setArtistHeader({ uri: artistUri, url });
+    });
+    return () => { current = false; };
+  }, [host, background, artistUri, trackId]);
 
   function change(patch: Partial<Settings>) {
     const next = { ...settingsRef.current, ...patch };
@@ -185,11 +182,6 @@ function LyricsView({ host, options, close, parent }: { host: Host; options: Bui
   }
 
   useEffect(() => () => clearTimeout(timer.current), []);
-  useEffect(() => host.watch(() => {
-    const next = host.track();
-    setTrack((old) => next?.id === old?.id && next?.cover === old?.cover ? old : next);
-    setPlaying(host.playing());
-  }), [host]);
   useEffect(() => {
     const observer = new ResizeObserver(([entry]) => setNarrow(entry.contentRect.width < 650));
     observer.observe(parent);
@@ -228,8 +220,9 @@ function LyricsView({ host, options, close, parent }: { host: Host; options: Bui
     return () => document.removeEventListener("keydown", keyboard);
   });
 
-  const background = settings.lyrics_background;
   const hasAmbience = track?.cover && (background === "animated" || background === "static");
+  const banner = background === "artist" && artistHeader?.uri === artistUri ? artistHeader?.url : undefined;
+  const backgroundImage = background === "cover" || background === "artist" ? banner || track?.cover : undefined;
   const className = `lyrics-page ${narrow || settings.lyrics_compact ? "narrow" : ""} ${settings.space_gravity ? "space-gravity" : ""}
     ${settings.lyrics_hide_artwork ? "no-artwork" : ""} ${settings.lyrics_artwork_right ? "artwork-right" : ""}
     ${background === "color" ? "colour-background" : ""} ${settings.lyrics_toolbar_bottom ? "toolbar-bottom" : ""} ${settings.reduce_motion ? "reduce-motion" : ""}`;
@@ -238,8 +231,9 @@ function LyricsView({ host, options, close, parent }: { host: Host; options: Bui
   return <>
     {hasAmbience && <Ambience image={track.cover} animate={playing && background === "animated"}
       reduceMotion={settings.reduce_motion} followCanvas={canvas ? "window" : false} />}
-    {track?.cover && background === "cover" && <img className="lyrics-background" src={track.cover}
-      style={{ "--artwork-blur": `${settings.lyrics_background_blur}px` } as CSSProperties} alt="" />}
+    {backgroundImage && <img className="lyrics-background" src={backgroundImage}
+      style={{ "--artwork-blur": `${settings.lyrics_background_blur}px` } as CSSProperties}
+      onError={banner ? () => setArtistHeader((current) => current?.url === banner && current.uri === artistUri ? undefined : current) : undefined} alt="" />}
     <section className={className} aria-label="Lyssna Lyrics" style={pageStyle}>
       {track ? <>
         <div className="lyrics-album">
@@ -266,9 +260,14 @@ function LyricsView({ host, options, close, parent }: { host: Host; options: Bui
           onClick={() => change({ lyrics_artwork_right: !settings.lyrics_artwork_right })}><SwapSidesIcon /></button>
         <button type="button" className="icon-button" aria-label={fullscreen ? "Exit full screen" : "Full screen"}
           aria-pressed={fullscreen} onClick={toggleFullscreen}><FullScreenIcon /></button>
+        {pictureInPicture && <button type="button" className="icon-button" aria-label="Pop out lyrics" onClick={() => {
+          setPopoutError(false);
+          void openPopout().catch(() => setPopoutError(true));
+        }}><PopoutIcon /></button>}
         <button type="button" className="icon-button" aria-label="Lyssna settings" onClick={() => setShowSettings(true)}><Settings2 size={18} /></button>
         <button type="button" className="icon-button" aria-label="Close lyrics" onClick={close}><X size={20} /></button>
       </div>
+      {popoutError && <div className="lyssna-popout-error" role="status">Spotify couldn’t open the lyrics pop-out.</div>}
       {fullscreen && <FullscreenControls host={host} playing={playing} settings={settings} />}
     </section>
     {showSettings && <SettingsPanel settings={settings} change={change} close={() => setShowSettings(false)} options={options} trackId={track?.id} />}
@@ -286,6 +285,41 @@ export default function start(options: BuildOptions) {
   let close: (() => void) | undefined;
   let removeCard: (() => void) | undefined;
   let card: HTMLElement | undefined;
+  let closePopout: (() => void) | undefined;
+  let opening = false;
+  let disposed = false;
+
+  async function openPopout() {
+    if (!pictureInPicture || opening || disposed) return;
+    if (closePopout) { closePopout(); return; }
+    opening = true;
+    try {
+      const view = await pictureInPicture.requestWindow({ width: 900, height: 640, disallowReturnToOpener: true });
+      if (disposed) { view.close(); return; }
+      try {
+        view.document.head.append(stylesheet.cloneNode(true));
+        const parent = view.document.createElement("div");
+        parent.className = "lyssna-lyrics-view lyssna-popout-view";
+        view.document.body.append(parent);
+        const root = host.mount(parent);
+        function release() {
+          view.removeEventListener("pagehide", release);
+          closePopout = undefined;
+          root.unmount();
+        }
+        const dismiss = () => { release(); view.close(); };
+        view.addEventListener("pagehide", release);
+        closePopout = dismiss;
+        root.render(<PopoutView host={host} view={view} close={dismiss} />);
+      } catch (error) {
+        if (closePopout) closePopout();
+        else view.close();
+        throw error;
+      }
+    } finally {
+      opening = false;
+    }
+  }
 
   function open() {
     if (close) { close(); return; }
@@ -297,7 +331,7 @@ export default function start(options: BuildOptions) {
     const root = host.mount(parent);
     const dismiss = () => { root.unmount(); parent.remove(); close = undefined; };
     close = dismiss;
-    root.render(<LyricsView host={host} options={options} close={dismiss} parent={parent} />);
+    root.render(<LyricsView host={host} options={options} close={dismiss} parent={parent} openPopout={openPopout} />);
   }
 
   let removeButton: () => void;
@@ -327,7 +361,16 @@ export default function start(options: BuildOptions) {
   observer.observe(document.body, { childList: true, subtree: true });
   attachCard();
   return {
-    dispose() { observer.disconnect(); removeCard?.(); close?.(); removeButton(); stopProvider(); stylesheet.remove(); },
+    dispose() {
+      disposed = true;
+      observer.disconnect();
+      removeCard?.();
+      closePopout?.();
+      close?.();
+      removeButton();
+      stopProvider();
+      stylesheet.remove();
+    },
     open,
   };
 }

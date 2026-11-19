@@ -219,6 +219,7 @@ export function LyricsDisplay({
       (index) => lines.current[index] ?? null,
       !!settings.reduce_motion,
       !!settings.lyrics_simple,
+      scroll.current?.ownerDocument.defaultView ?? window,
     );
     animator.current = instance;
     return () => instance.dispose();
@@ -259,13 +260,15 @@ export function LyricsDisplay({
       spring.current.velocity = 0;
       return;
     }
+    const view = container.ownerDocument.defaultView ?? window;
     let frame = 0,
       last = performance.now();
     spring.current.position = container.scrollTop;
-    const tick = (time: number) => {
+    const tick = () => {
+      const time = performance.now();
       frame = 0;
       if (!frameDue(last, time)) {
-        frame = requestAnimationFrame(tick);
+        frame = view.requestAnimationFrame(tick);
         return;
       }
       const motion = spring.current,
@@ -279,7 +282,7 @@ export function LyricsDisplay({
         );
         motion.velocity = 0;
         last = time;
-        if (elapsed < GLIDE_MS) frame = requestAnimationFrame(tick);
+        if (elapsed < GLIDE_MS) frame = view.requestAnimationFrame(tick);
         else {
           glide.current = undefined;
           noteHeldRest(container, true);
@@ -295,7 +298,7 @@ export function LyricsDisplay({
         Math.abs(motion.position - motion.target) > 0.2 ||
         Math.abs(motion.velocity) > 0.5
       )
-        frame = requestAnimationFrame(tick);
+        frame = view.requestAnimationFrame(tick);
       else {
         container.scrollTop = motion.target;
         noteHeldRest(container, true);
@@ -405,7 +408,7 @@ export function LyricsDisplay({
       if (reworded || !placed.current) {
         placed.current = true;
         reworded = false;
-        cancelAnimationFrame(frame);
+        view.cancelAnimationFrame(frame);
         frame = 0;
         glide.current = undefined;
         container.scrollTop = spring.current.position = spring.current.target;
@@ -428,7 +431,7 @@ export function LyricsDisplay({
         spring.current.velocity = 0;
       } else if (!frame) {
         last = performance.now();
-        frame = requestAnimationFrame(tick);
+        frame = view.requestAnimationFrame(tick);
       }
     };
     retarget();
@@ -443,7 +446,7 @@ export function LyricsDisplay({
       ?.querySelector(".lyrics-album");
     if (album) observer.observe(album);
     return () => {
-      cancelAnimationFrame(frame);
+      view.cancelAnimationFrame(frame);
       observer.disconnect();
     };
   }, [

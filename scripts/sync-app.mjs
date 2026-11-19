@@ -22,7 +22,7 @@ const files = [
   "animator-tuning.ts", "frame-cap.ts", "lyric-animator.ts", "lyric-motion.ts", "lyric-word.tsx",
   "lyric-countdown.tsx", "space-gravity.ts", "space-gravity-lyrics.tsx", "highlighter.tsx",
   "window-activity.ts", "word-sync.ts", "word-filter.ts", "gibberish.ts", "gibberish-dictionary.ts",
-  "setting-row.tsx", "animator-settings.tsx", "toolbar-icons.tsx", "fullscreen-icons.tsx", "artwork-color.ts",
+  "setting-row.tsx", "animator-settings.tsx", "toolbar-icons.tsx", "fullscreen-icons.tsx", "player-icons.tsx", "artwork-color.ts",
 ];
 const styles = read("frontend/styles.css");
 const components = read("frontend/components.tsx");
@@ -38,6 +38,7 @@ const lyrics = [
   slice(styles, "/* Space Gravity: words float", "/* Dims the app while a creator"),
   slice(styles, "\n.lyrics-page.no-artwork:not(.narrow) {", "/* Community lyrics credit"),
   slice(styles, "/* Lyrics loading skeleton:", "/* Lyrics popout window"),
+  slice(styles, "/* Lyrics popout window", "\n.album-grid.all {"),
   slice(styles, "\n.lyrics-display.simple-lyrics .lyric-line {", "\n.ttml-draft-banner {"),
 ];
 const snapshot = files.map((file) => [file, read(`frontend/${file}`)]);
@@ -58,7 +59,12 @@ import { LyricCredits } from "../credits";`,
   slice(state, "export function activeLines(", "export function progress("),
   slice(components, "function WriterCredits(", "/** The badge's E"),
   slice(components, "function creditsInView(", "/** Up next pops in"),
-  slice(components, "/** Seek Fade-in Compensation", "const LyricCredits ="),
+  slice(components, "/** Seek Fade-in Compensation", "const LyricCredits =")
+    .replace("      !!settings.lyrics_simple,\n", "      !!settings.lyrics_simple,\n      scroll.current?.ownerDocument.defaultView ?? window,\n")
+    .replace("    let frame = 0,\n      last = performance.now();", "    const view = container.ownerDocument.defaultView ?? window;\n    let frame = 0,\n      last = performance.now();")
+    .replace("    const tick = (time: number) => {", "    const tick = () => {\n      const time = performance.now();")
+    .replaceAll("requestAnimationFrame(tick)", "view.requestAnimationFrame(tick)")
+    .replaceAll("cancelAnimationFrame(frame)", "view.cancelAnimationFrame(frame)"),
   slice(components, "/** Static lyric markup.", "function TimedLyricsPreview("),
   slice(components, "const SKELETON_WIDTHS =", "/** Volume beside or below").replace("function LyricsSkeleton()", "export function LyricsSkeleton()"),
 ];
@@ -76,7 +82,7 @@ export function visualRows(settings: Settings, onSettings: (patch: Partial<Setti
   slice(rows, "  const flag = (", "  const order ="),
   "return { Look: [",
   slice(rows, '        <SettingRow\n          key="size"', "        <FontSettings"),
-  slice(rows, '        <SettingRow\n          key="background"', '        <SettingRow\n          key="year"').replace('<option value="artist">Artist header</option>', '<option value="artist" disabled>Artist header</option>'),
+  slice(rows, '        <SettingRow\n          key="background"', '        <SettingRow\n          key="year"'),
   "], Display: [",
   slice(rows, '        flag(\n          "lyrics_seek_compensation"', '        flag(\n          "romaji_as_written"'),
   slice(rows, '        flag(\n          "lyrics_translations"', '        flag(\n          "lyrics_visualiser"'),
@@ -103,6 +109,10 @@ for (const [file, content] of snapshot) {
     .replace("  ref,\n", "")
     .replace("  ref?: Ref<HTMLDivElement>;\n}) {", "}, ref: React.ForwardedRef<HTMLDivElement>) {")
     .replace(/\}\);\s*$/, "}));\n");
+  if (file === "lyric-animator.ts") source = source
+    .replace("    private simple = false,\n", "    private simple = false,\n    private view: Window = window,\n")
+    .replaceAll("cancelAnimationFrame(this.frame)", "this.view.cancelAnimationFrame(this.frame)")
+    .replaceAll("requestAnimationFrame(this.run)", "this.view.requestAnimationFrame(this.run)");
   if (file === "setting-row.tsx") source = source.replace("inert={!!unavailable}", "ref={(element) => { if (element) element.inert = !!unavailable; }}");
   write(file, source);
 }
@@ -119,7 +129,27 @@ write("ambience.tsx", read("frontend/ambience.tsx")
   .replace('import type { Track } from "./types";\n', "")
   .replace("  track,\n", "")
   .replace("  track?: Track;\n", "")
-  .replace('image ?? track?.album.images?.[0]?.url ?? ""', 'image ?? ""'));
+  .replace('image ?? track?.album.images?.[0]?.url ?? ""', 'image ?? ""')
+  .replace("  windowActivity,", "  windowActivity as openerActivity,")
+  .replace("    let engine: Kawarp;", `    const page = canvas.ownerDocument;
+    const view = page.defaultView ?? window;
+    const windowActivity = view === window ? openerActivity : () => ({ minimized: page.hidden, focused: page.hasFocus() });
+    let engine: Kawarp;`)
+  .replace("const reduced = matchMedia(", "const reduced = view.matchMedia(")
+  .replaceAll("!document.hidden", "!page.hidden")
+  .replace("frameRate: Math.max(1, ambienceFps(windowActivity()))", "frameRate: Math.max(1, ambienceFps(openerActivity()))")
+  .replaceAll("frame = requestAnimationFrame(tick)", "frame = view.requestAnimationFrame(tick)")
+  .replaceAll("cancelAnimationFrame(frame)", "view.cancelAnimationFrame(frame)")
+  .replaceAll('document.addEventListener("visibilitychange", restart)', 'page.addEventListener("visibilitychange", restart)')
+  .replaceAll('document.removeEventListener("visibilitychange", restart)', 'page.removeEventListener("visibilitychange", restart)')
+  .replace("    const stopActivity = onWindowActivity(resize);", `    const stopActivity = view === window ? onWindowActivity(resize) : undefined;
+    if (view !== window) {
+      view.addEventListener("focus", resize);
+      view.addEventListener("blur", resize);
+    }`)
+  .replace("      stopActivity();", `      stopActivity?.();
+      view.removeEventListener("focus", resize);
+      view.removeEventListener("blur", resize);`));
 write("lyrics.css", `@scope (.lyssna-lyrics-view) {${lyrics.join("\n")}\n${fullscreenCss}\n}\n`);
 write("settings.css", `@scope (.lyssna-lyrics-view) {\n${settingsCss}\n}\n`);
 write("UPSTREAM", `${commit}\n`);
