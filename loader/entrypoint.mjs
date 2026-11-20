@@ -1,6 +1,7 @@
-import { importStableRelease, readStableRelease } from "./github-stable.mjs";
+import { importBundle, importStableRelease, readStableRelease } from "./github-stable.mjs";
 
-const root = new URL("../../", import.meta.url);
+const website = new URL("https://ipixelgalaxy.com/lyssna-plugin/");
+const repository = "https://raw.githubusercontent.com/LyssnaHQ/lyssna-lyrics/master/";
 const channelKey = "lyssna-lyrics.v1.channel";
 const hiddenKey = "lyssna-lyrics.v1.hidden-build";
 const names = ["stable", "beta", "canary"];
@@ -60,7 +61,7 @@ function showLoading() {
 
 async function hiddenRelease(key, signal) {
   if (!keyPattern.test(key)) throw new Error("Enter the 32-character build key.");
-  const folder = new URL(`builds/hidden/${key}/`, root);
+  const folder = new URL(`builds/hidden/${key}/`, website);
   let release;
   try {
     const response = await fetch(new URL("release.json", folder), {
@@ -79,7 +80,7 @@ async function hiddenRelease(key, signal) {
 }
 
 async function readChannels(signal) {
-  const response = await fetch(new URL("channels.json", import.meta.url), {
+  const response = await fetch(new URL("loader/channels.json", repository), {
     cache: "no-store", signal: AbortSignal.any([signal, AbortSignal.timeout(8_000)]),
   });
   if (!response.ok) throw new Error(`Build channels HTTP ${response.status}`);
@@ -89,7 +90,15 @@ async function readChannels(signal) {
     const version = catalog.channels?.[name];
     return [name, typeof version === "string" && versionPattern.test(version) ? version : null];
   })) };
-  return { catalog, channels };
+  return { lyssnaSignIn: catalog.lyssnaSignIn === true, channels };
+}
+
+async function importWebsiteBuild(url, signal) {
+  const response = await fetch(url, {
+    cache: "no-cache", credentials: "omit", signal: AbortSignal.any([signal, AbortSignal.timeout(8_000)]),
+  });
+  if (!response.ok) throw new Error(`Test build HTTP ${response.status}`);
+  return importBundle(await response.arrayBuffer(), signal);
 }
 
 export async function start(signal) {
@@ -105,8 +114,12 @@ export async function start(signal) {
 }
 
 async function startBuild(signal) {
-  const [{ catalog, channels }, stable] = await Promise.all([
-    readChannels(signal),
+  const [{ lyssnaSignIn, channels }, stable] = await Promise.all([
+    readChannels(signal).catch((error) => {
+      signal.throwIfAborted();
+      console.warn("[Lyssna Lyrics] Could not check test channels:", error);
+      return { lyssnaSignIn: false, channels: { stable: null, beta: null, canary: null } };
+    }),
     readStableRelease(signal).catch((error) => {
       signal.throwIfAborted();
       console.warn("[Lyssna Lyrics] Could not check GitHub Stable:", error);
@@ -153,25 +166,27 @@ async function startBuild(signal) {
     switching = true;
     try {
       let build;
-      if (!hidden && channel === "stable") {
+      const importPublic = (name) => name === "stable" ? importStableRelease(stable, signal)
+        : importWebsiteBuild(new URL(`builds/lyssna-lyrics@${channels[name]}.mjs`, website), signal);
+      if (hidden) build = await importWebsiteBuild(hidden.url, signal);
+      else {
         try {
-          build = await importStableRelease(stable, signal);
+          build = await importPublic(channel);
         } catch (error) {
           signal.throwIfAborted();
-          const fallback = !reopen && names.find((name) => name !== "stable" && channels[name]);
+          const fallback = !reopen && names.find((name) => name !== channel && channels[name]);
           if (!fallback) throw error;
-          console.warn("[Lyssna Lyrics] GitHub Stable unavailable. Loading the next public channel.", error);
+          console.warn(`[Lyssna Lyrics] ${channel} unavailable. Loading ${fallback}.`, error);
+          build = await importPublic(fallback);
           channel = fallback;
         }
       }
-      const url = hidden?.url ?? new URL(`builds/lyssna-lyrics@${channels[channel]}.mjs`, root);
-      build ??= await import(url.href);
       signal.throwIfAborted();
       const next = build.default({
-        channel, channels, selectChannel, lyssnaSignIn: catalog.lyssnaSignIn === true,
+        channel, channels, selectChannel, lyssnaSignIn,
         hiddenVersion: hidden?.version, selectHiddenBuild,
         clearHiddenBuild: savedHiddenKey ? clearHiddenBuild : undefined,
-        patchNotesUrl: new URL("patch-notes.md", import.meta.url).href,
+        patchNotesUrl: new URL(".change_notes/PATCH_NOTES.md", repository).href,
         latestVersion: async (checkSignal) => {
           const check = AbortSignal.any([signal, checkSignal]);
           if (channel === "stable") return (await readStableRelease(check))?.version ?? null;

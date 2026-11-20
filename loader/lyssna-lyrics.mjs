@@ -1,4 +1,4 @@
-const entrypoint = "https://ipixelgalaxy.com/lyssna-plugin/rewrite/v1.0/entrypoint.mjs";
+const entrypoint = "https://cdn.jsdelivr.net/gh/LyssnaHQ/lyssna-lyrics@master/loader/entrypoint.mjs";
 
 export default async function start(context) {
   const signal = context?.signal ?? new AbortController().signal;

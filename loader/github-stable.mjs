@@ -30,8 +30,16 @@ export async function importStableRelease(release, signal) {
   const hash = await crypto.subtle.digest("SHA-256", bytes);
   const hex = Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, "0")).join("");
   if (`sha256:${hex}` !== release.digest) throw new Error("GitHub Stable asset checksum mismatch");
+  return importBundle(bytes, signal);
+}
+
+export async function importBundle(bytes, signal) {
   signal.throwIfAborted();
   const url = URL.createObjectURL(new Blob([bytes], { type: "text/javascript" }));
-  try { return await import(url); }
+  try {
+    const bundle = await import(url);
+    if (typeof bundle.default !== "function") throw new Error("Release has no plugin entrypoint");
+    return bundle;
+  }
   finally { URL.revokeObjectURL(url); }
 }

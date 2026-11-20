@@ -35,7 +35,7 @@ Open **Spicetify Marketplace › Extensions**, search for **Lyssna Lyrics**, and
 <summary>Install manually</summary>
 
 1. Set up [Spicetify](https://spicetify.app/docs/getting-started) with Spotify Desktop.
-2. Save [`lyssna-lyrics.mjs`](https://ipixelgalaxy.com/lyssna-plugin/rewrite/lyssna-lyrics.mjs) into Spicetify’s **Extensions** folder. Run `spicetify config-dir` to find it.
+2. Save [`lyssna-lyrics.mjs`](https://raw.githubusercontent.com/LyssnaHQ/lyssna-lyrics/master/loader/lyssna-lyrics.mjs) into Spicetify’s **Extensions** folder. Run `spicetify config-dir` to find it. If you installed an older launcher manually, replace it with this file.
 3. Enable the loader and apply Spicetify. Spotify may restart.
 
    ```sh
@@ -93,7 +93,7 @@ Use **Bulk Load** to match multiple files to songs and **TTML Database** to find
 
 ## Updates and support
 
-The loader follows the channel selected in **Settings › Advanced › Build Channel**. Stable comes from GitHub Releases. Beta, Canary, and private builds are hosted on ipixelgalaxy.com.
+The loader follows the channel selected in **Settings › Advanced › Build Channel**. The launcher, channel manifest, and patch notes come from GitHub-backed URLs. Stable loads from GitHub Releases. Beta, Canary, and private builds use ipixelgalaxy.com, with Stable as a fallback if the selected test build is unavailable.
 
 If you received a private build key, paste it under **Hidden build key** and choose **Apply and reload**. **Remove key** returns to your public channel. Public builds show a notice when an update is available.
 
@@ -116,7 +116,7 @@ npm run build
 The versioned bundle is in `dist/builds`. The build also produces the v1.0 entrypoint and the SpotiKit package.
 
 - **Stable** uses the latest public [GitHub Release](https://github.com/LyssnaHQ/lyssna-lyrics/releases). Attach `lyssna-lyrics@<version>.mjs` to a matching `v<version>` release. The loader checks the asset against GitHub’s SHA-256 digest.
-- **Beta and Canary** use `rewrite/v1.0/channels.json` on ipixelgalaxy.com. Run `npm run build -- --test` to deploy Canary to `Y:/website/lyssna-plugin`. For Beta, place the bundle under `builds/` and set the manifest’s `beta` version.
+- **Beta and Canary** use [loader/channels.json](loader/channels.json) on GitHub. Run `npm run build -- --test` to upload the Canary bundle to `Y:/website/lyssna-plugin/builds/` and update the local manifest. For Beta, place the bundle in the same directory and set the manifest’s `beta` version. Commit and push the manifest to update the public channels.
 - **Private builds** use `npm run build -- --hidden [version]`. The command publishes to `builds/hidden/<key>/` and prints its access key. Anyone with the key can load the build. Keep the directory unlisted and remove a build’s manifest and bundle to retire its key.
 
 Add user-visible changes to [PATCH_NOTES.md](.change_notes/PATCH_NOTES.md) under a heading like `## v0.1.0`. Use these Spotify DevTools commands to preview the dialogs.

@@ -1,0 +1,8 @@
+{
+  "protocol": 1,
+  "channels": {
+    "beta": null,
+    "canary": null
+  },
+  "lyssnaSignIn": true
+}
