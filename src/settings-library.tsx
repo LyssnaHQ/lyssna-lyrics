@@ -33,16 +33,16 @@ export function SourcesManager({ settings, change }: {
               <ChevronDown size={16} />
             </button>}
             <button type="button" className="icon-button" aria-label={`Move ${name} up`} title="Move up"
-              disabled={index === 0} onClick={() => move(-1)}><ArrowUp size={16} /></button>
+              disabled={index <= 2} onClick={() => move(-1)}><ArrowUp size={16} /></button>
             <button type="button" className="icon-button" aria-label={`Move ${name} down`} title="Move down"
-              disabled={index === order.length - 1} onClick={() => move(1)}><ArrowDown size={16} /></button>
+              disabled={index < 2 || index === order.length - 1} onClick={() => move(1)}><ArrowDown size={16} /></button>
             <Toggle label={name} checked={enabled} onChange={(on) => change({
               lyrics_sources_disabled: on ? settings.lyrics_sources_disabled.filter((item) => item !== id) : [...settings.lyrics_sources_disabled, id],
             })} />
           </div>
         </div>
         {configurable && <div className="settings-source-options" id="lyssna-source-apple-options" hidden={!appleOptions}>
-          <SettingRow label="Prioritize Apple Music quality" help="Prefer Apple Music timing over other online sources.">
+          <SettingRow label="Prioritize Apple Music quality" help="Prefer Apple Music timing among the fallback sources.">
             <Toggle label="Prioritize Apple Music quality" checked={settings.lyrics_prefer_apple}
               onChange={(lyrics_prefer_apple) => change({ lyrics_prefer_apple })} />
           </SettingRow>

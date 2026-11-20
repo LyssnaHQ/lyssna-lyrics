@@ -1,17 +1,4 @@
-import { spicetify, spotikit } from "./host";
-
-type Token = { accessToken?: string };
-type TokenProvider = { getToken(options?: { forceRefresh?: boolean }): Promise<Token | null> };
-type Platform = {
-  AuthorizationAPI?: {
-    getState?(): { token?: Token };
-    _tokenProvider?: TokenProvider;
-  };
-  Registry?: { resolve?(key: symbol): TokenProvider | undefined };
-  Session?: Token;
-  version?: string;
-  PlatformData?: { app_platform?: string };
-};
+import { fetchSpotifyMedia } from "./spotify-media";
 type Profile = { id: number; file_type: string; video_codec: string; video_height: number; video_bitrate: number };
 type Manifest = {
   base_urls?: string[];
@@ -26,29 +13,8 @@ type Manifest = {
 };
 
 async function getManifest(fileId: string, signal: AbortSignal) {
-  const platform = (spicetify()?.Platform ?? spotikit()?.Platform) as Platform | undefined;
-  const authorization = platform?.AuthorizationAPI;
-  const currentToken = authorization?.getState?.()?.token?.accessToken ?? platform?.Session?.accessToken;
-  let provider = authorization?._tokenProvider;
-  if (!provider) {
-    try { provider = platform?.Registry?.resolve?.(Symbol.for("TokenProvider")); }
-    catch { /* Older clients expose the token through Session. */ }
-  }
-  const request = (token?: string) => {
-    const headers = new Headers({ Accept: "application/json" });
-    if (token) headers.set("Authorization", `Bearer ${token}`);
-    if (platform?.version) headers.set("Spotify-App-Version", platform.version);
-    if (platform?.PlatformData?.app_platform) headers.set("App-Platform", platform.PlatformData.app_platform);
-    const source = token ? "json/sources" : "unauth/json/sources";
-    return fetch(`https://spclient.wg.spotify.com/manifests/v9/${source}/${fileId}/options/supports_drm`,
-      { headers, signal, redirect: "error" });
-  };
-  const token = currentToken ?? (await provider?.getToken())?.accessToken;
-  let response = await request(token);
-  if (response.status === 401 && token && provider) {
-    const refreshed = (await provider.getToken({ forceRefresh: true }))?.accessToken;
-    if (refreshed && refreshed !== token) response = await request(refreshed);
-  }
+  const response = await fetchSpotifyMedia((authenticated) =>
+    `/manifests/v9/${authenticated ? "json/sources" : "unauth/json/sources"}/${fileId}/options/supports_drm`, signal);
   if (!response.ok) throw new Error(`Canvas manifest HTTP ${response.status}`);
   return await response.json() as Manifest;
 }

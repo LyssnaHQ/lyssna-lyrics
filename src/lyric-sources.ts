@@ -4,9 +4,11 @@ import type { Lyrics } from "./lyssna/types";
 import { readLrcLib, readLrcRed, readNetease } from "./remote-lyrics";
 import type { Settings } from "./settings";
 import { readSpicyLyrics } from "./spicy";
+import { clearLyssnaCache, readLyssnaLyrics } from "./lyssna-provider";
 
 export const lyricSources = {
   local: { name: "Imported TTML", help: "Lyrics you loaded for the playing song." },
+  lyssna: { name: "Lyssna Lyrics API", help: "Approved community lyrics from Lyssna. Receives the Spotify track ID and may check its ISRC." },
   spicy: { name: "Spicy Lyrics", help: "Community lyrics supplied by the Spicy Lyrics plugin." },
   apple: { name: "Apple Music", help: "Apple Music lyrics when supplied by Spicy Lyrics." },
   lrcred: { name: "lrc.red", help: "Word-timed lyrics. Receives the song's ISRC." },
@@ -18,14 +20,14 @@ export type LyricSource = keyof typeof lyricSources;
 export const sourceIds = Object.keys(lyricSources) as LyricSource[];
 
 export function orderedSources(order: string[]) {
-  return [...new Set([...order.filter((id): id is LyricSource => Object.hasOwn(lyricSources, id)), ...sourceIds])];
+  return [...new Set<LyricSource>(["local", "lyssna", ...order.filter((id): id is LyricSource => Object.hasOwn(lyricSources, id)), ...sourceIds])];
 }
 
 export function enabledSources(settings: Settings) {
   const order = orderedSources(settings.lyrics_source_order).filter((id) => !settings.lyrics_sources_disabled.includes(id));
   if (settings.lyrics_prefer_apple && order.includes("apple")) {
     const prioritized: LyricSource[] = order.filter((id) => id !== "apple");
-    prioritized.splice(prioritized[0] === "local" ? 1 : 0, 0, "apple");
+    prioritized.splice(prioritized.filter((id) => id === "local" || id === "lyssna").length, 0, "apple");
     return prioritized;
   }
   return order;
@@ -36,7 +38,10 @@ type Cached = { expires: number; value: Promise<Lyrics | undefined> };
 const cache = new Map<string, Map<string, Cached>>();
 
 export function refreshLyrics(trackId?: string, action: Settings["lyrics_cache_action"] = "reload") {
-  if (action === "all") cache.clear();
+  if (action === "all") {
+    cache.clear();
+    clearLyssnaCache();
+  }
   else if (trackId) {
     if (action === "song") cache.delete(trackId);
     else for (const entry of cache.get(trackId)?.values() ?? []) entry.expires = 0;
@@ -68,6 +73,9 @@ export async function readLyrics(track: Track, duration: number, sources: LyricS
   for (const id of sources) {
     if (id === "local") {
       const lyrics = await readLocalLyrics(track.id).catch(() => undefined);
+      if (lyrics) return lyrics;
+    } else if (id === "lyssna") {
+      const lyrics = await readLyssnaLyrics(track).catch(() => undefined);
       if (lyrics) return lyrics;
     } else if (id === "spicy" || id === "apple") {
       const lyrics = await readCached(track.id, "spicy", () => readSpicyLyrics(track.id), 350);

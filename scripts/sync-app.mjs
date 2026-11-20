@@ -28,7 +28,8 @@ const styles = read("frontend/styles.css");
 const components = read("frontend/components.tsx");
 const state = read("frontend/state.ts");
 const types = slice(read("frontend/types.ts"), "export interface Word {", "export interface PlayingDetails {")
-  .replace("export interface Word {", "export interface Word {\n  romanization?: string;");
+  .replace("export interface Word {", "export interface Word {\n  romanization?: string;")
+  .replace("export interface Lyrics {", "export interface Lyrics {\n  lyssna?: { songId: string; contributors: { user_id?: string; username?: string }[] };");
 const lyrics = [
   slice(styles, "\n.lyric-end-credits {", "\n.credit-avatar {"),
   slice(styles, "\n.ambience {", "\n.lyrics-page {"),
@@ -123,12 +124,8 @@ export function visualRows(settings: Settings, onSettings: (patch: Partial<Setti
     .replace('      ],\n    ],\n    [\n      "Effects",\n      "Lyric effects",\n      [', '], Effects: ['),
   slice(rows, '        flag(\n          "canvas_lyrics"', '        flag(\n          "animated_covers"')
     .replace("Play the track's Canvas video behind the lyrics page.", "Play the track's Canvas when Spotify makes it available."),
-  `<SettingRow key="animated-covers" label="Animated covers"
-          help="Play Apple Music's animated album covers where an album has one."
-          keywords="motion artwork animated album cover video apple music"
-          unavailable="Apple Music artwork lookup needs a server-side integration.">
-          <Toggle label="Animated covers" checked={false} onChange={() => {}} />
-        </SettingRow>,`,
+  `        flag("animated_covers", "Animated covers", "Play Apple Music motion covers when available. Lyssna looks them up by album barcode.",
+          "motion artwork animated album cover video apple music"),`,
   slice(rows, '        flag(\n          "npv_ambience"', '      ],\n    ],\n    [\n      "Layout"'),
   "], Layout: [",
   slice(rows, '        flag(\n          "lyrics_compact"', '      ],\n    ],\n    [\n      "Sources"'),

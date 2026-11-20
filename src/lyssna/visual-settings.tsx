@@ -390,12 +390,8 @@ return { flag, range, Look: [
           "Play the track's Canvas when Spotify makes it available.",
           "video background",
         ),
-<SettingRow key="animated-covers" label="Animated covers"
-          help="Play Apple Music's animated album covers where an album has one."
-          keywords="motion artwork animated album cover video apple music"
-          unavailable="Apple Music artwork lookup needs a server-side integration.">
-          <Toggle label="Animated covers" checked={false} onChange={() => {}} />
-        </SettingRow>,
+        flag("animated_covers", "Animated covers", "Play Apple Music motion covers when available. Lyssna looks them up by album barcode.",
+          "motion artwork animated album cover video apple music"),
         flag(
           "npv_ambience",
           "Dynamic background in Now playing",

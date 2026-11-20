@@ -2,6 +2,8 @@
 
 Lyssna’s lyrics view for Spotify Desktop. The Vite build shares the desktop app’s lyric animation, word rendering, and styles. `src/lyssna/UPSTREAM` records the source commit.
 
+Community lyrics provided by [Lyssna](https://lyssna.org). Imported TTML takes priority, followed by approved Lyssna lyrics and your enabled fallback sources.
+
 ## Build
 
 With Node.js LTS installed, run `npm ci` and `npm run build`. `dist/` contains the versioned payload, the v1.0 entrypoint, and the host loaders. `npm run build -- --test` also deploys the payload to `Y:/website/lyssna-plugin/builds/` and points Canary at it. Stable and Beta get their own version fields in `rewrite/v1.0/channels.json`.
@@ -15,7 +17,7 @@ Open Lyssna from the microphone button in Spotify’s playbar. Older SpotiKit ve
 
 **Cinema Lyrics Window** opens the full lyrics view in a separate, resizable window and follows Spotify playback. Run `spicetify enable-devtools` with Spicetify, then turn on **Enable Cinema Lyrics Window** in Lyssna’s **Layout** settings. Click **Cinema Lyrics Window** in the playbar to open it. The separate window requires Spotify DevTools to be enabled.
 
-Artist Header uses the lead artist’s Spotify banner and falls back to the album cover. The Canvas setting uses the video Spotify exposes in Now playing. The visualiser uses Spotify’s track analysis. The host supplies these features when it has data for the current track.
+Artist Header uses the lead artist’s Spotify banner and falls back to the album cover. Canvas uses Spotify’s video. Turn on **Animated covers** under **Appearance** to play Apple Music motion covers in the lyrics artwork slot when Canvas is absent. The lookup sends the album barcode to Lyssna. The visualiser uses Spotify’s track analysis.
 
 Effects changes the lyric renderer. Enhancements changes Spotify’s menus, playbar, and playlist picker. The controllers were ported from iPixelGalaxy’s legacy revision `c3e02aa`. When Legacy owns the controllers, changes made in the rewrite apply on the next Spotify restart.
 

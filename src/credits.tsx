@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { CREDIT_NAME_OVERRIDES, lookupDiscordUser, type DiscordIdentity } from "./discord-lookup";
 import type { Contributor, Lyrics } from "./lyssna/types";
+import { readSettings, settingsEvent } from "./settings";
 
 function CreditPerson({ role, person, usernames }: { role: string; person: Contributor; usernames: boolean }) {
   const [identity, setIdentity] = useState<DiscordIdentity | null>(null);
@@ -37,6 +38,7 @@ export function LyricCredits({ lyrics, expanded = false, discord = false }: {
   const source = lyrics.source;
   const timing = lyrics.estimated_words ? (lyrics.estimated_lines ? "(+ estimated line and word timing)" : "(+ estimated word timing)")
     : lyrics.split_words ? "(+ extra splits)" : "";
+  if (lyrics.lyssna) return <LyssnaCredits attribution={lyrics.lyssna} timing={timing} expanded={expanded} />;
   return (
     <div className={`lyric-source lyssna-provider-credits${expanded ? " expanded" : ""}`}>
       <div>Lyrics provided by: {source === "lrc.red"
@@ -49,4 +51,26 @@ export function LyricCredits({ lyrics, expanded = false, discord = false }: {
       </div>}
     </div>
   );
+}
+
+function LyssnaCredits({ attribution, timing, expanded }: { attribution: NonNullable<Lyrics["lyssna"]>; timing: string; expanded: boolean }) {
+  const [showProvider, setShowProvider] = useState(() => readSettings().lyrics_credit_lyssna);
+  useEffect(() => {
+    const update = () => setShowProvider(readSettings().lyrics_credit_lyssna);
+    window.addEventListener(settingsEvent, update);
+    return () => window.removeEventListener(settingsEvent, update);
+  }, []);
+  if (!showProvider && !attribution.contributors.length) return null;
+  return <div className={`lyric-source lyssna-provider-credits${expanded ? " expanded" : ""}`}>
+    {showProvider && <div>Lyrics provided by <a href="https://lyssna.org" target="_blank" rel="noopener noreferrer">Lyssna</a>
+      {timing && <> <span className="lyssna-credit-timing">{timing}</span></>}
+    </div>}
+    {attribution.contributors.length > 0 && <div className="lyssna-community-credits">
+      <span>Contributors</span>
+      {attribution.contributors.map(({ user_id, username }, index) => username
+        ? <a key={user_id ?? index} className="lyssna-credit-profile" href={`https://lyssna.org/u/${encodeURIComponent(username)}`}
+          target="_blank" rel="noopener noreferrer"><span className="lyssna-credit-name">{username}</span></a>
+        : <span key={user_id ?? index}>Deleted user</span>)}
+    </div>}
+  </div>;
 }

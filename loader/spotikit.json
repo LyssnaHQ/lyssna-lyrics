@@ -1,7 +1,7 @@
 {
   "type": "extension",
   "name": "Lyssna Lyrics",
-  "description": "Synchronized lyrics with Lyssna’s renderer.",
+  "description": "Synchronized lyrics with Lyssna’s renderer. Community lyrics provided by Lyssna (https://lyssna.org).",
   "main": "extension.js",
   "version": "1.0.0"
 }

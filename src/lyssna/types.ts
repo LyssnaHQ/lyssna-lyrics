@@ -19,6 +19,7 @@ export interface Line {
   opposite: boolean;
 }
 export interface Lyrics {
+  lyssna?: { songId: string; contributors: { user_id?: string; username?: string }[] };
   songwriters?: string[];
   attribution?: { uploader?: Contributor; maker?: Contributor };
   lines: Line[];

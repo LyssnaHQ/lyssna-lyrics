@@ -33,6 +33,10 @@ import { playbarViewButtons } from "./playbar-fullscreen";
 import { quickEffects } from "./quick-effects";
 import { DJ_COVER, DJInterlude } from "./dj-interlude";
 import { readViewSession, saveViewSession } from "./view-session";
+import { lyssnaApiNotice, lyssnaInstallReady } from "./lyssna-api";
+import { resumeLyssnaRequests } from "./lyssna-provider";
+import { trackLyssnaListens, useLyssnaPlay } from "./lyssna-plays";
+import { MotionArtwork, useMotionArtwork } from "./motion-artwork";
 import fontCss from "./fonts/fonts.css?inline";
 import desktopCss from "./lyssna/lyrics.css?inline";
 import settingsCss from "./lyssna/settings.css?inline";
@@ -55,37 +59,47 @@ function useTrackLyrics(track: Track, duration: number, view: Window, settings: 
   const sourceKey = enabledSources(settings).join(",");
   useEffect(() => {
     const enabled = sourceKey.split(",").filter((id): id is (typeof sourceIds)[number] => sourceIds.some((source) => source === id));
+    const revalidate = enabled.includes("lyssna");
     let generation = 0;
     let timer = 0;
-    function restart() {
+    let deadline = 0;
+    async function read() {
       view.clearTimeout(timer);
       const current = ++generation;
-      setLyrics(undefined);
-      const pendingSpicy = enabled.includes("spicy") || enabled.includes("apple");
-      setWaiting(enabled.length > 0);
       if (enabled.length === 0) return;
-      const deadline = Date.now() + 15_000;
-      async function read() {
-        const lyrics = await readLyrics(track, duration, enabled);
-        if (generation !== current) return;
-        if (lyrics) {
-          setLyrics(lyrics);
-          setWaiting(false);
-          return;
-        }
-        if (!pendingSpicy) { setWaiting(false); return; }
-        const pending = Date.now() < deadline;
-        setWaiting(pending);
-        timer = view.setTimeout(read, pending ? 500 : 3_000);
+      const lyrics = await readLyrics(track, duration, enabled);
+      if (generation !== current) return;
+      setLyrics(lyrics);
+      const pendingSpicy = enabled.includes("spicy") || enabled.includes("apple");
+      const pending = !lyrics && pendingSpicy && Date.now() < deadline;
+      setWaiting(pending);
+      if (!view.document.hidden && navigator.onLine && (revalidate || (!lyrics && pendingSpicy))) {
+        timer = view.setTimeout(read, lyrics ? 60_000 : pending ? 500 : pendingSpicy ? 3_000 : 60_000);
       }
+    }
+    function restart() {
+      setLyrics(undefined);
+      setWaiting(enabled.length > 0);
+      deadline = Date.now() + 15_000;
       void read();
     }
+    const resume = () => { if (!view.document.hidden) void read(); };
+    const reconnect = () => {
+      if (revalidate) resumeLyssnaRequests();
+      resume();
+    };
     window.addEventListener(lyricsChanged, restart);
+    window.addEventListener("online", reconnect);
+    if (revalidate) window.addEventListener(lyssnaInstallReady, reconnect);
+    view.document.addEventListener("visibilitychange", resume);
     restart();
     return () => {
       generation++;
       view.clearTimeout(timer);
       window.removeEventListener(lyricsChanged, restart);
+      window.removeEventListener("online", reconnect);
+      window.removeEventListener(lyssnaInstallReady, reconnect);
+      view.document.removeEventListener("visibilitychange", resume);
     };
   }, [track, duration, view, sourceKey]);
   return { lyrics, waiting };
@@ -104,6 +118,7 @@ function TrackLyrics({ track, host, playing, settings, compact = false, view = w
   track: Track; host: Host; playing: boolean; settings: Settings; compact?: boolean; view?: Window; fullView?: boolean;
   duration: number; lyrics?: Lyrics; waiting: boolean;
 }) {
+  const playMarker = useLyssnaPlay(host, track.id, lyrics?.lyssna?.songId, playing, view);
   const position = usePosition(host, playing, view);
   const time = position + settings.lyric_offset_ms + (settings.lyric_song_offsets[track.id] ?? 0);
   const gravity = fullView && settings.space_gravity && !!lyrics &&
@@ -135,7 +150,7 @@ function TrackLyrics({ track, host, playing, settings, compact = false, view = w
   </div>;
 
   if (gravity && rendered?.synced && rendered.lines.some((line) => line.words.length)) {
-    return <div className={fontClass} style={{ display: "contents" }}><SpaceGravityLyrics lyrics={rendered} time={time} reduceMotion={settings.reduce_motion}
+    return <div className={fontClass} style={{ display: "contents" }}><span ref={playMarker} hidden /><SpaceGravityLyrics lyrics={rendered} time={time} reduceMotion={settings.reduce_motion}
       tuning={settings.lyrics_animator} onSeek={(ms) => host.seek(Math.max(0, ms - (settings.lyrics_seek_compensation ? 300 : 0)))}
       highlighter={settings.lyrics_highlighter ? markerColour(settings.lyrics_highlighter_color) : undefined}
       linkWidth={settings.gravity_links ? settings.gravity_link_width / 100 : 0}
@@ -147,7 +162,7 @@ function TrackLyrics({ track, host, playing, settings, compact = false, view = w
         {upNext}
       </div>} /></div>;
   }
-  if (rendered) return <div className={fontClass} style={{ display: "contents" }}><LyricsDisplay lyrics={rendered} positionMs={time} settings={settings}
+  if (rendered) return <div className={fontClass} style={{ display: "contents" }}><span ref={playMarker} hidden /><LyricsDisplay lyrics={rendered} positionMs={time} settings={settings}
     onSeek={host.seek} compact={compact} upNext={upNext} /></div>;
   if (waiting && settings.lyrics_skeleton) return <LyricsSkeleton />;
   if (!waiting && !settings.lyrics_no_lyrics_notice) return null;
@@ -350,6 +365,10 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
   const artistUri = track?.artistUri;
   const trackId = track?.id;
   const albumUri = track?.albumUri;
+  const motionUrl = useMotionArtwork(albumUri, track?.albumUpc,
+    settings.animated_covers && !settings.reduce_motion && !settings.lyrics_hide_artwork && !canvas);
+  const [unavailableMotion, setUnavailableMotion] = useState<string>();
+  const motion = motionUrl !== unavailableMotion ? motionUrl : undefined;
   const year = track?.year ?? (albumYear?.uri === albumUri ? albumYear?.year : undefined);
   useEffect(() => {
     if (settings.lyrics_year_position === "off" || track?.year || !albumUri || !/^spotify:album:[A-Za-z0-9]{22}$/.test(albumUri)) return;
@@ -531,8 +550,11 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
         <div className="lyrics-album">
           {canvas ? <CanvasArtwork key={`${track.id}:${canvas.fileId ?? canvas.url}`} info={canvas} cover={track.cover}
             playing={playing && !settings.reduce_motion} onUnavailable={setUnavailableCanvas} />
-            : track.cover && <div className="lyrics-media"><img className={`cover${settings.cover_animation && !settings.reduce_motion ? " crossfade" : ""}`}
-              key={track.cover} src={track.cover} alt="" /></div>}
+            : (motion || track.cover) && <div className="lyrics-media">{motion
+              ? <MotionArtwork key={motion} url={motion} cover={track.cover} playing={playing} onUnavailable={setUnavailableMotion} />
+              : <img className={`cover${settings.cover_animation && !settings.reduce_motion ? " crossfade" : ""}`}
+                key={track.cover} src={track.cover} alt="" />}
+            </div>}
           <TrackMetadata host={host} track={track} year={year} yearPosition={settings.lyrics_year_position}
             reduceMotion={settings.reduce_motion} orderByWidth={!!canvas} />
           {artworkDock && playback}
@@ -812,6 +834,9 @@ export default function start(options: BuildOptions) {
     }),
   );
   const stopEnhancementStartup = startEnhancements();
+  const stopLyssnaListens = trackLyssnaListens(host);
+  const reportApiNotice = (event: Event) => host.notifyError((event as CustomEvent<string>).detail);
+  window.addEventListener(lyssnaApiNotice, reportApiNotice);
   const beginUnload = () => { unloading = true; };
   const resumePage = (event: PageTransitionEvent) => {
     if (event.persisted) {
@@ -921,6 +946,8 @@ export default function start(options: BuildOptions) {
       disposeProvider();
       stopPreferenceSync();
       stopEnhancementStartup();
+      stopLyssnaListens();
+      window.removeEventListener(lyssnaApiNotice, reportApiNotice);
       window.removeEventListener("pagehide", beginUnload);
       window.removeEventListener("pageshow", resumePage);
       document.removeEventListener("visibilitychange", updateActivity);

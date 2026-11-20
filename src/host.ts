@@ -37,11 +37,12 @@ type SpotifyTrack = {
   type?: string;
   artists?: Array<{ name?: string; uri?: string; id?: string }>;
   images?: Array<{ url?: string }>;
-  album?: { uri?: string; name?: string; images?: Array<{ url?: string }>; release_date?: string; releaseDate?: string };
+  album?: { uri?: string; name?: string; images?: Array<{ url?: string }>; release_date?: string; releaseDate?: string; upc?: string };
   metadata?: Record<string, string>;
 };
 type PlayerState = {
   item?: SpotifyTrack;
+  playbackId?: string;
   isPaused?: boolean;
   context?: { uri?: string; metadata?: Record<string, string> };
   restrictions?: { disallowSeekingReasons?: string[] };
@@ -133,7 +134,7 @@ type SpotiKit = {
 
 export type Root = { render(node: ReactNode): void; unmount(): void };
 export type Track = { id: string; title: string; artists: string; artist?: string; artistUri?: string; cover: string;
-  artistLinks?: { name: string; uri?: string }[]; album?: string; albumUri?: string; year?: string; isrc?: string };
+  artistLinks?: { name: string; uri?: string }[]; album?: string; albumUri?: string; albumUpc?: string; year?: string; isrc?: string };
 
 export function cataloguePath(uri?: string) {
   const match = /^(?:spotify:)(album|artist):([A-Za-z0-9]{22})$/.exec(uri ?? "");
@@ -331,6 +332,7 @@ export function getHost() {
         artist: artist?.name || track.metadata?.artist_name,
         album: track.album?.name ?? track.metadata?.album_title,
         albumUri: track.album?.uri || track.metadata?.album_uri,
+        albumUpc: track.album?.upc ?? track.metadata?.album_upc,
         isrc: track.metadata?.isrc?.toUpperCase(),
         year: /^(\d{4})(?:-|$)/.exec(track.album?.release_date ?? track.album?.releaseDate ?? track.metadata?.album_release_date ?? "")?.[1],
         cover: artwork(track.images?.[0]?.url ?? track.album?.images?.[0]?.url ?? track.metadata?.image_url ?? ""),
@@ -354,6 +356,7 @@ export function getHost() {
     canJumpDJ: () => !!djAction(),
     jumpDJ: () => djAction()?.(),
     djNarrating: () => isDJNarration(playerState()),
+    playbackId: () => playerState()?.playbackId,
     artistHeader,
     releaseYear,
     trackCanvas,
