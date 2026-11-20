@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { SettingRow } from "../lyssna/setting-row";
 import { clearMotionArtworkCache } from "../motion-artwork";
-import { cachedMotionArtworkBytes } from "../motion-artwork-storage";
+import { cachedMotionArtworkBytes, motionArtworkBudget } from "../motion-artwork-storage";
 import { stopCreatorCaptures } from "./capture-sessions";
 import { clearRecordedAudio, savedAudioBytes } from "./captured-replay";
 import { clearLiveSpectrograms, savedSpectrogramBytes } from "./spectrum-storage";
@@ -9,7 +9,7 @@ import { clearLiveSpectrograms, savedSpectrogramBytes } from "./spectrum-storage
 const rows = [
   { label: "Saved audio", help: "Recordings saved on this device for playback and export.", bytes: savedAudioBytes, clear: clearRecordedAudio, stopsCapture: true },
   { label: "Saved spectrograms", help: "Spectrograms captured from Spotify audio.", bytes: savedSpectrogramBytes, clear: clearLiveSpectrograms, stopsCapture: true },
-  { label: "Animated cover art", help: "Animated covers saved on this device for reuse across restarts.", bytes: cachedMotionArtworkBytes, clear: clearMotionArtworkCache, stopsCapture: false },
+  { label: "Animated cover art", help: `Up to ${motionArtworkBudget / 1_000_000_000} GB of animated covers saved on this device for reuse across restarts.`, bytes: cachedMotionArtworkBytes, clear: clearMotionArtworkCache, stopsCapture: false },
 ] as const;
 
 type CacheLabel = (typeof rows)[number]["label"];

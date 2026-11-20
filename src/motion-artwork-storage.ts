@@ -1,4 +1,4 @@
-const budget = 256 * 1024 * 1024;
+export const motionArtworkBudget = 2_000_000_000;
 const storeName = "covers";
 type Entry = { key: string; blob: Blob; usedAt: number };
 
@@ -39,24 +39,24 @@ export async function readStoredMotionArtwork(key: string) {
 }
 
 export async function saveMotionArtwork(key: string, blob: Blob) {
-  if (blob.size > budget) return;
+  if (blob.size > motionArtworkBudget) return;
   const db = await openCache();
   const transaction = db.transaction(storeName, "readwrite");
   const done = complete(transaction);
   const store = transaction.objectStore(storeName);
-  store.put({ key, blob, usedAt: Date.now() } satisfies Entry);
   const request = store.getAll();
   request.onsuccess = () => {
-    const entries: Entry[] = request.result;
-    let bytes = entries.reduce((total, entry) => total + entry.blob.size, 0);
-    if (bytes <= budget) return;
-    entries.sort((a, b) => a.usedAt - b.usedAt);
-    for (const entry of entries) {
-      if (bytes <= budget) break;
-      if (entry.key === key) continue;
-      store.delete(entry.key);
-      bytes -= entry.blob.size;
+    const entries = (request.result as Entry[]).filter((entry) => entry.key !== key);
+    let bytes = entries.reduce((total, entry) => total + entry.blob.size, blob.size);
+    if (bytes > motionArtworkBudget) {
+      entries.sort((a, b) => a.usedAt - b.usedAt);
+      for (const entry of entries) {
+        if (bytes <= motionArtworkBudget) break;
+        store.delete(entry.key);
+        bytes -= entry.blob.size;
+      }
     }
+    store.put({ key, blob, usedAt: Date.now() } satisfies Entry);
   };
   await done;
 }
