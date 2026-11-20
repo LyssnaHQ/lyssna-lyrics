@@ -61,6 +61,9 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
   const clip = useRef<{ uri: string; end: number; from: number; expires: number; started: boolean }>(undefined);
   const audioForSong = audio?.uri === current?.uri ? audio : undefined;
   const isPlaying = audioForSong ? localPlaying : playing;
+  const readCapturePosition = useCallback((uri: string) => {
+    if (host.playing() && !host.djNarrating() && uri === `spotify:track:${host.track()?.id}`) return host.position();
+  }, [host]);
   const notify = useCallback((message: string, error = false) => setNotice({ message, error }), []);
 
   const sourceKey = enabledSources(settings).join(",");
@@ -242,7 +245,7 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
     {audioForSong && <audio key={audioForSong.url} ref={audioElement} src={audioForSong.url} data-track-uri={audioForSong.uri}
       onPlay={() => setLocalPlaying(true)} onPause={() => setLocalPlaying(false)} onEnded={() => setLocalPlaying(false)} />}
     <div className="lyssna-creator-body">
-      {root && portal && <CreatorEnvironment.Provider value={{ root, portal, view, read, waveform, spectrogram,
+      {root && portal && <CreatorEnvironment.Provider value={{ root, portal, view, read, readCapturePosition, waveform, spectrogram,
         spectrumKey: audio?.url ?? "spotify", spectrumAudioUri: audio?.uri, openAudio, playClip }}>
         <TtmlCreator state={state} onPlayer={player} onToggle={() => player({ command: isPlaying ? "pause" : "play" })}
           onSpeed={setSpeed} notify={notify} barSlot={showBar ? playbarSlot ?? bar : null} onShowPlayer={() => { releaseAudio(); setShowBar(false); }}

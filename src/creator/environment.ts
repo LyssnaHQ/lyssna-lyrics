@@ -5,6 +5,7 @@ export type CreatorEnvironmentValue = {
   portal: HTMLElement;
   view: Window & typeof globalThis;
   read: (at?: number) => number;
+  readCapturePosition: (uri: string) => number | undefined;
   spectrumKey: string;
   spectrumAudioUri?: string;
   openAudio: () => void;

@@ -1,7 +1,9 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ArrowRightToLine, Eye, EyeOff, FileAudio, Settings2 } from "lucide-react";
+import { ArrowRightToLine, AudioLines, Eye, EyeOff, FileAudio, Settings2, Square } from "lucide-react";
 import { useCreatorEnvironment } from "./environment";
 import { pitchBands, spectrumFrequency, spectrumFrequencyPosition } from "./audio";
+import { useLiveSpectrum } from "./live-spectrum";
+import { LIVE_COLUMNS, LIVE_ROWS, LIVE_TILE_MS } from "./spectrum-storage";
 import {
   type CreatorLine,
   type Cursor,
@@ -197,6 +199,7 @@ const Tile = memo(function Tile({
   width,
   table,
   gain,
+  revision,
 }: {
   data: Uint16Array;
   columns: number;
@@ -205,6 +208,7 @@ const Tile = memo(function Tile({
   width: number;
   table: Uint8ClampedArray;
   gain: number;
+  revision?: number;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   useLayoutEffect(() => {
@@ -215,7 +219,7 @@ const Tile = memo(function Tile({
     const palette = new Uint32Array(table.buffer);
     for (let index = 0; index < pixels.length; index++) pixels[index] = palette[colourIndex(data[index], gain)];
     context.putImageData(image, 0, 0);
-  }, [data, columns, rows, table, gain]);
+  }, [data, columns, rows, table, gain, revision]);
   return (
     <canvas
       ref={canvas}
@@ -262,9 +266,12 @@ export function TtmlSpectrogram({
   canOpenAudio: boolean;
 }) {
   const { view: window, spectrogram, spectrumKey: audioKey, spectrumAudioUri, openAudio } = useCreatorEnvironment();
-  const pitch = spectrumAudioUri !== uri;
-  const spectrumKey = pitch ? "spotify-pitch" : audioKey;
-  const rows = pitch ? pitchBands : ROWS;
+  const localAudio = spectrumAudioUri === uri;
+  const liveSpectrum = useLiveSpectrum(uri, duration, canOpenAudio && !localAudio && duration > 0);
+  const liveCapture = !localAudio && (liveSpectrum.hasSaved || liveSpectrum.status === "live");
+  const pitch = !localAudio && !liveCapture;
+  const spectrumKey = liveCapture ? "live" : pitch ? "spotify-pitch" : audioKey;
+  const rows = liveCapture ? LIVE_ROWS : pitch ? pitchBands : ROWS;
   const asked = useRef(new Map<string, AbortController>());
   useEffect(() => {
     const requests = asked.current;
@@ -421,17 +428,23 @@ export function TtmlSpectrogram({
       jump(x - width * 0.1);
   }, [shown, width, follow, playing]);
 
-  const tilePx = (TILE_MS / 1000) * zoom;
+  const tileMs = liveCapture ? LIVE_TILE_MS : TILE_MS;
+  const tilePx = (tileMs / 1000) * zoom;
   const detail = pitch ? SPOTIFY_DETAIL : DETAIL.find((columns) => columns >= tilePx) ?? DETAIL.at(-1)!;
   const failureKey = `${spectrumKey}|${uri}`;
-  const tileCount = Math.ceil(duration / TILE_MS);
+  const tileCount = Math.ceil(duration / tileMs);
   const firstTile = Math.max(0, Math.floor(scroll / tilePx) - 1);
   const lastTile = Math.min(
     tileCount - 1,
     Math.ceil((scroll + width) / tilePx) + 1,
   );
-  const visible: { index: number; data: Uint16Array; columns: number }[] = [];
+  const visible: { index: number; data: Uint16Array; columns: number; revision?: number }[] = [];
   for (let index = firstTile; width && index <= lastTile; index++) {
+    if (liveCapture) {
+      const captured = liveSpectrum.tiles.get(index);
+      if (captured) visible.push({ index, data: captured.tile.levels, columns: LIVE_COLUMNS, revision: captured.revision });
+      continue;
+    }
     const key = `${spectrumKey}|${uri}|${index}|${detail}`;
     let data = tiles.get(key);
     let columns = detail;
@@ -446,8 +459,12 @@ export function TtmlSpectrogram({
       }
     if (data) visible.push({ index, data, columns });
   }
+  const loadLiveTiles = liveSpectrum.load;
   useEffect(() => {
-    if (!width || failed === failureKey) return;
+    if (liveCapture && width) return loadLiveTiles(firstTile, lastTile);
+  }, [liveCapture, loadLiveTiles, firstTile, lastTile, width]);
+  useEffect(() => {
+    if (liveCapture || !width || failed === failureKey) return;
     const needed = new Map<string, number>();
     for (let index = firstTile; index <= lastTile; index++) needed.set(`${failureKey}|${index}|${detail}`, index);
     for (const [key, request] of asked.current) {
@@ -469,7 +486,7 @@ export function TtmlSpectrogram({
         .catch(() => { if (!request.signal.aborted) setFailed(failureKey); })
         .finally(() => { if (asked.current.get(key) === request) asked.current.delete(key); });
     }
-  }, [uri, firstTile, lastTile, detail, rows, width, failed, failureKey, spectrogram]);
+  }, [uri, firstTile, lastTile, detail, rows, width, failed, failureKey, spectrogram, liveCapture]);
 
   const table = useMemo(() => paletteTable(palette), [palette]);
 
@@ -657,7 +674,7 @@ export function TtmlSpectrogram({
   return (
     <section
       className={`ttml-spectrum${pitch ? " spotify-pitch" : ""}`}
-      aria-label={pitch ? "Spotify pitch analysis" : "Spectrogram"}
+      aria-label={liveCapture ? "Captured Spotify spectrogram" : pitch ? "Spotify pitch analysis" : "Spectrogram"}
       style={{ height }}
     >
       <div
@@ -719,7 +736,7 @@ export function TtmlSpectrogram({
           >
             {visible.map((tile) => (
               <Tile
-                key={tile.index}
+                key={`${spectrumKey}:${tile.index}`}
                 data={tile.data}
                 columns={tile.columns}
                 rows={rows}
@@ -727,6 +744,7 @@ export function TtmlSpectrogram({
                 width={tilePx}
                 table={table}
                 gain={gain}
+                revision={tile.revision}
               />
             ))}
             {bands.map((band) => (
@@ -797,12 +815,18 @@ export function TtmlSpectrogram({
           </div>
           {!visible.length && (
             <p className="ttml-spectrum-empty">
-              {failed === failureKey
+              {liveCapture ? liveSpectrum.status === "live" ? "Play Spotify to fill this part of the spectrogram." : "No saved audio analysis in this part of the song."
+                : failed === failureKey
                 ? pitch ? "Spotify pitch analysis is unavailable for this track. Open a local audio file for the spectrogram." : "Couldn’t draw the spectrogram."
                 : pitch ? "Loading Spotify pitch analysis…" : "Drawing the spectrogram…"}
             </p>
           )}
         </div>
+        {(liveSpectrum.message || liveSpectrum.status !== "idle") && (
+          <div className="ttml-spectrum-capture-status" role="status">
+            {liveSpectrum.message || (liveSpectrum.status === "selecting" ? "Select this Spotify tab and share its audio." : "Sharing Spotify audio")}
+          </div>
+        )}
         {hover && !drag && (
           <div className="ttml-spectrum-tip" style={{ left: hover.x }}>
             {formatTime(Math.round(hoverMs))}
@@ -813,8 +837,15 @@ export function TtmlSpectrogram({
         )}
       </div>
       <div className="ttml-spectrum-tools">
+        {canOpenAudio && !localAudio && <button className={`ttml-spectrum-tool${liveSpectrum.status === "live" ? " on" : ""}`}
+          type="button" disabled={liveSpectrum.status === "selecting"}
+          aria-label={liveSpectrum.status === "live" ? "Stop sharing Spotify audio" : "Share Spotify audio"}
+          title={liveSpectrum.status === "live" ? "Stop sharing Spotify audio" : "Share Spotify audio"}
+          onClick={() => liveSpectrum.status === "live" ? liveSpectrum.stop() : void liveSpectrum.start()}>
+          {liveSpectrum.status === "live" ? <Square size={13} /> : <AudioLines size={15} />}
+        </button>}
         {canOpenAudio && <button className="ttml-spectrum-tool" type="button" onClick={openAudio}
-          aria-label="Open local audio" title={pitch ? "Spotify pitch analysis has 12 bands. Open a local audio file for the full spectrogram." : "Change the local audio file"}>
+          aria-label="Open local audio" title={localAudio ? "Change the local audio file" : "Open a local audio file for the full spectrogram"}>
           <FileAudio size={15} />
         </button>}
         <button

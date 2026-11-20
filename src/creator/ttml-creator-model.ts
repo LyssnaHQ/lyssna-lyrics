@@ -232,17 +232,25 @@ export function fromLyrics(lyrics: Lyrics): CreatorLine[] {
         lyrics.synced &&
         line.words.length > 0 &&
         line.words.every((word) => Number.isFinite(word.start_ms) && Number.isFinite(word.end_ms));
-      const units: CreatorUnit[] = syllableTiming
-        ? line.words
-            .filter((word) => word.text.trim())
-            .map((word, index) => ({
-              text: word.text.trim(),
-              joined: index > 0 && !/^\s/.test(word.text),
-              start: word.start_ms,
-              end: word.end_ms,
-              ...(word.romanization?.trim() && { roman: word.romanization.trim() }),
-            }))
-        : (parseText(line.text.replace(/\|/g, ""))[0]?.units ?? []);
+      const units: CreatorUnit[] = syllableTiming ? [] : (parseText(line.text.replace(/\|/g, ""))[0]?.units ?? []);
+      if (syllableTiming) {
+        let gap = true;
+        for (const word of line.words) {
+          const text = word.text.trim();
+          if (!text) {
+            gap ||= /\s/u.test(word.text);
+            continue;
+          }
+          units.push({
+            text,
+            joined: !gap && !/^\s/u.test(word.text),
+            start: word.start_ms,
+            end: word.end_ms,
+            ...(word.romanization?.trim() && { roman: word.romanization.trim() }),
+          });
+          gap = /\s$/u.test(word.text);
+        }
+      }
       if (
         !syllableTiming &&
         lyrics.synced &&
@@ -1191,14 +1199,17 @@ export function toLyrics(lines: CreatorLine[]): Lyrics {
   for (const line of lines) {
     if (!line.background && line.units.length) leadOpposite = line.opposite;
     const words: Word[] = [];
-    line.units.forEach((unit, index) => {
-      if (unit.start === undefined) return;
+    let gap = false;
+    for (const unit of line.units) {
+      gap ||= !unit.joined;
+      if (unit.start === undefined) continue;
       words.push({
         start_ms: unit.start,
         end_ms: Math.max(unit.start, unit.end ?? unit.start),
-        text: index > 0 && !unit.joined ? ` ${unit.text}` : unit.text,
+        text: gap && words.length ? ` ${unit.text}` : unit.text,
       });
-    });
+      gap = false;
+    }
     const span = lineSpan(line);
     if (!span || !words.length) continue;
     shown.push({

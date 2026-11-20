@@ -1746,6 +1746,19 @@
   font-size: 13px;
   pointer-events: none;
 }
+.ttml-spectrum-capture-status {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  z-index: 4;
+  max-width: calc(100% - 12px);
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: #0b0d1aeb;
+  color: #fff;
+  font-size: 11px;
+  pointer-events: none;
+}
 .ttml-spectrum-line {
   position: absolute;
   top: 0;
@@ -1905,6 +1918,7 @@
   display: grid;
   width: 28px;
   height: 28px;
+  min-height: 0;
   padding: 0;
   place-items: center;
   border: 1px solid #ffffff33;

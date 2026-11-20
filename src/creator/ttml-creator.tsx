@@ -2959,6 +2959,7 @@ export function TtmlCreator({
             peaks={peaks?.uri === track.uri ? peaks.values : null}
             spectrum={
               <TtmlSpectrogram
+                key={track.uri}
                 uri={track.uri}
                 duration={track.duration_ms}
                 position={position}
