@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { spectrumFrequency } from "./audio";
 import { useCreatorEnvironment } from "./environment";
+import { spotifyWindowMarker } from "./spotify-window";
 import {
   hasLiveSpectrum, LIVE_COLUMNS, LIVE_ROWS, LIVE_SAMPLE_MS, LIVE_TILE_MS, mergeLiveTile,
   readLiveTiles, saveLiveTiles, type LiveTile,
@@ -14,7 +15,8 @@ type CaptureVideo = MediaStreamTrack & { getCaptureHandle?(): CaptureHandle | nu
 type DisplayOptions = DisplayMediaStreamOptions & {
   preferCurrentTab: boolean;
   systemAudio: "exclude";
-  windowAudio: "exclude";
+  windowAudio: "window" | "exclude";
+  selfBrowserSurface: "include" | "exclude";
   monitorTypeSurfaces: "exclude";
   surfaceSwitching: "exclude";
 };
@@ -29,6 +31,8 @@ function captureError(error: unknown) {
 
 export function useLiveSpectrum(uri: string, duration: number, canCapture: boolean) {
   const { view, readCapturePosition } = useCreatorEnvironment();
+  const desktop = view.location.hostname === "xpui.app.spotify.com";
+  const sharePrompt = desktop ? "Choose the Spotify window and enable window audio." : "Choose this Spotify tab and enable tab audio.";
   const [status, setStatus] = useState<CaptureStatus>("idle");
   const [hasSaved, setHasSaved] = useState(false);
   const [message, setMessage] = useState("");
@@ -88,12 +92,14 @@ export function useLiveSpectrum(uri: string, duration: number, canCapture: boole
     if (!canCapture || session.current) return;
     const devices: CaptureDevices | undefined = view.navigator.mediaDevices;
     const origin = view.location.origin;
-    if (!devices?.getDisplayMedia || !devices.setCaptureHandleConfig || origin === "null") {
+    if (!devices?.getDisplayMedia || (!desktop && (!devices.setCaptureHandleConfig || origin === "null"))) {
       setMessage("This Spotify client can’t verify Spotify-only audio sharing.");
       return;
     }
 
     const dirty = new Set<number>();
+    const verification = new AbortController();
+    let marker: ReturnType<typeof spotifyWindowMarker> | undefined;
     let stream: MediaStream | undefined;
     let context: AudioContext | undefined;
     let timer = 0;
@@ -120,6 +126,8 @@ export function useLiveSpectrum(uri: string, duration: number, canCapture: boole
       session.current = undefined;
       view.clearInterval(timer);
       view.clearInterval(saveTimer);
+      verification.abort();
+      marker?.remove();
       stream?.getTracks().forEach((track) => track.stop());
       if (configured) {
         try { devices.setCaptureHandleConfig?.({ permittedOrigins: [] }); }
@@ -135,19 +143,29 @@ export function useLiveSpectrum(uri: string, duration: number, canCapture: boole
     const active = { stop };
     session.current = active;
     setStatus("selecting");
-    setMessage("");
+    setMessage(sharePrompt);
     try {
       const handle = view.crypto.randomUUID();
-      devices.setCaptureHandleConfig({ handle, exposeOrigin: true, permittedOrigins: [origin] });
-      configured = true;
+      if (desktop) marker = spotifyWindowMarker(view);
+      else {
+        devices.setCaptureHandleConfig?.({ handle, exposeOrigin: true, permittedOrigins: [origin] });
+        configured = true;
+      }
       context = new view.AudioContext();
       void context.resume().catch(() => {});
       const options: DisplayOptions = {
-        video: { displaySurface: "browser", frameRate: { ideal: 1 } },
-        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, suppressLocalAudioPlayback: false } as MediaTrackConstraints,
-        preferCurrentTab: true,
+        video: { displaySurface: desktop ? "window" : "browser", frameRate: { ideal: 1 } },
+        audio: {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false,
+          restrictOwnAudio: false,
+          suppressLocalAudioPlayback: false,
+        } as MediaTrackConstraints,
+        preferCurrentTab: !desktop,
         systemAudio: "exclude",
-        windowAudio: "exclude",
+        windowAudio: desktop ? "window" : "exclude",
+        selfBrowserSurface: desktop ? "exclude" : "include",
         monitorTypeSurfaces: "exclude",
         surfaceSwitching: "exclude",
       };
@@ -158,13 +176,30 @@ export function useLiveSpectrum(uri: string, duration: number, canCapture: boole
       }
       const [video] = stream.getVideoTracks() as CaptureVideo[];
       const [audio] = stream.getAudioTracks();
+      if (!audio || audio.readyState !== "live") {
+        throw new Error(desktop ? "The picker didn’t supply window audio. Enable Share window audio if offered." :
+          "Spotify didn’t share an audio track. Enable tab audio in the picker if offered.");
+      }
+      let windowVerified = false;
+      if (desktop) {
+        if (video?.getSettings().displaySurface !== "window" || audio.label !== "Application Audio") {
+          throw new Error("Choose the Spotify window with application audio. This client may only offer tab or system audio.");
+        }
+        setMessage("Verifying the Spotify window…");
+        windowVerified = await marker!.matches(video, verification.signal);
+        marker?.remove();
+        if (session.current !== active) return;
+        if (!windowVerified) throw new Error("Couldn’t verify the Spotify window. Keep it visible and choose it in the picker.");
+      }
       const isSpotify = () => {
+        if (video?.readyState !== "live") return false;
+        if (desktop) return windowVerified && video.getSettings().displaySurface === "window" && audio.label === "Application Audio";
         const source = video?.getCaptureHandle?.();
-        return video?.readyState === "live" && video.getSettings().displaySurface === "browser" &&
+        return video.getSettings().displaySurface === "browser" &&
           source?.handle === handle && source.origin === origin;
       };
       if (!isSpotify()) throw new Error("Choose the current Spotify tab. Other tabs, windows and system audio are rejected.");
-      if (!audio || audio.readyState !== "live") throw new Error("Spotify didn’t share an audio track. Enable tab audio in the picker if offered.");
+      if (audio.readyState !== "live") throw new Error("Spotify audio sharing ended before capture started.");
 
       const stopped = () => stop("Spotify audio sharing ended.");
       video.addEventListener("ended", stopped, { once: true });
@@ -173,7 +208,7 @@ export function useLiveSpectrum(uri: string, duration: number, canCapture: boole
       const analyser = context.createAnalyser();
       analyser.fftSize = 4096;
       analyser.smoothingTimeConstant = 0;
-      // Only connect the verified audio track. The video track is used for identity checks.
+      // Only connect the verified audio track. Captured video is never stored.
       const source = context.createMediaStreamSource(new view.MediaStream([audio]));
       source.connect(analyser);
       const bins = new Float32Array(analyser.frequencyBinCount);
@@ -185,15 +220,23 @@ export function useLiveSpectrum(uri: string, duration: number, canCapture: boole
       let previousAt = 0;
       let settleUntil = 0;
       let noSignalSince = 0;
+      let suspendedSince = 0;
       let heard = false;
-      let quiet = false;
       let frames = 0;
       setStatus("live");
+      setMessage("");
+      const audioContext = context;
       timer = view.setInterval(() => {
         if (!isSpotify()) { stop("Spotify audio sharing ended when the source changed."); return; }
+        const now = view.performance.now();
+        if (audioContext.state !== "running") {
+          suspendedSince ||= now;
+          if (now - suspendedSince > 3000) stop("Spotify couldn’t start the audio analyser.");
+          return;
+        }
+        suspendedSince = 0;
         const ms = readCapturePosition(uri);
         if (ms === undefined || !Number.isFinite(ms)) { previous = -Infinity; noSignalSince = 0; return; }
-        const now = view.performance.now();
         const delta = ms - previous;
         if (delta < -40 || delta > now - previousAt + 160) settleUntil = now + 160;
         previous = ms;
@@ -204,16 +247,11 @@ export function useLiveSpectrum(uri: string, duration: number, canCapture: boole
         if (audio.muted) bins.fill(-Infinity);
         else analyser.getFloatFrequencyData(bins);
         const signal = bins.some((level) => level > -82);
-        if (signal) {
-          noSignalSince = 0;
-          if (quiet) { quiet = false; setMessage(""); }
-        } else {
+        if (signal) noSignalSince = 0;
+        else if (!heard) {
           noSignalSince ||= now;
-          if (!quiet && now - noSignalSince > 3000) {
-            quiet = true;
-            setMessage("The shared Spotify tab is silent. This client may play music outside the tab.");
-          }
-          if (!heard) return;
+          if (now - noSignalSince > 5000) stop("Spotify audio sharing stopped after five seconds of silence.");
+          return;
         }
         if (!heard) { heard = true; setHasSaved(true); }
 
