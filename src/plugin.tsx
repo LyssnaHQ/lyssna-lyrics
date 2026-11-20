@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { MicVocal, Music2, Settings as GearIcon, X } from "lucide-react";
-import { getHost, type Host, type Track } from "./host";
+import { getHost, type CanvasInfo, type Host, type Track } from "./host";
 import { useArtworkColor } from "./lyssna/artwork-color";
 import { Ambience } from "./lyssna/ambience";
 import { setFrameCap } from "./lyssna/frame-cap";
@@ -204,7 +204,11 @@ function LyricsView({ host, options, close, parent, openPopout }: {
   const importTrack = useRef<Track | null>(null);
   const fonts = useAppFonts(settings);
   const coverColour = useArtworkColor(track?.cover);
-  const canvas = useCanvas(host, track?.id, settings.canvas_lyrics && !settings.lyrics_hide_artwork);
+  const canvasEnabled = settings.canvas_lyrics && !settings.lyrics_hide_artwork;
+  const canvasInfo = useCanvas(host, track?.id, canvasEnabled);
+  const [unavailableCanvas, setUnavailableCanvas] = useState<CanvasInfo>();
+  const canvas = canvasInfo === unavailableCanvas ? undefined : canvasInfo;
+  useEffect(() => setUnavailableCanvas(undefined), [track?.id, canvasEnabled]);
   const background = settings.lyrics_background;
   const artistUri = track?.artistUri;
   const trackId = track?.id;
@@ -319,7 +323,7 @@ function LyricsView({ host, options, close, parent, openPopout }: {
   const hasAmbience = track?.cover && (background === "animated" || background === "static");
   const banner = background === "artist" && artistHeader?.uri === artistUri ? artistHeader?.url : undefined;
   const backgroundImage = background === "cover" || background === "artist" ? banner || track?.cover : undefined;
-  const className = `lyrics-page ${narrow || settings.lyrics_compact ? "narrow" : ""}
+  const className = `lyrics-page ${canvas ? "canvas-lyrics" : ""} ${narrow || settings.lyrics_compact ? "narrow" : ""}
     ${settings.lyrics_hide_artwork ? "no-artwork" : ""} ${settings.lyrics_artwork_right ? "artwork-right" : ""}
     ${background === "color" ? "colour-background" : ""} ${settings.lyrics_toolbar_bottom ? "toolbar-bottom" : ""} ${settings.reduce_motion ? "reduce-motion" : ""}`;
   const pageStyle = { ...fonts, "--lyric-size": `${Math.round(settings.lyric_size * 1.6)}px`,
@@ -334,9 +338,10 @@ function LyricsView({ host, options, close, parent, openPopout }: {
       onPointerMove={wakeTools} onPointerLeave={sleepTools} onKeyDownCapture={wakeTools}>
       {track ? <>
         <div className="lyrics-album">
-          {(canvas || track.cover) && <div className="lyrics-media">{canvas
-            ? <CanvasArtwork key={`${track.id}:${canvas.fileId ?? canvas.url}`} info={canvas} cover={track.cover} playing={playing && !settings.reduce_motion} />
-            : <img className={`cover${settings.cover_animation && !settings.reduce_motion ? " crossfade" : ""}`} key={track.cover} src={track.cover} alt="" />}</div>}
+          {canvas ? <CanvasArtwork key={`${track.id}:${canvas.fileId ?? canvas.url}`} info={canvas} cover={track.cover}
+            playing={playing && !settings.reduce_motion} onUnavailable={setUnavailableCanvas} />
+            : track.cover && <div className="lyrics-media"><img className={`cover${settings.cover_animation && !settings.reduce_motion ? " crossfade" : ""}`}
+              key={track.cover} src={track.cover} alt="" /></div>}
           <TrackMetadata host={host} track={track} year={year} yearPosition={settings.lyrics_year_position} reduceMotion={settings.reduce_motion} />
         </div>
         <div className="lyrics-body"><LyricsForTrack key={track.id} track={track} host={host} playing={playing} settings={settings} /></div>

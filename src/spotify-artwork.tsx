@@ -35,9 +35,10 @@ function canvasUrl(value?: string) {
   } catch { /* Keep the cover when Spotify has no usable Canvas URL. */ }
 }
 
-export function CanvasArtwork({ info, cover, playing }: { info: CanvasInfo; cover: string; playing: boolean }) {
+export function CanvasArtwork({ info, cover, playing, onUnavailable }: {
+  info: CanvasInfo; cover: string; playing: boolean; onUnavailable(info: CanvasInfo): void;
+}) {
   const ref = useRef<HTMLVideoElement>(null);
-  const [failed, setFailed] = useState(false);
   useEffect(() => {
     const video = ref.current;
     if (!video) return;
@@ -46,7 +47,7 @@ export function CanvasArtwork({ info, cover, playing }: { info: CanvasInfo; cove
     let usingDirect = false;
     function useDirect() {
       if (controller.signal.aborted) return;
-      if (usingDirect || !direct) { setFailed(true); return; }
+      if (usingDirect || !direct) { onUnavailable(info); return; }
       usingDirect = true;
       video!.src = direct;
     }
@@ -59,14 +60,14 @@ export function CanvasArtwork({ info, cover, playing }: { info: CanvasInfo; cove
       video.removeAttribute("src");
       video.load();
     };
-  }, [info.fileId, info.url]);
+  }, [info, onUnavailable]);
   useEffect(() => {
     if (playing) void ref.current?.play().catch(() => {});
     else ref.current?.pause();
   }, [playing]);
-  return failed ? <img className="cover" src={cover} alt="" /> : <video ref={ref} className="lyssna-canvas" data-canvas-video=""
+  return <div className="cover lyrics-canvas-cover"><video ref={ref} data-canvas-video=""
     poster={cover || undefined} muted autoPlay={playing} loop playsInline
-    onCanPlay={(event) => { if (playing) void event.currentTarget.play().catch(() => {}); }} aria-label="Spotify Canvas" />;
+    onCanPlay={(event) => { if (playing) void event.currentTarget.play().catch(() => {}); }} aria-label="Spotify Canvas" /></div>;
 }
 
 export function SpotifyVisualiser({ host, trackId, playing, opacity }: { host: Host; trackId: string; playing: boolean; opacity: number }) {

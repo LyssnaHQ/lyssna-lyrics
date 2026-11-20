@@ -214,7 +214,12 @@ export function SettingsPanel({ settings, change, close, options, trackId, impor
     ]],
     ["Lyrics", "Lyrics display", [
       visualRowsByKey.get("size"),
-      flag("lyrics_discord_usernames", "Discord usernames in credits", "Use Discord usernames when supplied with community lyric credits.", "credits contributor"),
+      <SettingRow key="lyrics_discord_usernames" label="Discord display name in credits"
+        help="Show display names. Turn off to look up Discord usernames through the same public service as Legacy."
+        keywords="discord username user names contributor credits">
+        <Toggle label="Discord display name in credits" checked={!settings.lyrics_discord_usernames}
+          onChange={(displayNames) => change({ lyrics_discord_usernames: !displayNames })} />
+      </SettingRow>,
       <SettingRow key="global-offset" label="Lyric timing offset" help="Positive values show lyrics earlier." keywords="delay timing offset">
         <input className="number-field" aria-label="Global offset in milliseconds" type="number" min={-10000} max={10000} step={50}
           value={settings.lyric_offset_ms} onChange={(event) => change({ lyric_offset_ms: boundedOffset(event.target.valueAsNumber) })} />
