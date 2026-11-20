@@ -1,6 +1,7 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowRightToLine, Eye, EyeOff, Settings2 } from "lucide-react";
 import { useCreatorEnvironment } from "./environment";
+import { pitchBands } from "./audio";
 import {
   type CreatorLine,
   type Cursor,
@@ -187,9 +188,10 @@ function useStored<T>(
 const isNumber = (value: unknown) => typeof value === "number";
 const isBoolean = (value: unknown) => typeof value === "boolean";
 
-function Tile({
+const Tile = memo(function Tile({
   data,
   columns,
+  rows,
   left,
   width,
   table,
@@ -197,6 +199,7 @@ function Tile({
 }: {
   data: Uint16Array;
   columns: number;
+  rows: number;
   left: number;
   width: number;
   table: Uint8ClampedArray;
@@ -206,23 +209,22 @@ function Tile({
   useLayoutEffect(() => {
     const context = canvas.current?.getContext("2d");
     if (!context) return;
-    const image = context.createImageData(columns, ROWS);
-    for (let index = 0; index < columns * ROWS; index++) {
-      const at = colourIndex(data[index], gain) * 4;
-      image.data.set(table.subarray(at, at + 4), index * 4);
-    }
+    const image = context.createImageData(columns, rows);
+    const pixels = new Uint32Array(image.data.buffer);
+    const palette = new Uint32Array(table.buffer);
+    for (let index = 0; index < pixels.length; index++) pixels[index] = palette[colourIndex(data[index], gain)];
     context.putImageData(image, 0, 0);
-  }, [data, columns, table, gain]);
+  }, [data, columns, rows, table, gain]);
   return (
     <canvas
       ref={canvas}
       className="ttml-spectrum-tile"
       width={columns}
-      height={ROWS}
+      height={rows}
       style={{ left, width }}
     />
   );
-}
+});
 
 interface Drag {
   at: Cursor;
@@ -256,7 +258,10 @@ export function TtmlSpectrogram({
   onCursor: (at: Cursor) => void;
   onPlayUnit: (at: Cursor) => void;
 }) {
-  const { view: window, spectrogram, spectrumKey } = useCreatorEnvironment();
+  const { view: window, spectrogram, spectrumKey: audioKey, spectrumAudioUri } = useCreatorEnvironment();
+  const pitch = spectrumAudioUri !== uri;
+  const spectrumKey = pitch ? "spotify-pitch" : audioKey;
+  const rows = pitch ? pitchBands : ROWS;
   const asked = useRef(new Map<string, AbortController>());
   useEffect(() => {
     const requests = asked.current;
@@ -412,7 +417,7 @@ export function TtmlSpectrogram({
   }, [shown, width, follow, playing]);
 
   const tilePx = (TILE_MS / 1000) * zoom;
-  const detail = DETAIL.find((columns) => columns >= tilePx) ?? DETAIL.at(-1)!;
+  const detail = pitch ? DETAIL[0] : DETAIL.find((columns) => columns >= tilePx) ?? DETAIL.at(-1)!;
   const tileCount = Math.ceil(duration / TILE_MS);
   const firstTile = Math.max(0, Math.floor(scroll / tilePx) - 1);
   const lastTile = Math.min(
@@ -442,9 +447,9 @@ export function TtmlSpectrogram({
       if (tiles.has(key) || asked.current.has(key)) continue;
       const request = new AbortController();
       asked.current.set(key, request);
-      spectrogram(uri, index * TILE_MS, (index + 1) * TILE_MS, detail, ROWS, request.signal)
+      spectrogram(uri, index * TILE_MS, (index + 1) * TILE_MS, detail, rows, request.signal)
         .then((data) => {
-          if (!request.signal.aborted && data.length === detail * ROWS) {
+          if (!request.signal.aborted && data.length === detail * rows) {
             keep(key, data);
             setLoaded((count) => count + 1);
           }
@@ -452,7 +457,7 @@ export function TtmlSpectrogram({
         .catch(() => { if (!request.signal.aborted) setFailed(uri); })
         .finally(() => { if (asked.current.get(key) === request) asked.current.delete(key); });
     }
-  }, [uri, firstTile, lastTile, detail, width, failed, spectrogram, spectrumKey]);
+  }, [uri, firstTile, lastTile, detail, rows, width, failed, spectrogram, spectrumKey]);
 
   const table = useMemo(() => paletteTable(palette), [palette]);
 
@@ -632,16 +637,15 @@ export function TtmlSpectrogram({
 
   const hoverMs = hover ? ((scroll + hover.x) / zoom) * 1000 : 0;
   const plotHeight = height - RULER;
-  const hoverHz =
-    hover && hover.y > RULER
-      ? (1 - (hover.y - RULER) / plotHeight) * TOP_HZ
-      : null;
+  const hoverBand = hover && hover.y > RULER ? Math.max(0, Math.min(1, 1 - (hover.y - RULER) / plotHeight)) : null;
+  const hoverHz = !pitch && hoverBand !== null ? hoverBand * TOP_HZ : null;
+  const hoverNote = pitch && hoverBand !== null ? NOTES[Math.min(pitchBands - 1, Math.floor(hoverBand * pitchBands))] : null;
   const gainFill = ((gain - 0.5) / 7.5) * 100;
 
   return (
     <section
-      className="ttml-spectrum"
-      aria-label="Spectrogram"
+      className={`ttml-spectrum${pitch ? " spotify-pitch" : ""}`}
+      aria-label={pitch ? "Spotify pitch analysis" : "Spectrogram"}
       style={{ height }}
     >
       <div
@@ -653,10 +657,10 @@ export function TtmlSpectrogram({
       />
       <div className="ttml-spectrum-side">
         <div className="ttml-spectrum-scale" style={{ top: RULER }}>
-          {[20000, 15000, 10000, 5000].map((hz) => (
-            <span key={hz} style={{ bottom: `${(hz / TOP_HZ) * 100}%` }}>
-              {hz / 1000}k
-            </span>
+          {pitch ? NOTES.map((note, index) => (
+            <span key={note} style={{ bottom: `${(index + 0.5) / pitchBands * 100}%` }}>{note}</span>
+          )) : [20000, 15000, 10000, 5000].map((hz) => (
+            <span key={hz} style={{ bottom: `${hz / TOP_HZ * 100}%` }}>{hz / 1000}k</span>
           ))}
         </div>
         <label className="ttml-spectrum-gain" title={`Gain ${gain}×`}>
@@ -706,6 +710,7 @@ export function TtmlSpectrogram({
                 key={tile.index}
                 data={tile.data}
                 columns={tile.columns}
+                rows={rows}
                 left={tile.index * tilePx}
                 width={tilePx}
                 table={table}
@@ -781,8 +786,8 @@ export function TtmlSpectrogram({
           {!visible.length && (
             <p className="ttml-spectrum-empty">
               {failed === uri
-                ? "Open an audio file to show the spectrogram."
-                : "Drawing the spectrogram…"}
+                ? pitch ? "Spotify pitch analysis is unavailable for this track. Open a local audio file for the spectrogram." : "Couldn’t draw the spectrogram."
+                : pitch ? "Loading Spotify pitch analysis…" : "Drawing the spectrogram…"}
             </p>
           )}
         </div>
@@ -791,6 +796,7 @@ export function TtmlSpectrogram({
             {formatTime(Math.round(hoverMs))}
             {hoverHz !== null &&
               ` (${(hoverHz / 1000).toFixed(2)} kHz / ${noteName(hoverHz)})`}
+            {hoverNote && ` (${hoverNote})`}
           </div>
         )}
       </div>

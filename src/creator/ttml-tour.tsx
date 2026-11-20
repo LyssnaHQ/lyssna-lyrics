@@ -174,7 +174,7 @@ function steps(keys: KeyMap): Step[] {
     },
     {
       title: "Waveform",
-      target: ".ttml-bar-wave, .ttml-spectrogram",
+      target: ".ttml-bar-wave, .ttml-spectrum",
       body: (
         <>
           Click or drag to seek. The current line is shaded. The arrow on the
@@ -245,9 +245,11 @@ const GAP = 12;
 
 export function TtmlTour({
   keys,
+  barSlot,
   onClose,
 }: {
   keys: KeyMap;
+  barSlot?: HTMLElement | null;
   onClose: () => void;
 }) {
   const { root, portal, view: window } = useCreatorEnvironment();
@@ -263,7 +265,7 @@ export function TtmlTour({
   useEffect(() => {
     setDone(false);
     const find = () =>
-      step.target ? root.querySelector(step.target) : null;
+      step.target ? root.querySelector(step.target) ?? barSlot?.querySelector(step.target) ?? null : null;
     const target = find();
     target?.scrollIntoView({
       block: target.closest(".ttml-lines") ? "center" : "nearest",
@@ -287,7 +289,7 @@ export function TtmlTour({
       clearInterval(timer);
       window.removeEventListener("resize", update);
     };
-  }, [index, step.target]);
+  }, [index, step.target, barSlot]);
 
   useLayoutEffect(() => {
     if (card.current) setHeight(card.current.offsetHeight);

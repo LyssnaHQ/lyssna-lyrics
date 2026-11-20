@@ -1,0 +1,51 @@
+:host {
+  color: var(--spice-text, #fff);
+  color-scheme: dark;
+  --muted: var(--spice-subtext, #b3b3b3);
+  font: 14px "Lyssna Metropolis", "Segoe UI", sans-serif;
+}
+
+.creator-playbar-slot {
+  display: flex;
+  align-items: center;
+  min-height: 72px;
+  padding-block: 8px;
+  box-sizing: border-box;
+}
+
+:where(.creator-playbar-slot) button {
+  border: 0;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+}
+
+.creator-playbar-slot .ttml-bar-extras {
+  display: flex;
+  align-items: center;
+}
+
+.creator-playbar-slot .ttml-bar-extras .icon-button {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+}
+
+.creator-playbar-slot .ttml-bar-extras .icon-button:hover {
+  color: var(--spice-text, #fff);
+  background: #ffffff12;
+}
+
+.creator-playbar-slot .ttml-bar-extras .ttml-button {
+  color: var(--spice-button, #1ed760);
+}
+
+@media (max-width: 700px) {
+  .creator-playbar-slot .ttml-bar { gap: 6px; }
+  .creator-playbar-slot .ttml-bar-time { font-size: 10px; }
+  .creator-playbar-slot .ttml-bar-extras .icon-button { width: 27px; }
+}

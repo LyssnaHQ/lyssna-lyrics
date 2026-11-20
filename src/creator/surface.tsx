@@ -14,8 +14,9 @@ import { submitLyssnaTtml } from "../lyssna-submission";
 import { revalidateLyssnaSong } from "../lyssna-provider";
 import { lyssnaInstallReady } from "../lyssna-api";
 import { CreatorEnvironment } from "./environment";
-import { creatorSpectrum, creatorWaveform } from "./audio";
+import { creatorPitchSpectrum, creatorSpectrum, creatorWaveform } from "./audio";
 import { TtmlCreator } from "./ttml-creator";
+import { useCreatorPlaybar } from "./playbar";
 import { currentCreatorLyrics, within } from "./current-lyrics";
 import { dismissDraft } from "./ttml-working";
 import type { CreatorState, PlayerRequest, Track } from "./types";
@@ -46,6 +47,7 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
   const [portal, setPortal] = useState<HTMLDivElement | null>(null);
   const [bar, setBar] = useState<HTMLDivElement | null>(null);
   const [showBar, setShowBar] = useState(true);
+  const playbarSlot = useCreatorPlaybar(view, showBar && !!current, settings.reduce_motion);
   const [seed, setSeed] = useState<{ uri: string; lyrics?: Lyrics }>();
   const [notice, setNotice] = useState<{ message: string; error: boolean }>();
   const [audio, setAudio] = useState<LocalAudio>();
@@ -191,9 +193,9 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
   const waveform = useCallback((uri: string, buckets: number) => creatorWaveform(host, uri, buckets,
     audio?.uri === uri ? audio.buffer : undefined), [host, audio]);
   const spectrogram = useCallback(async (uri: string, from: number, to: number, columns: number, rows: number, signal: AbortSignal) => {
-    if (audio?.uri !== uri) throw new Error("Open an audio file to show the spectrogram.");
-    return creatorSpectrum(audio.buffer, from, to, columns, rows, signal);
-  }, [audio]);
+    if (audio?.uri === uri) return creatorSpectrum(audio.buffer, from, to, columns, rows, signal);
+    return creatorPitchSpectrum(host, uri, from, to, columns, signal);
+  }, [host, audio]);
 
   async function pickAudio(file: File) {
     if (!current) return;
@@ -240,9 +242,9 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
       onPlay={() => setLocalPlaying(true)} onPause={() => setLocalPlaying(false)} onEnded={() => setLocalPlaying(false)} />}
     <div className="lyssna-creator-body">
       {root && portal && <CreatorEnvironment.Provider value={{ root, portal, view, read, waveform, spectrogram,
-        spectrumKey: audio?.url ?? "spotify", playClip }}>
+        spectrumKey: audio?.url ?? "spotify", spectrumAudioUri: audio?.uri, playClip }}>
         <TtmlCreator state={state} onPlayer={player} onToggle={() => player({ command: isPlaying ? "pause" : "play" })}
-          onSpeed={setSpeed} notify={notify} barSlot={showBar ? bar : null} onShowPlayer={() => { releaseAudio(); setShowBar(false); }}
+          onSpeed={setSpeed} notify={notify} barSlot={showBar ? playbarSlot ?? bar : null} onShowPlayer={() => { releaseAudio(); setShowBar(false); }}
           onClose={close}
           onParse={async (filename, text, song) => {
             const ms = song?.duration_ms ?? 0;
@@ -288,7 +290,7 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
           }} />
       </CreatorEnvironment.Provider>}
     </div>
-    <div className="lyssna-creator-transport" ref={setBar} />
+    {!playbarSlot && showBar && <div className="lyssna-creator-transport" ref={setBar} />}
     <div className="lyssna-creator-portals" ref={setPortal} />
     {notice && <p className="lyssna-creator-notice" role={notice.error ? "alert" : "status"}>{notice.message}</p>}
   </div>;

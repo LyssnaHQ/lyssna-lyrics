@@ -1229,6 +1229,7 @@ export function TtmlCreator({
     const onKey = (event: KeyboardEvent) => {
       const target = event.composedPath()[0] as HTMLElement | null;
       if (root.querySelector(".ttml-menu, .ttml-dialog")) return;
+      if (target?.closest(".creator-playbar-slot button") && (event.key === " " || event.key === "Enter")) return;
       if (
         (IS_MAC ? event.metaKey : event.ctrlKey) &&
         !event.altKey &&
@@ -2921,7 +2922,7 @@ export function TtmlCreator({
         />
       )}
       {savesDialog}
-      {touring && editable && <TtmlTour keys={keys} onClose={endTour} />}
+      {touring && editable && <TtmlTour keys={keys} barSlot={barSlot} onClose={endTour} />}
       {editingKeys && (
         <KeysDialog
           onTour={() => {

@@ -849,7 +849,7 @@ export default function start(options: BuildOptions) {
     const closeView = () => dismiss();
     const closeCreator = () => {
       setCreator(false);
-      playbarButtons?.focusCreator();
+      window.requestAnimationFrame(() => playbarButtons?.focusCreator());
     };
     renderMainView = () => root.render(<LyricsView host={host} options={options} close={closeView} parent={parent}
       fullscreenRequest={fullscreenRequest} closeCreator={creatorOpen ? closeCreator : undefined} onSidebarCover={setSidebarCover} />);

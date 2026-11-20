@@ -1690,6 +1690,9 @@
   height: 100%;
   image-rendering: auto;
 }
+.spotify-pitch .ttml-spectrum-tile {
+  image-rendering: pixelated;
+}
 .ttml-spectrum-playhead,
 .ttml-spectrum-hover {
   position: absolute;

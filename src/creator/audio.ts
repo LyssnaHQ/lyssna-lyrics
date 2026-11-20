@@ -2,6 +2,7 @@ import type { Host } from "../host";
 
 const fftSize = 2048;
 const analysisLevel = (db = -60) => Math.min(1, Math.max(0, (db + 55) / 55));
+export const pitchBands = 12;
 
 export async function creatorWaveform(host: Host, uri: string, buckets: number, buffer?: AudioBuffer) {
   const peaks = new Uint8Array(buckets);
@@ -30,6 +31,33 @@ export async function creatorWaveform(host: Host, uri: string, buckets: number, 
     for (let at = start; at < end; at++) peaks[at] = Math.max(peaks[at], peak);
   }
   return peaks;
+}
+
+export async function creatorPitchSpectrum(host: Host, uri: string, fromMs: number, toMs: number, columns: number, signal: AbortSignal) {
+  const analysis = await host.analysis(uri.slice("spotify:track:".length));
+  signal.throwIfAborted();
+  const segments = analysis?.segments;
+  if (!segments?.some((segment) => segment.pitches?.length === pitchBands)) {
+    throw new Error("Spotify pitch analysis is unavailable for this track.");
+  }
+
+  const data = new Uint16Array(columns * pitchBands);
+  const from = fromMs / 1000;
+  const to = toMs / 1000;
+  const rate = columns / (to - from);
+  for (const segment of segments) {
+    const end = segment.start + segment.duration;
+    if (segment.start >= to || end <= from || segment.pitches?.length !== pitchBands) continue;
+    const first = Math.max(0, Math.floor((segment.start - from) * rate));
+    const last = Math.min(columns, Math.ceil((end - from) * rate));
+    const level = (65535 / 4) * analysisLevel(segment.loudness_max);
+    for (let note = 0; note < pitchBands; note++) {
+      const strength = Math.round(level * Math.min(1, Math.max(0, segment.pitches[note])));
+      const start = (pitchBands - note - 1) * columns;
+      for (let at = first; at < last; at++) data[start + at] = Math.max(data[start + at], strength);
+    }
+  }
+  return data;
 }
 
 const taper = Float32Array.from({ length: fftSize }, (_, i) => 0.5 * (1 - Math.cos(2 * Math.PI * i / (fftSize - 1))));
