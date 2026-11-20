@@ -1,5 +1,6 @@
 import { cloneElement, isValidElement, useEffect, useLayoutEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
-import { AlignLeft, AppWindow, ChevronLeft, FileText, Info, Palette, Search, Settings2, WandSparkles, Wrench, X } from "lucide-react";
+import { AlignLeft, AppWindow, ChevronLeft, FileText, FlaskConical, Info, Palette, Search, Settings2, WandSparkles, Wrench, X } from "lucide-react";
+import EnhancementsSection from "./enhancements/section";
 import { AnimatorPanel } from "./lyssna/animator-settings";
 import { FontSettings, useAppFonts } from "./lyssna/custom-fonts";
 import { HiddenSettings, SettingRow, SettingsQuery, Toggle } from "./lyssna/setting-row";
@@ -19,7 +20,7 @@ export type BuildOptions = {
 };
 
 const tabs = [
-  ["Appearance", Palette], ["Lyrics", AlignLeft], ["Layout", AppWindow], ["Enhancements", WandSparkles],
+  ["Appearance", Palette], ["Lyrics", AlignLeft], ["Effects", FlaskConical], ["Layout", AppWindow], ["Enhancements", WandSparkles],
   ["Sources", FileText], ["Advanced", Wrench], ["Credits", Info],
 ] as const;
 type Tab = (typeof tabs)[number][0];
@@ -33,7 +34,7 @@ const submenus = {
 };
 type Submenu = keyof typeof submenus;
 type Place = { tab: Tab; scroll: number; submenu?: Submenu; submenuScroll?: number };
-const oldTabs: Record<string, Tab> = { General: "Appearance", Library: "Sources", Effects: "Enhancements", About: "Credits" };
+const oldTabs: Record<string, Tab> = { General: "Appearance", Library: "Sources", About: "Credits" };
 
 function readPlace(remember: boolean): Place {
   try {
@@ -232,7 +233,7 @@ export function SettingsPanel({ settings, change, close, options, trackId, impor
       ...visuals.Layout,
       visualRowsByKey.get("year"),
     ]],
-    ["Enhancements", "Lyric effects", visuals.Effects.filter((row) => !appearanceRows.includes(visualRowKey(row)))],
+    ["Effects", "Lyric effects", visuals.Effects.filter((row) => !appearanceRows.includes(visualRowKey(row)))],
     ["Sources", "Sources", [
       <SettingRow key="source-order" label="Manage Sources" help="Set lyric source priority, availability, and provider options."
         keywords={`sources order ${sourceSearch}`}>
@@ -373,6 +374,7 @@ export function SettingsPanel({ settings, change, close, options, trackId, impor
                 <h3>{title}</h3><div className="lyrics-settings-group">{rows}</div>
               </section>
             ))}
+            {(searching || tab === "Enhancements") && <EnhancementsSection notice={setNotice} />}
             <p className="lyrics-settings-empty">No settings match.</p>
           </div>
         </SettingsQuery.Provider></HiddenSettings.Provider>}

@@ -107,6 +107,10 @@
   box-sizing: border-box;
 }
 
+.lyssna-lyrics-view .lyrics-page:has(.gravity-lyrics) .lyrics-body {
+  position: static;
+}
+
 .lyssna-popout-view {
   --lead-top: 22vh;
 }

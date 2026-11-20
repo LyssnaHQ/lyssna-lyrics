@@ -10,6 +10,6 @@ if (!hostReact) throw new Error("Spotify React is unavailable");
 
 export const {
   cloneElement, createContext, createElement, forwardRef, Fragment, isValidElement, memo, useCallback, useContext,
-  useEffect, useId, useLayoutEffect, useMemo, useRef, useState,
+  useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore,
 } = hostReact;
 export default hostReact;

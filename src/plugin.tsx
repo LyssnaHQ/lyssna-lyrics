@@ -4,6 +4,7 @@ import { getHost, type Host, type Track } from "./host";
 import { useArtworkColor } from "./lyssna/artwork-color";
 import { Ambience } from "./lyssna/ambience";
 import { setFrameCap } from "./lyssna/frame-cap";
+import { presetOf } from "./lyssna/animator-tuning";
 import { FullscreenPauseIcon, FullscreenPlayIcon, SkipNextIcon, SkipPreviousIcon } from "./lyssna/fullscreen-icons";
 import { LyricsDisplay, LyricsSkeleton } from "./lyssna/renderer";
 import { markerColour } from "./lyssna/highlighter";
@@ -23,6 +24,7 @@ import { LyricCredits } from "./credits";
 import { CanvasArtwork, nowPlayingSelector, SpotifyVisualiser, useCanvas } from "./spotify-artwork";
 import { clock, usePlayback, usePosition } from "./playback";
 import { LyricsPopout, pictureInPicture } from "./popout";
+import { startEnhancements } from "./enhancements";
 import fontCss from "./fonts/fonts.css?inline";
 import desktopCss from "./lyssna/lyrics.css?inline";
 import settingsCss from "./lyssna/settings.css?inline";
@@ -88,9 +90,14 @@ function LyricsForTrack({ track, host, playing, settings, compact = false, view 
   const { lyrics, waiting } = useTrackLyrics(track, duration, view, settings);
   const position = usePosition(host, playing, view);
   const time = position + settings.lyric_offset_ms + (settings.lyric_song_offsets[track.id] ?? 0);
-  const rendered = useMemo(() => filterWords(displayLyrics(lyrics, settings.experimental_word_sync,
-    settings.romanized && { below: settings.romanization_below && !settings.space_gravity }, duration), settings.lyrics_word_filter),
-  [lyrics, duration, settings.experimental_word_sync, settings.romanized, settings.romanization_below, settings.space_gravity, settings.lyrics_word_filter]);
+  const gravity = view === window && settings.space_gravity && !compact && !!lyrics &&
+    !lyrics.instrumental && (lyrics.synced || duration > 0);
+  const estimateTiming = settings.experimental_word_sync || gravity ||
+    (!lyrics?.synced && settings.lyrics_highlighter) ||
+    (!!lyrics?.synced && presetOf(settings.lyrics_animator) !== "Lyssna");
+  const rendered = useMemo(() => filterWords(displayLyrics(lyrics, estimateTiming,
+    settings.romanized && { below: settings.romanization_below && !gravity }, duration), settings.lyrics_word_filter),
+  [lyrics, duration, estimateTiming, settings.romanized, settings.romanization_below, gravity, settings.lyrics_word_filter]);
   const upcoming = view === window && !compact && settings.lyrics_up_next && duration > 0 && position >= duration - 30_000 ? host.upcoming() : undefined;
   const upNext = upcoming && <div className="lyrics-up-next">
     <button type="button" className="lyrics-up-next-body first" onClick={host.next}>
@@ -101,7 +108,7 @@ function LyricsForTrack({ track, host, playing, settings, compact = false, view 
     </button>
   </div>;
 
-  if (rendered && view === window && settings.space_gravity && !compact && rendered.synced && rendered.lines.some((line) => line.words.length)) {
+  if (gravity && rendered?.synced && rendered.lines.some((line) => line.words.length)) {
     return <SpaceGravityLyrics lyrics={rendered} time={time} reduceMotion={settings.reduce_motion}
       tuning={settings.lyrics_animator} onSeek={(ms) => host.seek(Math.max(0, ms - (settings.lyrics_seek_compensation ? 300 : 0)))}
       highlighter={settings.lyrics_highlighter ? markerColour(settings.lyrics_highlighter_color) : undefined}
@@ -303,7 +310,7 @@ function LyricsView({ host, options, close, parent, openPopout }: {
   const hasAmbience = track?.cover && (background === "animated" || background === "static");
   const banner = background === "artist" && artistHeader?.uri === artistUri ? artistHeader?.url : undefined;
   const backgroundImage = background === "cover" || background === "artist" ? banner || track?.cover : undefined;
-  const className = `lyrics-page ${narrow || settings.lyrics_compact ? "narrow" : ""} ${settings.space_gravity ? "space-gravity" : ""}
+  const className = `lyrics-page ${narrow || settings.lyrics_compact ? "narrow" : ""}
     ${settings.lyrics_hide_artwork ? "no-artwork" : ""} ${settings.lyrics_artwork_right ? "artwork-right" : ""}
     ${background === "color" ? "colour-background" : ""} ${settings.lyrics_toolbar_bottom ? "toolbar-bottom" : ""} ${settings.reduce_motion ? "reduce-motion" : ""}`;
   const pageStyle = { ...fonts, "--lyric-size": `${Math.round(settings.lyric_size * 1.6)}px`,
@@ -469,6 +476,7 @@ export default function start(options: BuildOptions) {
     stylesheet.remove();
     throw error;
   }
+  const stopEnhancementStartup = startEnhancements();
 
   function attachCard() {
     if (mainContainer && !mainContainer.isConnected) close?.();
@@ -498,6 +506,7 @@ export default function start(options: BuildOptions) {
       close?.();
       button?.remove();
       disposeProvider();
+      stopEnhancementStartup();
       stylesheet.remove();
     },
     open,

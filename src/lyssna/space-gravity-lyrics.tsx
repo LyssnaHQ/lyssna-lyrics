@@ -17,6 +17,7 @@ import {
 } from "./lyric-motion";
 import type { AnimatorSettings } from "./animator-tuning";
 import { LyricAnimator } from "./lyric-animator";
+import { presetOf } from "./animator-tuning";
 import { LyricWord } from "./lyric-word";
 import { LyricCountdown } from "./lyric-countdown";
 import {
@@ -936,7 +937,8 @@ export function SpaceGravityLyrics({
 
   return (
     <div
-      className={`gravity-lyrics ${highlighter ? "highlighter" : ""} ${highlighter && linkWidth > 0 ? "linked" : ""}`}
+      data-animator={presetOf(tuning)}
+      className={`gravity-lyrics space-gravity ${highlighter ? "highlighter" : ""} ${highlighter && linkWidth > 0 ? "linked" : ""}`}
       style={
         highlighter
           ? ({ "--highlighter-ink": highlighter } as CSSProperties)

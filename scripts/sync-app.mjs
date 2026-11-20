@@ -42,7 +42,7 @@ const lyrics = [
   slice(styles, "/* Lyrics loading skeleton:", "/* Lyrics popout window"),
   slice(styles, "/* Lyrics popout window", "\n.album-grid.all {"),
   slice(styles, "\n.lyrics-display.simple-lyrics .lyric-line {", "\n.ttml-draft-banner {"),
-];
+].map((css) => css.replaceAll(':root:not([data-animator="Legacy"])', ':is(.lyrics-display, .gravity-lyrics):not([data-animator="Legacy"])'));
 const snapshot = files.map((file) => [file, read(`frontend/${file}`)]);
 const settingsCss = read("frontend/settings.css")
   .replaceAll(".application:not(.liquid-glass) .lyrics-settings", ".lyrics-settings-backdrop:not(.liquid-glass) .lyrics-settings")
@@ -52,6 +52,7 @@ const renderer = [
   `import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { ChevronDown, ChevronUp, Music2 } from "lucide-react";
 import { LyricAnimator } from "./lyric-animator";
+import { presetOf } from "./animator-tuning";
 import { frameDue } from "./frame-cap";
 import { HighlighterWords, markerColour } from "./highlighter";
 import { LyricCountdown } from "./lyric-countdown";
@@ -64,6 +65,7 @@ import { LyricCredits } from "../credits";`,
   slice(components, "function WriterCredits(", "/** The badge's E"),
   slice(components, "function creditsInView(", "/** Up next pops in"),
   slice(components, "/** Seek Fade-in Compensation", "const LyricCredits =")
+    .replace("      data-following={following}", "      data-following={following}\n      data-animator={presetOf(settings.lyrics_animator)}")
     .replace("      !!settings.lyrics_simple,\n", "      !!settings.lyrics_simple,\n      scroll.current?.ownerDocument.defaultView ?? window,\n")
     .replace("    let frame = 0,\n      last = performance.now();", "    const view = container.ownerDocument.defaultView ?? window;\n    let frame = 0,\n      last = performance.now();")
     .replace("    const tick = (time: number) => {", "    const tick = () => {\n      const time = performance.now();")
@@ -126,6 +128,9 @@ for (const [file, content] of snapshot) {
     .replace("    private simple = false,\n", "    private simple = false,\n    private view: Window = window,\n")
     .replaceAll("cancelAnimationFrame(this.frame)", "this.view.cancelAnimationFrame(this.frame)")
     .replaceAll("requestAnimationFrame(this.run)", "this.view.requestAnimationFrame(this.run)");
+  if (file === "space-gravity-lyrics.tsx") source = source
+    .replace('import { LyricAnimator } from "./lyric-animator";', 'import { LyricAnimator } from "./lyric-animator";\nimport { presetOf } from "./animator-tuning";')
+    .replace('      className={`gravity-lyrics ', '      data-animator={presetOf(tuning)}\n      className={`gravity-lyrics space-gravity ');
   if (file === "setting-row.tsx") source = source.replace("inert={!!unavailable}", "ref={(element) => { if (element) element.inert = !!unavailable; }}");
   write(file, source);
 }
