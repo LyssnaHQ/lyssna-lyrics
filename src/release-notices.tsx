@@ -1,10 +1,11 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { MicVocal, TriangleAlert, X } from "lucide-react";
+import { ArrowUpRight, MicVocal, Star, TriangleAlert, X } from "lucide-react";
 import type { Host, Root } from "./host";
 import type { BuildOptions } from "./settings-panel";
 import noticeCss from "./release-notices.css?inline";
 
 const discord = "https://discord.gg/qfYAsFQawp";
+const github = "https://github.com/LyssnaHQ/lyssna-lyrics";
 const guide = "https://lyssna.org/guides";
 const lastBuildKey = "lyssna-lyrics.v1.last-public-build";
 const integrationEvent = "lyssna-lyrics:integration-state";
@@ -98,12 +99,11 @@ type DialogOptions = {
   content: ReactNode[];
   primary: Action;
   secondary: string;
-  walkthrough?: boolean;
   origin?: DOMRect;
   dismiss?(): void;
 };
 
-function ReleaseDialog({ title, content, primary, secondary, walkthrough, origin, dismiss, close }: DialogOptions & { close(): void }) {
+function ReleaseDialog({ title, content, primary, secondary, origin, dismiss, close }: DialogOptions & { close(): void }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const primaryButton = useRef<HTMLButtonElement>(null);
   const titleId = useId();
@@ -157,8 +157,14 @@ function ReleaseDialog({ title, content, primary, secondary, walkthrough, origin
     </header>
     {content.map((node, index) => <div className="release-content" key={index} style={stagger(index + 1)}>{node}</div>)}
     <footer className="release-actions" style={stagger(content.length + 1)}>
-      <button type="button" className="release-discord" onClick={() => openExternal(discord)}><span>Join our Discord</span></button>
-      {walkthrough && <button type="button" className="release-secondary" onClick={() => openExternal(guide)}>New to Lyssna Lyrics?</button>}
+      <div className="release-actions-links">
+        <a className="release-discord" href={discord} aria-label="Join the Lyssna Discord" target="_blank" rel="noopener noreferrer">
+          <span>Discord</span>
+        </a>
+        <a className="release-github" href={github} target="_blank" rel="noopener noreferrer">
+          <Star size={15} aria-hidden="true" />Star us on GitHub
+        </a>
+      </div>
       <div className="release-actions-main">
         <button type="button" className="release-quiet" onClick={() => leave(dismiss)}>{secondary}</button>
         <button ref={primaryButton} type="button" className="release-primary" onClick={() => leave(primary.run)}>{primary.label}</button>
@@ -237,10 +243,11 @@ export function startReleaseNotices(host: Host, options: BuildOptions) {
   const showFirstLoad = () => show({
     title: "Welcome to Lyssna Lyrics",
     content: [
-      <p>Open lyrics with the Lyssna microphone in Spotify’s playbar.</p>,
-      <p className="release-small">Use the gear in the lyrics view to change how lyrics look and which sources Lyssna uses.</p>,
+      <p>Click the microphone in Spotify’s playbar to open your lyrics. Use the gear to customize the view and choose your lyric sources.</p>,
+      <p className="release-small"><a className="release-guide" href={guide} target="_blank" rel="noopener noreferrer">
+        Read the getting-started guide <ArrowUpRight size={14} aria-hidden="true" />
+      </a></p>,
     ],
-    walkthrough: true,
     primary: { label: "Get started", run() {} },
     secondary: "Close",
   });
@@ -252,7 +259,6 @@ export function startReleaseNotices(host: Host, options: BuildOptions) {
       content: [
         <p>You were on <strong>{from}</strong>. You are now on <strong>{to}</strong>.</p>,
         ...(upgraded && patchNotes ? [<PatchNotes url={patchNotes} from={from} to={to} />] : []),
-        <p className="release-small">Join the <a href={discord} target="_blank" rel="noopener noreferrer">Lyssna Discord server</a> for updates and support.</p>,
       ],
       primary: patchNotes ? { label: "See all patch notes", run: () => openExternal(patchNotes) } : { label: "Got it", run() {} },
       secondary: "Close",
@@ -272,7 +278,6 @@ export function startReleaseNotices(host: Host, options: BuildOptions) {
         title: `Version ${to} is out`,
         content: [
           <p>You’re on <strong>{version}</strong>. Updating reloads Spotify, which takes a few seconds.</p>,
-          <p className="release-small">Join the Lyssna Discord server for updates and support.</p>,
           ...(patchNotes ? [<p className="release-small">See what changed in the <a href={patchNotes} target="_blank" rel="noopener noreferrer">patch notes</a>.</p>] : []),
         ],
         primary: { label: "Update and reload", run: apply },

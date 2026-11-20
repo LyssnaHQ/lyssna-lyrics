@@ -1,0 +1,14 @@
+{
+  "name": "Lyssna Lyrics",
+  "description": "Word-by-word lyrics, made for listening, syncing, and sharing with the Lyssna community.",
+  "preview": "assets/marketplace-preview.gif",
+  "main": "loader/lyssna-lyrics.mjs",
+  "readme": "README.md",
+  "authors": [
+    {
+      "name": "iPixelGalaxy",
+      "url": "https://github.com/iPixelGalaxy"
+    }
+  ],
+  "tags": ["lyrics", "word-by-word", "lyssna-lyrics"]
+}

@@ -91,6 +91,12 @@
   text-underline-offset: 2px;
 }
 .release-content a:hover, .release-text-button:hover { text-decoration-color: currentColor; }
+.release-guide {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.release-guide svg { flex-shrink: 0; }
 
 .release-notes {
   max-height: min(48vh, 480px);
@@ -117,16 +123,22 @@
   cursor: pointer;
 }
 
-.release-actions, .release-actions-main {
+.release-actions, .release-actions-links, .release-actions-main {
   display: flex;
   flex-wrap: wrap;
-  justify-content: flex-end;
+  align-items: center;
   gap: 8px;
 }
-.release-actions { margin-top: 8px; }
-.release-discord { margin-inline-end: auto; }
+.release-actions {
+  justify-content: space-between;
+  gap: 12px 16px;
+  margin-top: 4px;
+  padding-top: 16px;
+  border-top: 1px solid #ffffff17;
+}
+.release-actions-main { justify-content: flex-end; margin-inline-start: auto; }
 
-.release-actions button, .release-toast .release-primary {
+.release-actions :is(button, a), .release-toast .release-primary {
   appearance: none;
   box-sizing: border-box;
   min-height: 44px;
@@ -141,17 +153,32 @@
   cursor: pointer;
   transition: background-color .15s, transform .12s ease;
 }
+.release-actions a {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding-inline: 12px;
+  border-radius: 8px;
+  font-size: .8125rem;
+  text-decoration: none;
+}
+.release-actions button { padding-inline: 16px; }
 .release-actions button:active, .release-toast button:active { transform: scale(.97); }
 .release-actions .release-primary, .release-toast .release-primary {
   background: var(--ink);
   color: #181818;
 }
 .release-actions .release-primary:hover, .release-toast .release-primary:hover { background: #fff; }
-.release-actions .release-secondary, .release-actions .release-discord {
-  background: var(--tint);
-  box-shadow: inset 0 0 0 1px #ffffff3d;
+.release-actions .release-github, .release-actions .release-discord {
+  background: #ffffff0b;
+  box-shadow: inset 0 0 0 1px #ffffff26;
 }
-.release-actions .release-secondary:hover { background: #292929; }
+.release-actions :is(.release-github, .release-discord):hover { background: var(--tint); }
+.release-github:is(:hover, :focus-visible) svg {
+  color: #ffd45c;
+  fill: currentColor;
+}
 .release-actions .release-quiet, .release-toast-dismiss {
   color: var(--muted);
   background: transparent;
@@ -168,7 +195,7 @@
   position: absolute;
   inset: 0 auto 0 0;
   width: 200%;
-  opacity: .3;
+  opacity: .22;
   background: repeating-linear-gradient(90deg, #ff4069 0%, #ffbd48 7.14%, #efff82 14.28%, #57e89c 21.43%, #51bdff 28.57%, #9d80ff 35.71%, #ed78da 42.86%, #ff4069 50%);
   animation: release-shine 4s linear infinite;
 }

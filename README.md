@@ -29,6 +29,11 @@ Lyssna Lyrics brings word-synced lyrics and a TTML editor to Spotify Desktop. Op
 
 ### Spicetify
 
+Open **Spicetify Marketplace › Extensions**, search for **Lyssna Lyrics**, and choose **Install**. [Spicetify Marketplace guide](https://spicetify.app/docs/customization/marketplace)
+
+<details>
+<summary>Install manually</summary>
+
 1. Set up [Spicetify](https://spicetify.app/docs/getting-started) with Spotify Desktop.
 2. Save [`lyssna-lyrics.mjs`](https://ipixelgalaxy.com/lyssna-plugin/rewrite/lyssna-lyrics.mjs) into Spicetify’s **Extensions** folder. Run `spicetify config-dir` to find it.
 3. Enable the loader and apply Spicetify. Spotify may restart.
@@ -37,6 +42,8 @@ Lyssna Lyrics brings word-synced lyrics and a TTML editor to Spotify Desktop. Op
    spicetify config extensions lyssna-lyrics.mjs
    spicetify apply
    ```
+
+</details>
 
 Click the **microphone** in the playbar to open lyrics. Use the **gear** in the lyrics toolbar or **Lyssna Lyrics settings** in Spotify’s profile menu. [Spicetify extension guide](https://spicetify.app/docs/customization/extensions)
 
@@ -112,7 +119,7 @@ The versioned bundle is in `dist/builds`. The build also produces the v1.0 entry
 - **Beta and Canary** use `rewrite/v1.0/channels.json` on ipixelgalaxy.com. Run `npm run build -- --test` to deploy Canary to `Y:/website/lyssna-plugin`. For Beta, place the bundle under `builds/` and set the manifest’s `beta` version.
 - **Private builds** use `npm run build -- --hidden [version]`. The command publishes to `builds/hidden/<key>/` and prints its access key. Anyone with the key can load the build. Keep the directory unlisted and remove a build’s manifest and bundle to retire its key.
 
-Add user-visible changes to [PATCH_NOTES.md](PATCH_NOTES.md) under a heading like `## v0.1.0`. Use these Spotify DevTools commands to preview the dialogs.
+Add user-visible changes to [PATCH_NOTES.md](.change_notes/PATCH_NOTES.md) under a heading like `## v0.1.0`. Use these Spotify DevTools commands to preview the dialogs.
 
 ```js
 LyssnaLyrics.showStartup()

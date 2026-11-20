@@ -68,7 +68,7 @@ if (hiddenBuild) {
   copyFileSync("loader/lyssna-lyrics.mjs", join(output, "spotikit", "extension.js"));
   copyFileSync("loader/spotikit.json", join(output, "spotikit", "spotikit.json"));
   write(join(host, "builds", filename), bundle);
-  copy("PATCH_NOTES.md", join(entrypoint, "patch-notes.md"));
+  copy(join(".change_notes", "PATCH_NOTES.md"), join(entrypoint, "patch-notes.md"));
   copy("loader/github-stable.mjs", join(entrypoint, "github-stable.mjs"));
   copy("loader/entrypoint.mjs", join(entrypoint, "entrypoint.mjs"));
   copy("loader/lyssna-lyrics.mjs", join(host, "rewrite", "lyssna-lyrics.mjs"));
