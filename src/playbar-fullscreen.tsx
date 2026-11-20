@@ -2,9 +2,7 @@ import type { Host } from "./host";
 import type { ReactNode } from "react";
 import { FilePenLine } from "lucide-react";
 import { CinemaIcon, FullScreenIcon, PopoutIcon } from "./lyssna/toolbar-icons";
-
-const nativeSelector = 'button[data-testid="fullscreen-mode-button"]';
-const controlsSelector = ".main-nowPlayingBar-extraControls";
+import { nativeFullscreenButton, playbarSelector } from "./playbar-controls";
 
 function viewButton(host: Host, label: string, icon: ReactNode, onClick: (event: MouseEvent) => void) {
   const button = document.createElement("button");
@@ -45,20 +43,19 @@ export function playbarViewButtons(host: Host, onFullscreen: (event: MouseEvent)
   }
 
   return {
-    sync(showPopout: boolean, showCinema: boolean, showCreator: boolean, creatorActive: boolean) {
+    sync(controls: HTMLElement | null, showPopout: boolean, showCinema: boolean, showCreator: boolean, creatorActive: boolean) {
       const legacy = document.getElementById("LyssnaLyrics_FullscreenButton");
       if (legacy) button.remove();
-      else if (!button.isConnected || !button.previousElementSibling?.matches(nativeSelector)) {
-        const controls = document.querySelector(controlsSelector);
-        const native = controls?.querySelector(nativeSelector) ??
-          document.querySelector(`[data-testid="now-playing-bar"] ${nativeSelector}`);
-        if (native) native.after(button);
-        else if (controls && button.parentElement !== controls) controls.append(button);
+      else if (controls) {
+        const native = controls.querySelector(nativeFullscreenButton)
+          ?? controls.closest(playbarSelector)?.querySelector(nativeFullscreenButton);
+        if (native && native.nextElementSibling !== button) native.after(button);
+        else if (!native && button.parentElement !== controls) controls.append(button);
       }
       const anchor = legacy ?? button;
       // Keep the hidden native fullscreen button adjacent to its replacement.
       const previous = anchor.previousElementSibling;
-      const before = previous instanceof HTMLElement && previous.matches(nativeSelector) ? previous : anchor;
+      const before = previous instanceof HTMLElement && previous.matches(nativeFullscreenButton) ? previous : anchor;
       placeBefore(creator.button, before, showCreator);
       placeBefore(spectrogram, creator.button, showCreator && creatorActive);
       const pressed = String(creatorActive);

@@ -72,48 +72,26 @@
   z-index: 2;
 }
 
-:is(.main-nowPlayingBar-extraControls, .now-playing-bar-extra-controls) {
+:is(.main-nowPlayingBar-extraControls, .now-playing-bar-extra-controls, :has(> [data-lyssna-playbar-lyrics])) {
   reading-flow: flex-visual;
 }
 
-:is(.main-nowPlayingBar-extraControls, .now-playing-bar-extra-controls)
+:is(.main-nowPlayingBar-extraControls, .now-playing-bar-extra-controls, :has(> [data-lyssna-playbar-lyrics]))
   > :is([data-lyssna-playbar-lyrics], #LyssnaLyrics_PageButton, button[data-testid="lyrics-button"]) {
   order: -3;
 }
 
 /* Spotify's DJ tooltip can wrap the button in a separate flex item. */
-:is(.main-nowPlayingBar-extraControls, .now-playing-bar-extra-controls)
+:is(.main-nowPlayingBar-extraControls, .now-playing-bar-extra-controls, :has(> [data-lyssna-playbar-lyrics]))
   > :is(.Gf9V3C4X_WPPfvjwXujC, [data-testid="dj-jump-button"], :has(.Gf9V3C4X_WPPfvjwXujC, [data-testid="dj-jump-button"])) {
   order: -4;
 }
 
-:is(.main-nowPlayingBar-extraControls, .now-playing-bar-extra-controls)
-  :is(button[data-testid="control-button-npv"], button[data-spotify-plus-disable-peek="true"]) {
-  order: -1;
-}
-
-:is(.main-nowPlayingBar-extraControls, .now-playing-bar-extra-controls)
+:is(.main-nowPlayingBar-extraControls, .now-playing-bar-extra-controls, :has(> [data-lyssna-playbar-lyrics]))
+  :is(button[data-testid="control-button-npv"], button[data-spotify-plus-disable-peek="true"]),
+:is(.main-nowPlayingBar-extraControls, .now-playing-bar-extra-controls, :has(> [data-lyssna-playbar-lyrics]))
   > :has(> button[data-testid="control-button-npv"]):not(:has(button[data-testid="control-button-queue"])) {
   order: -1;
-}
-
-.lyssna-playbar-button {
-  display: inline-flex !important;
-}
-
-.lyssna-playbar-button > .Wrapper-small-only {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  height: 100%;
-}
-
-.lyssna-playbar-button > .Wrapper-small-only > svg {
-  display: block;
-  width: 20px !important;
-  height: 20px !important;
-  flex: none;
 }
 
 .lyssna-playbar-button[aria-pressed="true"] {

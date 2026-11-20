@@ -6,6 +6,11 @@ type Removal = () => void;
 type RepeatMode = "off" | "context" | "track";
 type ButtonOptions = { label: string; icon: string; onClick: () => void };
 type Button = { active: boolean; element?: HTMLElement; remove(): void };
+type LyricsButton = {
+  setActive(active: boolean): void;
+  remove(): void;
+  sync?(controls: HTMLElement | null): void;
+};
 type HistoryLocation = { pathname: string; search?: string; hash?: string };
 const viewPath = (location?: HistoryLocation) => location?.pathname
   ? `${location.pathname}${location.search ?? ""}${location.hash ?? ""}`
@@ -606,7 +611,7 @@ export function getHost() {
       events.addListener("update", listener);
       return () => events.removeListener?.("update", listener);
     },
-    button(label: string, click: () => void) {
+    button(label: string, click: () => void): LyricsButton {
       if (kit) {
         const button = (kit.Playbar ?? kit.Topbar).add({ label, icon, onClick: click });
         if (kit.Playbar && button.element) button.element.dataset.lyssnaPlaybarLyrics = "";
@@ -615,18 +620,26 @@ export function getHost() {
           remove: () => button.remove(),
         };
       }
-      const button = new spice!.Playbar.Button(label, icon, click, false, false, false);
-      button.element.dataset.lyssnaPlaybarLyrics = "";
-      button.element.classList.add("lyssna-playbar-button");
-      button.element.setAttribute("aria-label", label);
-      button.element.setAttribute("aria-pressed", "false");
-      button.register();
+      const element = document.createElement("button");
+      element.type = "button";
+      element.className = "lyssna-playbar-view-button lyssna-playbar-button";
+      element.dataset.lyssnaPlaybarLyrics = "";
+      element.title = label;
+      element.setAttribute("aria-label", label);
+      element.setAttribute("aria-pressed", "false");
+      element.innerHTML = icon;
+      element.addEventListener("click", click);
       return {
         setActive(active: boolean) {
-          button.active = active;
-          button.element.setAttribute("aria-pressed", String(active));
+          element.setAttribute("aria-pressed", String(active));
         },
-        remove: () => button.deregister(),
+        sync(controls) {
+          if (controls && element.parentElement !== controls) controls.prepend(element);
+        },
+        remove() {
+          element.removeEventListener("click", click);
+          element.remove();
+        },
       };
     },
     mount(container: HTMLElement): Root {

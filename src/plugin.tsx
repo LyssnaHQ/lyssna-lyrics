@@ -33,6 +33,7 @@ import { LyricsPopout, pictureInPicture } from "./popout";
 import { startEnhancements } from "./enhancements";
 import { startPreferenceSync } from "./preference-sync";
 import { playbarViewButtons } from "./playbar-fullscreen";
+import { findPlaybarControls } from "./playbar-controls";
 import { quickEffects } from "./quick-effects";
 import { DJ_COVER, DJInterlude } from "./dj-interlude";
 import { readViewSession, saveViewSession } from "./view-session";
@@ -775,6 +776,7 @@ export default function start(options: BuildOptions) {
   stylesheet.textContent = `${fontCss}\n${desktopCss}\n${settingsCss}\n${ttmlCss}\n${meterCss}\n${viewCss}`;
   document.head.append(stylesheet);
   let stopProvider: (() => void) | undefined;
+  let button: ReturnType<Host["button"]> | undefined;
   let playbarButtons: ReturnType<typeof playbarViewButtons> | undefined;
   let showPlaybarPopout = false;
   let showPlaybarCinema = false;
@@ -785,7 +787,10 @@ export default function start(options: BuildOptions) {
   let removeAutoRecord: (() => void) | undefined;
   let renderMainView: (() => void) | undefined;
   function syncPlaybar() {
-    playbarButtons?.sync(showPlaybarPopout, showPlaybarCinema && host.developerMode !== false, creatorEnabled, creatorOpen);
+    if (!playbarButtons) return;
+    const controls = findPlaybarControls();
+    button?.sync?.(controls);
+    playbarButtons.sync(controls, showPlaybarPopout, showPlaybarCinema && host.developerMode !== false, creatorEnabled, creatorOpen);
   }
   function setCreator(open: boolean) {
     if (creatorOpen === open) return;
@@ -840,7 +845,6 @@ export default function start(options: BuildOptions) {
   let showMainSettings: (() => void) | undefined;
   let closeProfileSettings: (() => void) | undefined;
   let mainContainer: HTMLElement | undefined;
-  let button: ReturnType<Host["button"]> | undefined;
   let removeCard: (() => void) | undefined;
   let card: HTMLElement | undefined;
   let cardPanel: HTMLElement | undefined;
