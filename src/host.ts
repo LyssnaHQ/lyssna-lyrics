@@ -425,7 +425,8 @@ export function getHost() {
       let previous = viewPath(routes?.location);
       const unlisten = routes?.listen?.((_location, action) => {
         const current = viewPath(routes.location);
-        if (current === previous && action !== "PUSH" && action !== "POP") return;
+        // Spotify replaces the history entry when reselecting the current playlist.
+        if (current === previous && action !== "PUSH" && action !== "POP" && action !== "REPLACE") return;
         previous = current;
         listener("route");
       });
