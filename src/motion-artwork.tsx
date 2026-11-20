@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { lyssnaInstallReady, lyssnaRequest, lyssnaRetryAt } from "./lyssna-api";
 import { fetchSpotifyMedia } from "./spotify-media";
 import workerSource from "./motion-artwork-worker.js?raw";
@@ -7,15 +7,62 @@ const digits = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const upcs = new Map<string, Promise<string | null | undefined>>();
 const covers = new Map<string, { expires: number; value: Promise<string | undefined> }>();
 const convertedCovers = new Map<string, Blob>();
+const convertedCoverBudget = 64 * 1024 * 1024;
+type CoverConversion = { result: Promise<Blob | undefined>; cancel(): void; users: number };
+const conversions = new Map<string, CoverConversion>();
 
-export function motionArtworkFormat(view: Window) {
+function rememberConvertedCover(source: string, cover: Blob) {
+  if (cover.size > convertedCoverBudget) return;
+  convertedCovers.set(source, cover);
+  let bytes = Array.from(convertedCovers.values()).reduce((sum, item) => sum + item.size, 0);
+  while (bytes > convertedCoverBudget || convertedCovers.size > 6) {
+    const [oldest, item] = convertedCovers.entries().next().value!;
+    convertedCovers.delete(oldest);
+    bytes -= item.size;
+  }
+}
+
+function motionArtworkFormat(view: Window) {
   const video = view.document.createElement("video");
   if (video.canPlayType('video/mp4; codecs="avc1.64001f"')) return "mp4";
   if (video.canPlayType('video/webm; codecs="vp8"') && typeof Worker === "function" &&
     typeof WebAssembly === "object") return "webm";
 }
 
-export function usePlayableMotionArtwork(source: string | undefined, format: ReturnType<typeof motionArtworkFormat>) {
+function startConversion(input: string): CoverConversion {
+  const abort = new AbortController();
+  const result = new Promise<Blob | undefined>((resolve) => {
+    const script = URL.createObjectURL(new Blob([workerSource], { type: "text/javascript" }));
+    let worker: Worker;
+    try { worker = new Worker(script, { type: "module" }); }
+    catch { resolve(undefined); return; }
+    finally { URL.revokeObjectURL(script); }
+
+    const timeout = window.setTimeout(() => finish(), 60_000);
+    const cancel = () => finish();
+    function finish(blob?: Blob) {
+      window.clearTimeout(timeout);
+      abort.signal.removeEventListener("abort", cancel);
+      worker.terminate();
+      resolve(blob);
+    }
+    abort.signal.addEventListener("abort", cancel, { once: true });
+    worker.onmessage = ({ data }: MessageEvent<Uint8Array<ArrayBuffer> | null>) =>
+      finish(data?.length ? new Blob([data], { type: "video/webm" }) : undefined);
+    worker.onerror = () => finish();
+    worker.postMessage(input);
+  });
+  const conversion = { result, cancel: () => abort.abort(), users: 0 };
+  conversions.set(input, conversion);
+  void result.then((blob) => {
+    if (conversions.get(input) !== conversion) return;
+    conversions.delete(input);
+    if (blob) rememberConvertedCover(input, blob);
+  });
+  return conversion;
+}
+
+function usePlayableMotionArtwork(source: string | undefined, format: ReturnType<typeof motionArtworkFormat>) {
   const [converted, setConverted] = useState<{ source: string; url: string }>();
   useEffect(() => {
     if (!source || format !== "webm") return;
@@ -35,33 +82,27 @@ export function usePlayableMotionArtwork(source: string | undefined, format: Ret
       show(cached);
       return release;
     }
-    const script = URL.createObjectURL(new Blob([workerSource], { type: "text/javascript" }));
-    let worker: Worker;
-    try { worker = new Worker(script, { type: "module" }); }
-    catch { return; }
-    finally { URL.revokeObjectURL(script); }
-    const timeout = window.setTimeout(stop, 60_000);
-    function stop() {
-      window.clearTimeout(timeout);
-      worker.terminate();
-    }
-    worker.onmessage = ({ data }: MessageEvent<Uint8Array<ArrayBuffer> | null>) => {
-      stop();
-      if (!data?.length) return;
-      const blob = new Blob([data], { type: "video/webm" });
-      convertedCovers.set(input, blob);
-      if (convertedCovers.size > 6) convertedCovers.delete(convertedCovers.keys().next().value!);
-      show(blob);
-    };
-    worker.onerror = stop;
-    worker.postMessage(input);
+    const conversion = conversions.get(input) ?? startConversion(input);
+    conversion.users++;
+    let live = true;
+    void conversion.result.then((blob) => { if (live && blob) show(blob); });
     return () => {
-      stop();
+      live = false;
+      if (--conversion.users === 0 && conversions.get(input) === conversion) {
+        conversions.delete(input);
+        conversion.cancel();
+      }
       release();
     };
   }, [source, format]);
   if (format === "mp4") return source;
   if (format === "webm" && converted?.source === source) return converted?.url;
+}
+
+export function useAlbumMotionArtwork(albumUri: string | undefined, upc: string | undefined, enabled: boolean, view: Window = window) {
+  const format = useMemo(() => motionArtworkFormat(view), [view]);
+  const source = useMotionArtwork(albumUri, upc, !!format && enabled);
+  return usePlayableMotionArtwork(source, format);
 }
 
 function normalizeUpc(value: unknown) {
@@ -125,7 +166,7 @@ function coverForUpc(upc: string) {
   return entry.value;
 }
 
-export function useMotionArtwork(albumUri: string | undefined, suppliedUpc: string | undefined, enabled: boolean) {
+function useMotionArtwork(albumUri: string | undefined, suppliedUpc: string | undefined, enabled: boolean) {
   const [art, setArt] = useState<{ album: string; url: string }>();
   useEffect(() => {
     const album = /^spotify:album:([A-Za-z0-9]{22})$/.exec(albumUri ?? "")?.[1];

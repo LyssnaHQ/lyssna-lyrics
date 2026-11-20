@@ -25,7 +25,7 @@ import { attachBulkLyrics, importLyricFile, loadBulkLyrics } from "./ttml-import
 import { enabledSources, readLyrics, refreshLyrics, sourceIds } from "./lyric-sources";
 import { LyricCredits } from "./credits";
 import { CanvasArtwork, SpotifyVisualiser, useCanvas } from "./spotify-artwork";
-import { findNowPlaying, nowPlayingArtwork, nowPlayingCanvas, placeNowPlayingPreview } from "./now-playing";
+import { findNowPlaying, findNowPlayingCover, findPlaybarCover, nowPlayingArtwork, nowPlayingCanvas, placeNowPlayingPreview } from "./now-playing";
 import { TrackMetadata } from "./track-metadata";
 import { useDefaultLyricsFont } from "./lyrics-font-fallback";
 import { clock, usePlayback, usePlaybackControls, usePosition } from "./playback";
@@ -42,7 +42,7 @@ import { submitLyssnaTtml } from "./lyssna-submission";
 import { CreatorSurface } from "./creator/surface";
 import { dismissDraft, draftPreview } from "./creator/ttml-working";
 import { trackLyssnaListens, useLyssnaPlay } from "./lyssna-plays";
-import { MotionArtwork, motionArtworkFormat, useMotionArtwork, usePlayableMotionArtwork } from "./motion-artwork";
+import { MotionArtwork, useAlbumMotionArtwork } from "./motion-artwork";
 import fontCss from "./fonts/fonts.css?inline";
 import desktopCss from "./lyssna/lyrics.css?inline";
 import settingsCss from "./lyssna/settings.css?inline";
@@ -261,6 +261,36 @@ function NowPlayingBackdrop({ host, panel }: { host: Host; panel: HTMLElement })
   return enabled && <Ambience image={track?.cover} animate={playing} reduceMotion={settings.reduce_motion} followCanvas={canvas} />;
 }
 
+function SpotifyMotionCover({ host }: { host: Host }) {
+  const { track, playing } = usePlayback(host, true);
+  const settings = useReviewerSettings(useLiveSettings(), track?.id);
+  const url = useAlbumMotionArtwork(track?.albumUri, track?.albumUpc, settings.animated_covers && !settings.reduce_motion);
+  const [unavailable, setUnavailable] = useState<string>();
+  return url && url !== unavailable
+    ? <MotionArtwork key={url} url={url} playing={playing} onUnavailable={setUnavailable} />
+    : null;
+}
+
+function spotifyMotionCover(host: Host) {
+  let artwork: { cover: HTMLElement; container: HTMLElement; dispose(): void } | undefined;
+  return {
+    sync(cover: HTMLElement | null) {
+      if (artwork && artwork.cover === cover && artwork.container.parentElement === cover) return;
+      artwork?.dispose();
+      artwork = undefined;
+      if (!cover) return;
+      const container = document.createElement("div");
+      container.className = "lyssna-spotify-motion-cover";
+      container.setAttribute("aria-hidden", "true");
+      cover.append(container);
+      const root = host.mount(container);
+      root.render(<SpotifyMotionCover host={host} />);
+      artwork = { cover, container, dispose() { root.unmount(); container.remove(); } };
+    },
+    dispose() { artwork?.dispose(); artwork = undefined; },
+  };
+}
+
 function PopoutView({ host, view, close }: { host: Host; view: Window; close: () => void }) {
   const { track, playing, narrating } = usePlayback(host, true);
   const settings = useReviewerSettings(useLiveSettings(), track?.id);
@@ -391,10 +421,8 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
   const artistUri = track?.artistUri;
   const trackId = track?.id;
   const albumUri = track?.albumUri;
-  const motionFormat = useMemo(() => motionArtworkFormat(view), [view]);
-  const motionSource = useMotionArtwork(albumUri, track?.albumUpc,
-    !!motionFormat && !showCreator && settings.animated_covers && !settings.reduce_motion && !settings.lyrics_hide_artwork && !canvas);
-  const motionUrl = usePlayableMotionArtwork(motionSource, motionFormat);
+  const motionUrl = useAlbumMotionArtwork(albumUri, track?.albumUpc,
+    !showCreator && settings.animated_covers && !settings.reduce_motion && !settings.lyrics_hide_artwork && !canvas, view);
   const [unavailableMotion, setUnavailableMotion] = useState<string>();
   const motion = motionUrl !== unavailableMotion ? motionUrl : undefined;
   const year = track?.year ?? (albumYear?.uri === albumUri ? albumYear?.year : undefined);
@@ -656,6 +684,8 @@ export default function start(options: BuildOptions) {
   let playbarButtons: ReturnType<typeof playbarViewButtons> | undefined;
   let showPlaybarPopout = false;
   let showPlaybarCinema = false;
+  let showSpotifyMotion = false;
+  let syncSpotifyMotion: ((panel?: HTMLElement | null) => void) | undefined;
   let creatorEnabled = false;
   let creatorOpen = false;
   let renderMainView: (() => void) | undefined;
@@ -673,6 +703,11 @@ export default function start(options: BuildOptions) {
     showPlaybarPopout = settings.cinema_lyrics;
     showPlaybarCinema = settings.cinema_window;
     creatorEnabled = settings.ttml_creator;
+    const motion = settings.animated_covers && !settings.reduce_motion;
+    if (motion !== showSpotifyMotion) {
+      showSpotifyMotion = motion;
+      syncSpotifyMotion?.();
+    }
     if (!creatorEnabled) setCreator(false);
     syncPlaybar();
     setFrameCap(settings.animation_fps_cap_enabled ? settings.animation_fps_cap : 0);
@@ -935,6 +970,13 @@ export default function start(options: BuildOptions) {
     backdrop = { panel, container, dispose() { root.unmount(); container.remove(); } };
   }
 
+  const playbarArtwork = spotifyMotionCover(host);
+  const nowPlayingMotion = spotifyMotionCover(host);
+  syncSpotifyMotion = (panel = findNowPlaying()) => {
+    playbarArtwork.sync(showSpotifyMotion ? findPlaybarCover() : null);
+    nowPlayingMotion.sync(showSpotifyMotion && !sidebarCover ? findNowPlayingCover(panel) : null);
+  };
+
   function attachCard(panel: HTMLElement | null) {
     if (panel?.querySelector("#LyssnaLyricsNPVCard, #SpicyLyricsNPVCard")) panel = null;
     if (panel !== cardPanel) {
@@ -994,6 +1036,7 @@ export default function start(options: BuildOptions) {
     syncBackdrop(panel);
     syncNowPlaying(panel);
     sidebarArtwork.sync(panel, sidebarCover);
+    syncSpotifyMotion?.(panel);
   }
   const observer = new MutationObserver(syncHost);
   observer.observe(document.body, { childList: true, subtree: true });
@@ -1010,6 +1053,8 @@ export default function start(options: BuildOptions) {
       close?.(false);
       button?.remove();
       viewButtons.dispose();
+      playbarArtwork.dispose();
+      nowPlayingMotion.dispose();
       sidebarArtwork.dispose();
       disposeProvider();
       stopPreferenceSync();

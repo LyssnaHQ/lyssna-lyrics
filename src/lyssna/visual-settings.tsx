@@ -390,7 +390,7 @@ return { flag, range, Look: [
           "Play the track's Canvas when Spotify makes it available.",
           "video background",
         ),
-        flag("animated_covers", "Animated covers", "Play Apple Music motion covers when available. Lyssna looks them up by album barcode.",
+        flag("animated_covers", "Animated covers", "Play Apple Music motion covers in Lyrics, the playbar and Now Playing when available.",
           "motion artwork animated album cover video apple music"),
         flag(
           "npv_ambience",

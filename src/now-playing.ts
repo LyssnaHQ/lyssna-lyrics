@@ -3,6 +3,19 @@ const nativePreview = '[data-testid="lyrics-npv-section"]';
 const trackVisual = '[data-testid="track-visual-enhancement"]';
 const canvasSurface = '[data-canvas-surface], .main-nowPlayingView-canvasVisualEnhancement, .canvasVideoContainerNPV';
 
+export function findPlaybarCover() {
+  return document.querySelector<HTMLElement>(
+    ':is([data-testid="now-playing-widget"], [data-testid="now-playing-widget-v2"], .main-nowPlayingWidget-nowPlaying) .cover-art:has(> img)',
+  );
+}
+
+export function findNowPlayingCover(panel: HTMLElement | null) {
+  if (!panel || panel.querySelector(canvasSurface)) return null;
+  return panel.querySelector<HTMLElement>(
+    ':is([data-testid="cover-art-slot"], .main-nowPlayingView-coverArtContainer):has(img):not(:has(video:not(.lyssna-spotify-motion-cover video)))',
+  );
+}
+
 export function findNowPlaying() {
   return document.querySelector<HTMLElement>(
     `aside.NowPlayingView, aside[aria-label="Now playing view" i], aside#Desktop_PanelContainer_Id:has(${panelContent}, ${trackVisual}, [data-canvas-surface], [data-testid="cover-art-slot"]), .now-playing-view`,

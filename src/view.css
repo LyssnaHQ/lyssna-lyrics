@@ -323,6 +323,25 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   grid-area: 1 / 1;
 }
 
+:is([data-testid="cover-art-slot"], .main-nowPlayingView-coverArtContainer):has(> .lyssna-spotify-motion-cover) {
+  position: relative;
+}
+
+.lyssna-spotify-motion-cover {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.lyssna-spotify-motion-cover > video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 .lyssna-lyrics-view .canvas-lyrics {
   --canvas-direction: to right;
   --canvas-width: 47%;

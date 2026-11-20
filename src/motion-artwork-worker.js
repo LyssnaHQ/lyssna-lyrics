@@ -44,9 +44,9 @@ self.onmessage = async ({ data: input }) => {
     ffmpeg.exec(
       "-loglevel", "error", "-protocol_whitelist", "file", "-threads", "1",
       "-f", "mov", "-i", "cover.mp4", "-map", "0:v:0", "-an", "-sn", "-dn", "-t", "60",
-      "-vf", "scale=640:-2", "-pix_fmt", "yuv420p",
+      "-pix_fmt", "yuv420p",
       "-c:v", "libvpx", "-deadline", "realtime", "-cpu-used", "8", "-threads", "1",
-      "-b:v", "700k", "cover.webm",
+      "-crf", "10", "-b:v", "6M", "cover.webm",
     );
     if (ffmpeg.ret !== 0) throw new Error("Could not convert Apple Music cover to WebM");
     const output = ffmpeg.FS.readFile("cover.webm");
