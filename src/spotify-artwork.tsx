@@ -3,8 +3,6 @@ import type { AudioSegment, CanvasInfo, Host } from "./host";
 import { LyricsVisualiser } from "./lyssna/lyrics-visualiser";
 import { playCanvasMedia } from "./canvas-media";
 
-export const nowPlayingSelector = 'aside.NowPlayingView, .main-nowPlayingView-section, .now-playing-view';
-
 export function useCanvas(host: Host, trackId: string | undefined, enabled: boolean) {
   const [canvas, setCanvas] = useState<{ trackId: string; info: CanvasInfo }>();
   useEffect(() => {

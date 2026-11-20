@@ -6,6 +6,7 @@ type RepeatMode = "off" | "context" | "track";
 type ButtonOptions = { label: string; icon: string; onClick: () => void };
 type Button = { active: boolean; remove(): void };
 type HistoryLocation = { pathname: string };
+type HostConfig = { extensions?: unknown; custom_apps?: unknown; customApps?: unknown };
 type SpotifyHistory = {
   location: HistoryLocation;
   entries?: HistoryLocation[];
@@ -36,7 +37,7 @@ type SpotifyTrack = {
 };
 
 export type Spicetify = {
-  Config?: { extensions?: unknown };
+  Config?: HostConfig;
   Platform?: Record<string, unknown>;
   CosmosAsync?: unknown;
   GraphQL?: {
@@ -72,7 +73,7 @@ export type Spicetify = {
 };
 
 type SpotiKit = {
-  Config?: { extensions?: unknown };
+  Config?: HostConfig;
   Platform: Record<string, unknown>;
   Http: unknown;
   Audio?: { analysis(uri: string): Promise<AudioAnalysis | null> };
@@ -130,6 +131,13 @@ const nativeLyricsButton = 'button[data-testid="lyrics-button"]';
 const otherLyricsButtons = `${nativeLyricsButton}, #LyssnaLyrics_PageButton, #LyssnaLyrics_FullscreenButton`;
 const lyricsRoute = (location?: HistoryLocation) => /^\/(?:lyrics|spicylyrics|lyssnalyrics)(?:\/|$)/i.test(location?.pathname ?? "");
 
+function customAppRoutes(config?: HostConfig) {
+  const configured = config?.custom_apps ?? config?.customApps;
+  const entries: unknown[] = typeof configured === "string" ? configured.split("|") : Array.isArray(configured) ? configured : [];
+  return entries.filter((entry): entry is string => typeof entry === "string")
+    .map((entry) => entry.trim().toLowerCase()).filter(Boolean);
+}
+
 function headerImage(result: CatalogueResult) {
   const artist = result?.data?.artistUnion;
   const images = artist?.headerImage?.data?.sources ?? artist?.visuals?.headerImage?.sources ?? [];
@@ -154,6 +162,11 @@ export function getHost() {
   } | undefined;
   if ((!kit && !spice) || !dom) throw new Error("Spotify host is unavailable");
   const history = () => (kit?.Platform.History ?? spice?.Platform?.History) as SpotifyHistory | undefined;
+  const customApps = new Set(["marketplace", "lyrics-plus", ...customAppRoutes(spice?.Config), ...customAppRoutes(kit?.Config)]);
+  const otherMainView = (location?: HistoryLocation) => {
+    const [route, app] = location?.pathname.toLowerCase().slice(1).split("/") ?? [];
+    return lyricsRoute(location) || customApps.has(route === "app" ? app : route);
+  };
 
   const artistHeaders = new Map<string, Promise<string | undefined>>();
   const releaseYears = new Map<string, Promise<string | undefined>>();
@@ -307,9 +320,9 @@ export function getHost() {
     },
     async leaveOtherLyricsView() {
       const routes = history();
-      if (routes && lyricsRoute(routes.location)) {
+      if (routes && otherMainView(routes.location)) {
         const index = routes.index ?? 0;
-        const previous = routes.entries?.slice(0, index).findLastIndex((location) => !lyricsRoute(location)) ?? -1;
+        const previous = routes.entries?.slice(0, index).findLastIndex((location) => !otherMainView(location)) ?? -1;
         const go = routes.go?.bind(routes);
         if (go && previous >= 0) {
           // Browser history can finish after the button handler returns. Wait so
@@ -318,7 +331,7 @@ export function getHost() {
           let timeout: number | undefined;
           try {
             await new Promise<void>((resolve) => {
-              unlisten = routes.listen(() => { if (!lyricsRoute(routes.location)) resolve(); });
+              unlisten = routes.listen(() => { if (!otherMainView(routes.location)) resolve(); });
               timeout = window.setTimeout(resolve, 500);
               go(previous - index);
             });
@@ -327,7 +340,7 @@ export function getHost() {
             unlisten?.();
           }
         }
-        if (lyricsRoute(routes.location)) routes.replace("/");
+        if (otherMainView(routes.location)) routes.replace("/");
         return;
       }
       // Some Spotify clients open lyrics as a Now Playing sidebar variant.

@@ -21,14 +21,15 @@ import { useAppFonts } from "./lyssna/custom-fonts";
 import { lyricsChanged, saveLocalLyrics } from "./local-lyrics";
 import { enabledSources, readLyrics, refreshLyrics, sourceIds } from "./lyric-sources";
 import { LyricCredits } from "./credits";
-import { CanvasArtwork, nowPlayingSelector, SpotifyVisualiser, useCanvas } from "./spotify-artwork";
+import { CanvasArtwork, SpotifyVisualiser, useCanvas } from "./spotify-artwork";
+import { findNowPlaying, nowPlayingArtwork, placeNowPlayingPreview } from "./now-playing";
 import { TrackMetadata } from "./track-metadata";
 import { useDefaultLyricsFont } from "./lyrics-font-fallback";
 import { clock, usePlayback, usePosition } from "./playback";
 import { LyricsPopout, pictureInPicture } from "./popout";
 import { startEnhancements } from "./enhancements";
 import { startPreferenceSync } from "./preference-sync";
-import { playbarFullscreen } from "./playbar-fullscreen";
+import { playbarViewButtons } from "./playbar-fullscreen";
 import fontCss from "./fonts/fonts.css?inline";
 import desktopCss from "./lyssna/lyrics.css?inline";
 import settingsCss from "./lyssna/settings.css?inline";
@@ -149,10 +150,10 @@ function NowPlayingCard({ host, open }: { host: Host; open: () => void }) {
   const settings = useLiveSettings();
   const fonts = useAppFonts(settings);
   if (!track || settings.lyrics_hide_npv) return null;
-  return <aside className={`lyssna-now-playing-card${settings.lyrics_hide_npv_empty ? " hide-empty" : ""}`} aria-label="Lyssna Lyrics" style={fonts}>
+  return <aside className={`lyssna-now-playing-card${settings.lyrics_hide_npv_empty ? " hide-empty" : ""}`} aria-label="Lyssna Lyrics preview" style={fonts}>
     {track.cover && settings.npv_ambience && <Ambience image={track.cover} animate={playing} reduceMotion={settings.reduce_motion} />}
-    <header><h2>Lyrics</h2><button className="icon-button" type="button" aria-label="Open lyrics" onClick={open}><MicVocal size={18} /></button></header>
-    <div className="lyssna-now-playing-lines"><LyricsForTrack key={track.id} track={track} host={host} playing={playing} settings={settings} compact /></div>
+    <header><h2>Lyrics preview</h2><button className="icon-button" type="button" aria-label="Open lyrics" onClick={open}><MicVocal size={18} /></button></header>
+    <div className="lyssna-now-playing-lines" data-scroll-size-contained=""><LyricsForTrack key={track.id} track={track} host={host} playing={playing} settings={settings} compact /></div>
   </aside>;
 }
 
@@ -221,9 +222,10 @@ function requestDisplayFullscreen(parent: HTMLElement) {
   void parent.requestFullscreen().then(() => parent.focus({ preventScroll: true })).catch(() => {});
 }
 
-function LyricsView({ host, options, close, parent, openPopout, fullscreenRequest }: {
+function LyricsView({ host, options, close, parent, openPopout, fullscreenRequest, onSidebarCover }: {
   host: Host; options: BuildOptions; close: () => void; parent: HTMLElement; openPopout: () => Promise<void>;
   fullscreenRequest: number;
+  onSidebarCover(cover?: string): void;
 }) {
   const { track, playing } = usePlayback(host);
   const settings = useLiveSettings();
@@ -248,6 +250,7 @@ function LyricsView({ host, options, close, parent, openPopout, fullscreenReques
   const [unavailableCanvas, setUnavailableCanvas] = useState<CanvasInfo>();
   const canvas = canvasInfo === unavailableCanvas ? undefined : canvasInfo;
   useEffect(() => setUnavailableCanvas(undefined), [track?.id, canvasEnabled]);
+  useLayoutEffect(() => { onSidebarCover(canvas ? track?.cover : undefined); }, [canvas, track?.cover, onSidebarCover]);
   const background = settings.lyrics_background;
   const artistUri = track?.artistUri;
   const trackId = track?.id;
@@ -474,8 +477,12 @@ export default function start(options: BuildOptions) {
   stylesheet.textContent = `${fontCss}\n${desktopCss}\n${settingsCss}\n${viewCss}`;
   document.head.append(stylesheet);
   let stopProvider: (() => void) | undefined;
+  let playbarButtons: ReturnType<typeof playbarViewButtons> | undefined;
+  let showPlaybarPopout = false;
   function applyRuntimeSettings() {
     const settings = readSettings();
+    showPlaybarPopout = settings.cinema_lyrics;
+    playbarButtons?.sync(showPlaybarPopout);
     setFrameCap(settings.animation_fps_cap_enabled ? settings.animation_fps_cap : 0);
     const disabled = settings.lyrics_sources_disabled;
     if (!disabled.includes("spicy") || !disabled.includes("apple")) {
@@ -497,11 +504,20 @@ export default function start(options: BuildOptions) {
   let button: ReturnType<Host["button"]> | undefined;
   let removeCard: (() => void) | undefined;
   let card: HTMLElement | undefined;
+  let cardPanel: HTMLElement | undefined;
+  let sidebarCover: string | undefined;
   let closePopout: (() => void) | undefined;
   let opening = false;
   let switchingLyricsView = false;
   let disposed = false;
   let restorePending = sessionStorage.getItem(activeViewKey) === "open";
+  const sidebarArtwork = nowPlayingArtwork(host.playing);
+
+  function setSidebarCover(cover?: string) {
+    if (sidebarCover === cover) return;
+    sidebarCover = cover;
+    sidebarArtwork.sync(findNowPlaying(), cover);
+  }
 
   async function openPopout() {
     if (!pictureInPicture || opening || disposed) return;
@@ -519,11 +535,13 @@ export default function start(options: BuildOptions) {
         function release() {
           view.removeEventListener("pagehide", release);
           closePopout = undefined;
+          playbarButtons?.setPopoutActive(false);
           root.unmount();
         }
         const dismiss = () => { release(); view.close(); };
         view.addEventListener("pagehide", release);
         closePopout = dismiss;
+        playbarButtons?.setPopoutActive(true);
         root.render(<PopoutView host={host} view={view} close={dismiss} />);
       } catch (error) {
         if (closePopout) closePopout();
@@ -568,6 +586,7 @@ export default function start(options: BuildOptions) {
       button?.setActive(false);
       root.unmount();
       shadowHost.remove();
+      setSidebarCover();
       if (forget) sessionStorage.removeItem(activeViewKey);
     };
     close = dismiss;
@@ -577,7 +596,7 @@ export default function start(options: BuildOptions) {
     let fullscreenRequest = 0;
     const closeView = () => dismiss();
     const render = () => root.render(<LyricsView host={host} options={options} close={closeView} parent={parent}
-      openPopout={openPopout} fullscreenRequest={fullscreenRequest} />);
+      openPopout={openPopout} fullscreenRequest={fullscreenRequest} onSidebarCover={setSidebarCover} />);
     enterFullscreen = (next) => {
       fullscreenRequest++;
       render();
@@ -598,28 +617,38 @@ export default function start(options: BuildOptions) {
     stylesheet.remove();
     throw error;
   }
-  const fullscreenButton = playbarFullscreen(host, (event) => void open(event.shiftKey ? "cinema" : "display"));
+  const viewButtons = playbarButtons = playbarViewButtons(host,
+    (event) => void open(event.shiftKey ? "cinema" : "display"),
+    pictureInPicture ? () => void openPopout().catch((error) => console.warn("[Lyssna Lyrics] Could not open pop-out", error)) : undefined,
+  );
   const stopEnhancementStartup = startEnhancements();
 
-  function attachCard() {
-    if (mainContainer && !mainContainer.isConnected) close?.();
-    if (card?.isConnected) return;
-    removeCard?.();
-    removeCard = undefined;
-    const panel = document.querySelector(nowPlayingSelector);
+  function attachCard(panel: HTMLElement | null) {
+    if (panel?.querySelector("#LyssnaLyricsNPVCard, #SpicyLyricsNPVCard")) panel = null;
+    if (panel !== cardPanel) {
+      removeCard?.();
+      removeCard = undefined;
+      card = undefined;
+      cardPanel = panel ?? undefined;
+    }
     if (!panel) return;
-    const container = document.createElement("div");
-    card = container;
-    container.className = "lyssna-lyrics-view lyssna-npv";
-    panel.append(container);
-    const root = host.mount(container);
-    root.render(<NowPlayingCard host={host} open={() => { if (!close) open(); }} />);
-    removeCard = () => { root.unmount(); container.remove(); };
+    if (!card) {
+      const container = document.createElement("div");
+      container.className = "lyssna-lyrics-view lyssna-npv";
+      card = container;
+      placeNowPlayingPreview(panel, container);
+      const root = host.mount(container);
+      root.render(<NowPlayingCard host={host} open={() => { if (!close) void open(); }} />);
+      removeCard = () => { root.unmount(); container.remove(); };
+    } else placeNowPlayingPreview(panel, card);
   }
   function syncHost() {
-    fullscreenButton.sync();
+    viewButtons.sync(showPlaybarPopout);
     if (restorePending && host.mainView()) void open();
-    attachCard();
+    if (mainContainer && !mainContainer.isConnected) close?.();
+    const panel = findNowPlaying();
+    attachCard(panel);
+    sidebarArtwork.sync(panel, sidebarCover);
   }
   const observer = new MutationObserver(syncHost);
   observer.observe(document.body, { childList: true, subtree: true });
@@ -633,7 +662,8 @@ export default function start(options: BuildOptions) {
       closePopout?.();
       close?.(false);
       button?.remove();
-      fullscreenButton.dispose();
+      viewButtons.dispose();
+      sidebarArtwork.dispose();
       disposeProvider();
       stopPreferenceSync();
       stopEnhancementStartup();

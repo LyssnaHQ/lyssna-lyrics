@@ -233,7 +233,7 @@ export function SettingsPanel({ settings, change, close, options, trackId, impor
       ...visuals.Display,
     ]],
     ["Layout", "Lyrics layout", [
-      flag("cinema_lyrics", "Enable lyrics pop-out", "Show a toolbar button that opens lyrics in a floating window.",
+      flag("cinema_lyrics", "Enable lyrics pop-out", "Show the pop-out button in the playbar and lyrics toolbar.",
         "cinema window external popup", pictureInPicture ? undefined : "This Spotify client does not support Picture-in-Picture windows."),
       ...visuals.Layout,
       visualRowsByKey.get("year"),
