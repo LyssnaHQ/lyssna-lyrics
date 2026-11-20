@@ -33,6 +33,11 @@ class LiveSpectrumProcessor extends AudioWorkletProcessor {
     this.count = 0;
     this.replay = new Int32Array(Math.round(sampleRate / 10) * 2);
     this.replayOffset = 0;
+    this.enabled = false;
+    this.port.onmessage = ({ data }) => {
+      this.enabled = data;
+      if (!this.enabled) { this.nextSequence = undefined; this.ring.fill(0); }
+    };
   }
 
   sample(sequence) {
@@ -71,6 +76,7 @@ class LiveSpectrumProcessor extends AudioWorkletProcessor {
   }
 
   process([input = []]) {
+    if (!this.enabled) return true;
     const [left, right = left] = input;
     if (!left?.length) return true;
     if (this.nextSequence === undefined || currentFrame !== this.nextBlock) {

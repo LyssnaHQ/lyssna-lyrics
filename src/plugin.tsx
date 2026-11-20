@@ -40,6 +40,8 @@ import { lyssnaApiNotice, lyssnaInstallReady } from "./lyssna-api";
 import { revalidateLyssnaSong, resumeLyssnaRequests } from "./lyssna-provider";
 import { submitLyssnaTtml } from "./lyssna-submission";
 import { CreatorSurface, type CreatorPlayback } from "./creator/surface";
+import { createSpotifyCapture, type SpotifyCapture } from "./creator/spotify-capture";
+import { AutoRecordPrompt } from "./creator/auto-record";
 import { dismissDraft, draftPreview, liveDraftChanged } from "./creator/ttml-working";
 import { trackLyssnaListens, useLyssnaPlay } from "./lyssna-plays";
 import { MotionArtwork, useAlbumMotionArtwork } from "./motion-artwork";
@@ -383,8 +385,9 @@ function requestDisplayFullscreen(parent: HTMLElement) {
   void parent.requestFullscreen().then(() => parent.focus({ preventScroll: true })).catch(() => {});
 }
 
-function LyricsView({ host, options, close, parent, view = window, fullscreenRequest = 0, settingsRequest = 0, openCreator, closeCreator, onSidebarCover }: {
+function LyricsView({ host, options, close, parent, view = window, fullscreenRequest = 0, settingsRequest = 0, openCreator, closeCreator, onSidebarCover, capture }: {
   host: Host; options: BuildOptions; close: () => void; parent: HTMLElement; view?: Window;
+  capture: SpotifyCapture;
   fullscreenRequest?: number;
   settingsRequest?: number;
   openCreator?(): void;
@@ -635,7 +638,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
       style={{ "--artwork-blur": `${settings.lyrics_background_blur}px` } as CSSProperties}
       onError={banner ? () => setArtistHeader((current) => current?.url === banner && current.uri === artistUri ? undefined : current) : undefined} alt="" />}
     {(showCreator || keepCreator) && <div className="lyssna-creator-container" ref={creatorPage} style={pageStyle} data-draft-preview={keepCreator || undefined}>
-      <CreatorSurface host={host} view={view} settings={preferences} close={closeCreator ?? close} previewing={keepCreator}
+      <CreatorSurface host={host} view={view} settings={preferences} close={closeCreator ?? close} previewing={keepCreator} capture={capture}
         onLocalPlayback={setCreatorPlayback} manageStoredData={(trigger) => {
         settingsTrigger.current = trigger ?? undefined;
         setNotice("");
@@ -745,6 +748,7 @@ function ProfileSettings({ host, options, close }: { host: Host; options: BuildO
 
 export default function start(options: BuildOptions) {
   const host = getHost();
+  const capture = createSpotifyCapture(host);
   const stopPreferenceSync = startPreferenceSync();
   const stylesheet = document.createElement("style");
   stylesheet.textContent = `${fontCss}\n${desktopCss}\n${settingsCss}\n${ttmlCss}\n${viewCss}`;
@@ -757,6 +761,7 @@ export default function start(options: BuildOptions) {
   let syncSpotifyMotion: ((panel?: HTMLElement | null) => void) | undefined;
   let creatorEnabled = false;
   let creatorOpen = false;
+  let removeAutoRecord: (() => void) | undefined;
   let renderMainView: (() => void) | undefined;
   function syncPlaybar() {
     playbarButtons?.sync(showPlaybarPopout, showPlaybarCinema && host.developerMode !== false, creatorEnabled, creatorOpen);
@@ -769,6 +774,18 @@ export default function start(options: BuildOptions) {
   }
   function applyRuntimeSettings() {
     const settings = readSettings();
+    const autoRecord = settings.ttml_creator && settings.auto_record;
+    if (autoRecord && !removeAutoRecord) {
+      const container = document.createElement("div");
+      document.body.append(container);
+      const root = host.mount(container);
+      root.render(<AutoRecordPrompt capture={capture} />);
+      removeAutoRecord = () => { root.unmount(); container.remove(); };
+    } else if (!autoRecord && removeAutoRecord) {
+      capture.stopAuto();
+      removeAutoRecord();
+      removeAutoRecord = undefined;
+    }
     showPlaybarPopout = settings.cinema_lyrics;
     showPlaybarCinema = settings.cinema_window;
     creatorEnabled = settings.ttml_creator;
@@ -790,8 +807,10 @@ export default function start(options: BuildOptions) {
   }
   applyRuntimeSettings();
   window.addEventListener(settingsEvent, applyRuntimeSettings);
-  function disposeProvider() {
+  function disposeRuntimeSettings() {
     window.removeEventListener(settingsEvent, applyRuntimeSettings);
+    removeAutoRecord?.();
+    void capture.stop();
     stopProvider?.();
   }
   let close: ((forget?: boolean) => void) | undefined;
@@ -919,7 +938,7 @@ export default function start(options: BuildOptions) {
           if (creatorOpen) dismiss();
         };
         root.render(cinema
-          ? <LyricsView host={host} options={options} close={dismiss} parent={parent} view={view} openCreator={() => void returnToCreator()} />
+          ? <LyricsView host={host} options={options} close={dismiss} parent={parent} view={view} capture={capture} openCreator={() => void returnToCreator()} />
           : <PopoutView host={host} view={view} close={dismiss} />);
       } catch (error) {
         if (detached?.view === view) detached.dismiss();
@@ -989,7 +1008,7 @@ export default function start(options: BuildOptions) {
       setCreator(false);
       window.requestAnimationFrame(() => playbarButtons?.focusCreator());
     };
-    renderMainView = () => root.render(<LyricsView host={host} options={options} close={closeView} parent={parent}
+    renderMainView = () => root.render(<LyricsView host={host} options={options} close={closeView} parent={parent} capture={capture}
       fullscreenRequest={fullscreenRequest} settingsRequest={settingsRequest} openCreator={() => setCreator(true)}
       closeCreator={creatorOpen ? closeCreator : undefined} onSidebarCover={setSidebarCover} />);
     showMainSettings = () => {
@@ -1019,7 +1038,7 @@ export default function start(options: BuildOptions) {
     });
   } catch (error) {
     button?.remove();
-    disposeProvider();
+    disposeRuntimeSettings();
     stopPreferenceSync();
     stylesheet.remove();
     throw error;
@@ -1043,7 +1062,7 @@ export default function start(options: BuildOptions) {
   const stopLyssnaListens = trackLyssnaListens(host);
   const reportApiNotice = (event: Event) => host.notifyError((event as CustomEvent<string>).detail);
   window.addEventListener(lyssnaApiNotice, reportApiNotice);
-  const beginUnload = () => { unloading = true; };
+  const beginUnload = () => { unloading = true; void capture.stop(); };
   const resumePage = (event: PageTransitionEvent) => {
     if (event.persisted) {
       unloading = false;
@@ -1161,7 +1180,7 @@ export default function start(options: BuildOptions) {
       playbarArtwork.dispose();
       nowPlayingMotion.dispose();
       sidebarArtwork.dispose();
-      disposeProvider();
+      disposeRuntimeSettings();
       stopPreferenceSync();
       stopEnhancementStartup();
       stopTemporaryTrack();

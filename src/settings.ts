@@ -25,6 +25,7 @@ export const defaults = {
   romanization_below: true,
   lyrics_translations: false,
   ttml_creator: false,
+  auto_record: false,
   ttml_reviewer: "off" as "off" | "temporary" | "always",
   experimental_word_sync: false,
   lyrics_animator: {} as AnimatorSettings,

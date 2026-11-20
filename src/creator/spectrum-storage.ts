@@ -47,6 +47,7 @@ export async function readLiveTiles(uri: string, first: number, last: number): P
 }
 
 export const liveSpectrumCleared = "lyssna-lyrics:spectrograms-cleared";
+export const liveSpectrumSaved = "lyssna-lyrics:spectrograms-saved";
 
 export async function savedSpectrogramBytes() {
   const db = await openSpectrum();
@@ -81,7 +82,7 @@ export function mergeLiveTile(target: LiveTile, update: LiveTile, overwrite: boo
 
 export async function saveLiveTiles(tiles: LiveTile[]) {
   const db = await openSpectrum();
-  return new Promise<void>((resolve, reject) => {
+  await new Promise<void>((resolve, reject) => {
     const transaction = db.transaction("tiles", "readwrite");
     transaction.oncomplete = () => resolve();
     transaction.onabort = () => reject(transaction.error);
@@ -95,4 +96,5 @@ export async function saveLiveTiles(tiles: LiveTile[]) {
       };
     }
   });
+  window.dispatchEvent(new CustomEvent(liveSpectrumSaved, { detail: tiles }));
 }

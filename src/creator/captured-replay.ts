@@ -98,31 +98,46 @@ function writeTiles(packets: ReplayPacket[], framesPerTile: number) {
   return changes;
 }
 
+function resampleReplay(packet: ReplayPacket, sampleRate: number): ReplayPacket {
+  if (sampleRate === packet.sampleRate) return packet;
+  const ratio = sampleRate / packet.sampleRate;
+  const frames = packet.samples.length / channels;
+  const startFrame = Math.round(packet.startFrame * ratio);
+  const endFrame = Math.round((packet.startFrame + frames) * ratio);
+  const samples = new Int32Array((endFrame - startFrame) * channels);
+  for (let index = 0; index < endFrame - startFrame; index++) {
+    const source = Math.max(0, Math.min(frames - 1, (startFrame + index) / ratio - packet.startFrame));
+    const first = Math.floor(source);
+    const next = Math.min(frames - 1, first + 1);
+    for (let channel = 0; channel < channels; channel++) {
+      const before = packet.samples[first * channels + channel];
+      const after = packet.samples[next * channels + channel];
+      samples[index * channels + channel] = Math.round(before + (after - before) * (source - first));
+    }
+  }
+  return { ...packet, sampleRate, startFrame, samples };
+}
+
 async function savePackets(uri: string, packets: ReplayPacket[]) {
-  const { sampleRate } = packets[0];
-  const framesPerTile = sampleRate;
-  const changes = writeTiles(packets, framesPerTile);
-  if (!changes.size) return;
   const db = await openRecording();
   const transaction = db.transaction(["tiles", "tracks"], "readwrite");
   const done = complete(transaction);
   const tiles = transaction.objectStore("tiles");
   const tracks = transaction.objectStore("tracks");
   const trackRequest = tracks.get(uri);
-  let remaining = changes.size;
-  const summary = { uri, sampleRate, frames: 0 };
+  let summary: RecordingCoverage | undefined;
   trackRequest.onsuccess = () => {
     const previous: TrackRecording | undefined = trackRequest.result;
-    // Every tile for a song uses the same sample rate, including legacy captures.
-    if (previous?.frames && (previous.sampleRate ?? legacySampleRate) !== sampleRate) {
-      transaction.abort();
-      return;
-    }
-    summary.frames = previous?.frames ?? 0;
+    // Keep earlier captures on their original grid when a later session uses a different rate.
+    const sampleRate = previous?.frames ? previous.sampleRate ?? legacySampleRate : packets[0].sampleRate;
+    const changes = writeTiles(packets.map((packet) => resampleReplay(packet, sampleRate)), sampleRate);
+    let remaining = changes.size;
+    if (!remaining) return;
+    const next = summary = { uri, sampleRate, frames: previous?.frames ?? 0 };
     for (const [index, writes] of changes) {
       const request = tiles.get([uri, index]);
       request.onsuccess = () => {
-        const tile: Tile = request.result ?? { uri, index, samples: new Uint8Array(framesPerTile * channels * pcm24Bytes), ranges: [] };
+        const tile: Tile = request.result ?? { uri, index, samples: new Uint8Array(sampleRate * channels * pcm24Bytes), ranges: [] };
         const packed = tile.samples instanceof Int16Array ? packPcm24(tile.samples) : tile.samples;
         const before = coverage(tile.ranges);
         for (const { offset, samples } of writes) {
@@ -131,9 +146,9 @@ async function savePackets(uri: string, packets: ReplayPacket[]) {
         }
         tile.samples = packed;
         tile.ranges = mergeRanges(tile.ranges);
-        summary.frames += coverage(tile.ranges) - before;
+        next.frames += coverage(tile.ranges) - before;
         tiles.put(tile);
-        if (--remaining === 0) tracks.put(summary);
+        if (--remaining === 0) tracks.put(next);
       };
     }
   };

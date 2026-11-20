@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { X } from "lucide-react";
 import type { Host, Track as SpotifyTrack } from "../host";
 import type { Settings } from "../settings";
@@ -14,7 +14,8 @@ import { submitLyssnaTtml } from "../lyssna-submission";
 import { revalidateLyssnaSong } from "../lyssna-provider";
 import { lyssnaInstallReady } from "../lyssna-api";
 import { CreatorEnvironment } from "./environment";
-import { couldBeComplete, createCapturedReplay, recordedCoverage, savedAudioCleared, type RecordingCoverage, type SavedRecording } from "./captured-replay";
+import { couldBeComplete, recordedCoverage, savedAudioCleared, type RecordingCoverage, type SavedRecording } from "./captured-replay";
+import { recordedAudioSaved, type SpotifyCapture } from "./spotify-capture";
 import { downloadRecording, recordingExportEnabled, type RecordingFormat } from "./recording-export";
 import { readRecordingMetadata } from "./recording-metadata";
 import { useCreatorPlaybar } from "./playbar";
@@ -57,8 +58,9 @@ async function seedTimings(host: Host, lyrics: Lyrics, duration: number, trackId
   } : undefined) ?? lyrics;
 }
 
-export function CreatorSurface({ host, view: owner, settings, close, previewing, onLocalPlayback, manageStoredData }: {
+export function CreatorSurface({ host, view: owner, settings, close, previewing, onLocalPlayback, manageStoredData, capture }: {
   host: Host; view: Window; settings: Settings; close: () => void; previewing: boolean;
+  capture: SpotifyCapture;
   onLocalPlayback(playback: CreatorPlayback | undefined): void; manageStoredData(trigger: HTMLElement | null): void;
 }) {
   const view = owner as Window & typeof globalThis;
@@ -75,11 +77,10 @@ export function CreatorSurface({ host, view: owner, settings, close, previewing,
   const [recorded, setRecorded] = useState<RecordingCoverage>();
   const [completeAudio, setCompleteAudio] = useState<{ uri: string; duration: number; recording: SavedRecording }>();
   const [spotifyOnly, setSpotifyOnly] = useState<string>();
-  const [recordingAudio, setRecordingAudio] = useState(false);
+  const captureState = useSyncExternalStore(capture.subscribe, capture.state);
+  const recordingAudio = captureState.status !== "idle";
   const [deletingRecording, setDeletingRecording] = useState(false);
   const activeUri = useRef<string | undefined>(undefined);
-  const recordingError = useRef(false);
-  const replaying = useRef(false);
   const [localPlaying, setLocalPlaying] = useState(false);
   const [rate, setRate] = useState(1);
   const [volume, setVolume] = useState(host.volume);
@@ -88,24 +89,16 @@ export function CreatorSurface({ host, view: owner, settings, close, previewing,
   const openAudio = useCallback(() => picker.current?.click(), []);
   const audioLoad = useRef(0);
   const audioCacheGeneration = useRef(0);
-  const transportRevision = useRef(0);
   const clip = useRef<{ uri: string; end: number; from: number; expires: number; started: boolean }>(undefined);
   const audioForSong = audio?.uri === current?.uri ? audio : undefined;
+  useLayoutEffect(() => {
+    if (!audioForSong) return;
+    capture.setLocalAudio(true);
+    return () => capture.setLocalAudio(false);
+  }, [capture, audioForSong]);
   const isPlaying = audioForSong ? localPlaying : playing;
-  const readCapturePosition = useCallback((uri: string) => {
-    if (!replaying.current && host.playing() && !host.djNarrating() && uri === `spotify:track:${host.track()?.id}`) {
-      return { ms: host.position(), transportRevision: transportRevision.current, volume: host.volume() };
-    }
-  }, [host]);
   const notify = useCallback((message: string, error = false) => setNotice({ message, error }), []);
-  const [captured] = useState(() => createCapturedReplay(
-    (summary) => { if (activeUri.current === summary.uri) setRecorded(summary); },
-    () => {
-      if (recordingError.current || !activeUri.current) return;
-      recordingError.current = true;
-      notify("Couldn’t save all recorded audio. Check Spotify’s local storage space.", true);
-    },
-  ));
+  const captured = capture.recordings;
   const saved = recorded?.uri === current?.uri ? recorded : undefined;
   const fullRecording = completeAudio?.uri === current?.uri && completeAudio?.duration === duration ? completeAudio.recording : undefined;
   const recordedPercent = saved?.frames && duration > 0
@@ -114,7 +107,6 @@ export function CreatorSurface({ host, view: owner, settings, close, previewing,
 
   useLayoutEffect(() => {
     activeUri.current = current?.uri;
-    replaying.current = false;
     audioLoad.current++;
     setCompleteAudio(undefined);
     setSpotifyOnly(undefined);
@@ -126,13 +118,18 @@ export function CreatorSurface({ host, view: owner, settings, close, previewing,
     if (!uri) return;
     let live = true;
     const generation = audioCacheGeneration.current;
+    const onSaved = (event: Event) => {
+      const summary = (event as CustomEvent<RecordingCoverage>).detail;
+      if (summary.uri === uri) setRecorded(summary);
+    };
+    view.addEventListener(recordedAudioSaved, onSaved);
     void recordedCoverage(uri).then((summary) => {
       if (live && summary && generation === audioCacheGeneration.current) {
         setRecorded((previous) => previous?.uri === uri && previous.frames >= summary.frames ? previous : summary);
       }
     }).catch(() => {});
-    return () => { live = false; };
-  }, [current?.uri]);
+    return () => { live = false; view.removeEventListener(recordedAudioSaved, onSaved); };
+  }, [current?.uri, view]);
   useEffect(() => {
     const uri = current?.uri;
     if (!uri || fullRecording || deletingRecording || !saved || !couldBeComplete(saved.frames, duration, saved.sampleRate)) return;
@@ -144,10 +141,6 @@ export function CreatorSurface({ host, view: owner, settings, close, previewing,
     return () => { live = false; };
   }, [captured, current?.uri, deletingRecording, duration, fullRecording, notify, saved?.frames, saved?.sampleRate]);
 
-  const recordingChanged = useCallback((recording: boolean) => {
-    if (recording) recordingError.current = false;
-    setRecordingAudio(recording);
-  }, []);
   useCreatorRepeat(host, notify);
 
   const sourceKey = enabledSources(settings).join(",");
@@ -230,7 +223,7 @@ export function CreatorSurface({ host, view: owner, settings, close, previewing,
         clip.current = undefined;
         if (element) element.pause();
         else if (host.playing()) {
-          transportRevision.current++;
+          capture.transportChanged();
           host.toggle();
         }
         break;
@@ -241,7 +234,7 @@ export function CreatorSurface({ host, view: owner, settings, close, previewing,
           const position = Math.min(request.positionMs, replay?.endMs ?? Infinity) - (replay?.startMs ?? 0);
           element.currentTime = Math.max(0, position / 1000);
         } else {
-          transportRevision.current++;
+          capture.transportChanged();
           host.seek(Math.min(host.duration(), request.positionMs));
         }
         break;
@@ -250,7 +243,7 @@ export function CreatorSurface({ host, view: owner, settings, close, previewing,
         host.setVolume(request.volume / 100);
         setVolume(request.volume / 100);
     }
-  }, [audioForSong, current?.uri, host, notify]);
+  }, [audioForSong, capture, current?.uri, host, notify]);
 
   const toggle = useCallback(() => {
     const element = audioForSong && audioElement.current;
@@ -329,7 +322,6 @@ export function CreatorSurface({ host, view: owner, settings, close, previewing,
       host.toggle();
     }
     audioLoad.current++;
-    replaying.current = false;
     clip.current = undefined;
   }, [host]);
   useLayoutEffect(() => returnToSpotify, [returnToSpotify]);
@@ -341,14 +333,13 @@ export function CreatorSurface({ host, view: owner, settings, close, previewing,
   }, [audioForSong]);
 
   const activateRecording = useCallback((uri: string, replay: SavedRecording, speed: number, resume: boolean, position: number) => {
-    transportRevision.current++;
-    replaying.current = true;
+    capture.transportChanged();
     clip.current = undefined;
     if (host.playing()) host.toggle();
     const { blob, startMs, endMs, full } = replay;
     const positionMs = full ? Math.max(0, Math.min(position, endMs)) : position >= startMs && position < endMs - 500 ? position : startMs;
     setAudio({ uri, url: URL.createObjectURL(blob), replay: { startMs, endMs, positionMs, speed, resume, full } });
-  }, [host]);
+  }, [capture, host]);
 
   useEffect(() => {
     const uri = current?.uri;
@@ -421,7 +412,6 @@ export function CreatorSurface({ host, view: owner, settings, close, previewing,
       try { buffer = await context.decodeAudioData(await file.arrayBuffer()); }
       finally { void context.close().catch(() => {}); }
       if (generation !== audioLoad.current) return;
-      replaying.current = false;
       setAudio({ uri: current.uri, url: URL.createObjectURL(file), name: file.name, buffer });
     } catch {
       if (generation === audioLoad.current) notify("Couldn’t decode this audio file.", true);
@@ -476,8 +466,7 @@ export function CreatorSurface({ host, view: owner, settings, close, previewing,
         if (audioForSong.replay?.full && host.repeat() === "track") event.currentTarget.currentTime = 0;
       }} />}
     <div className="lyssna-creator-body">
-      {root && portal && <CreatorEnvironment.Provider value={{ root, portal, view, read, readCapturePosition, waveform, spectrogram,
-        appendReplay: captured.append, flushReplay: captured.flush, setRecordingAudio: recordingChanged,
+      {root && portal && <CreatorEnvironment.Provider value={{ root, portal, view, read, capture, waveform, spectrogram,
         recording: recordingAudio || recordedPercent !== undefined ? {
           percent: recordedPercent ?? 0, sharing: recordingAudio, deleting: deletingRecording, remove: removeRecording, exportAudio,
           returnToSpotify: audioForSong?.replay ? releaseAudio : undefined,

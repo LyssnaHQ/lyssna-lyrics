@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState } from "react";
-import type { ReplayPacket } from "./captured-replay";
 import type { RecordingFormat } from "./recording-export";
+import type { SpotifyCapture } from "./spotify-capture";
 
 export type RecordingStatus = {
   percent: number;
@@ -16,10 +16,7 @@ export type CreatorEnvironmentValue = {
   portal: HTMLElement;
   view: Window & typeof globalThis;
   read: (at?: number) => number;
-  readCapturePosition: (uri: string) => { ms: number; transportRevision: number; volume: number } | undefined;
-  appendReplay: (packet: ReplayPacket) => void;
-  flushReplay: () => Promise<void>;
-  setRecordingAudio: (recording: boolean) => void;
+  capture: SpotifyCapture;
   recording?: RecordingStatus;
   playingFullRecording: boolean;
   replayAvailable: boolean;

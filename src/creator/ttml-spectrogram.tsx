@@ -271,7 +271,7 @@ export function TtmlSpectrogram({
   const { view: window, spectrogram, spectrumKey: audioKey, spectrumAudioUri } = useCreatorEnvironment();
   const localAudio = spectrumAudioUri === uri;
   const canShare = canCapture && !localAudio && duration > 0;
-  const liveSpectrum = useLiveSpectrum(uri, duration, canShare);
+  const liveSpectrum = useLiveSpectrum(uri, canShare);
   const [introSeen, setIntroSeen] = useStored("lyssna.ttml-recording-intro", false, isBoolean);
   const showIntro = canShare && !introSeen && liveSpectrum.status === "idle";
   const shareButton = useRef<HTMLButtonElement>(null);

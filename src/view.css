@@ -19,6 +19,40 @@
   display: contents;
 }
 
+.lyssna-auto-record {
+  position: fixed;
+  inset: auto 16px calc(var(--panel-gap, 8px) + 96px) auto;
+  z-index: 10500;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  max-width: min(420px, calc(100vw - 32px));
+  padding: 12px;
+  border: 1px solid #ffffff24;
+  border-radius: 14px;
+  background: #222;
+  color: #fff;
+  box-shadow: 0 6px 24px #000a;
+  font: 13px/1.4 "Lyssna Metropolis", "Segoe UI", sans-serif;
+}
+.lyssna-auto-record > div { flex: 1; min-width: min(160px, 100%); }
+.lyssna-auto-record p { margin: 3px 0 0; color: #b3b3b3; }
+.lyssna-auto-record button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 20px;
+  background: #ffffff1a;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+}
+.lyssna-auto-record button:hover { background: #ffffff30; }
+
 :host(.lyssna-lyrics-host) > .lyssna-lyrics-view:not(.immersive, .lyssna-full-window) {
   z-index: 2;
 }

@@ -295,6 +295,8 @@ export function SettingsPanel({ settings, change, close, options, track, notice,
       </SettingRow>,
       flag("ttml_creator", "TTML Creator", "Add an editor button beside fullscreen in the playbar to write and time lyrics for the playing song.",
         "ttml creator maker editor sync timing word by word karaoke amll make lyrics"),
+      settings.ttml_creator && flag("auto_record", "Auto Record", "Ask to share Spotify audio when Lyssna Lyrics loads. Save songs and spectrograms on this device while sharing is active.",
+        "automatic recording capture audio spectrogram startup"),
       <SettingRow key="channel" label="Build Channel" help={`${channelLabels[options.channel]}${version ? ` · v${version}` : ""}`} keywords="version canary stable beta">
         {submenuButton("builds", "Manage")}
       </SettingRow>,
