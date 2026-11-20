@@ -67,6 +67,7 @@ import { LyricCredits } from "../credits";`,
   slice(components, "/** Seek Fade-in Compensation", "const LyricCredits =")
     .replace("      data-following={following}", "      data-following={following}\n      data-animator={presetOf(settings.lyrics_animator)}")
     .replace("      !!settings.lyrics_simple,\n", "      !!settings.lyrics_simple,\n      scroll.current?.ownerDocument.defaultView ?? window,\n")
+    .replace("}, [positionMs, lyrics, settings.reduce_motion]);", "}, [positionMs, lyrics, settings.reduce_motion, settings.lyrics_simple, tuning]);")
     .replace("    let frame = 0,\n      last = performance.now();", "    const view = container.ownerDocument.defaultView ?? window;\n    let frame = 0,\n      last = performance.now();")
     .replace("    const tick = (time: number) => {", "    const tick = () => {\n      const time = performance.now();")
     .replaceAll("requestAnimationFrame(tick)", "view.requestAnimationFrame(tick)")
@@ -133,6 +134,7 @@ for (const [file, content] of snapshot) {
     .replaceAll("requestAnimationFrame(this.run)", "this.view.requestAnimationFrame(this.run)");
   if (file === "space-gravity-lyrics.tsx") source = source
     .replace('import { LyricAnimator } from "./lyric-animator";', 'import { LyricAnimator } from "./lyric-animator";\nimport { presetOf } from "./animator-tuning";')
+    .replace("}, [time, lyrics]);", "}, [time, lyrics, reduceMotion, tuningKey]);")
     .replace('      className={`gravity-lyrics ', '      data-animator={presetOf(tuning)}\n      className={`gravity-lyrics space-gravity ');
   if (file === "setting-row.tsx") source = source.replace("inert={!!unavailable}", "ref={(element) => { if (element) element.inert = !!unavailable; }}");
   write(file, source);

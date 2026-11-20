@@ -1,7 +1,7 @@
 import { storage } from "./enhancements/compat";
 import { enhancementPreferences, hasLegacyLoader, hasStandaloneSpotifyPlus, initializeEnhancementPreferences, readSpotifyPlusPreferences, saveEnhancementPreferences } from "./enhancements/config";
 import { isRecord, standalonePreferences, type SettingsRecord } from "./lyssna/transfer-format";
-import { legacyPreferencesMigrated, readSettings, saveSettings, settingsEvent, type Settings } from "./settings";
+import { legacyPreferencesMigrated, readSettings, restoreDesktopAnimatorDefault, saveSettings, settingsEvent, type Settings } from "./settings";
 import { validatePreferences } from "./settings-transfer";
 import { standaloneSpicyInstalled } from "./spicy";
 
@@ -58,7 +58,7 @@ export function startPreferenceSync() {
   let previous: Snapshot | undefined;
   let running = false;
   let warned = false;
-  let initializedEnhancements = false;
+  let initialized = false;
   const records = new Map<string, { raw: string; value?: SettingsRecord }>();
 
   function read(key: string) {
@@ -96,7 +96,9 @@ export function startPreferenceSync() {
       patch.lyrics_sources_disabled = [...patch.lyrics_sources_disabled, "local"];
     }
     if (patch.lyrics_animator) {
-      patch.lyrics_animator = { ...settings.lyrics_animator, ...changedPreferences(patch.lyrics_animator, previous?.lyrics.lyrics_animator) };
+      const animator = changedPreferences(patch.lyrics_animator, previous?.lyrics.lyrics_animator);
+      if (migration && (settings.lyrics_animator.preset || animator.preset === "Legacy")) delete animator.preset;
+      patch.lyrics_animator = { ...settings.lyrics_animator, ...animator };
     }
     if (patch.lyric_song_offsets) {
       const offsets = { ...settings.lyric_song_offsets };
@@ -121,9 +123,10 @@ export function startPreferenceSync() {
     running = true;
     let legacy = false;
     try {
-      if (!initializedEnhancements) {
+      if (!initialized) {
         initializeEnhancementPreferences();
-        initializedEnhancements = true;
+        restoreDesktopAnimatorDefault();
+        initialized = true;
       }
       const settings = readSettings();
       const wasEnabled = enabled;

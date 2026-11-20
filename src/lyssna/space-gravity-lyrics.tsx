@@ -933,7 +933,7 @@ export function SpaceGravityLyrics({
     if (Math.abs(time - lastTime.current) > 1500) animator.current?.reset();
     lastTime.current = time;
     animator.current?.update(time);
-  }, [time, lyrics]);
+  }, [time, lyrics, reduceMotion, tuningKey]);
 
   return (
     <div

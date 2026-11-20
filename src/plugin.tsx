@@ -4,7 +4,6 @@ import { getHost, type CanvasInfo, type Host, type Track } from "./host";
 import { useArtworkColor } from "./lyssna/artwork-color";
 import { Ambience } from "./lyssna/ambience";
 import { setFrameCap } from "./lyssna/frame-cap";
-import { presetOf } from "./lyssna/animator-tuning";
 import { FullscreenPauseIcon, FullscreenPlayIcon, SkipNextIcon, SkipPreviousIcon } from "./lyssna/fullscreen-icons";
 import { LyricsDisplay, LyricsSkeleton } from "./lyssna/renderer";
 import { markerColour } from "./lyssna/highlighter";
@@ -96,9 +95,7 @@ function LyricsForTrack({ track, host, playing, settings, compact = false, view 
   const time = position + settings.lyric_offset_ms + (settings.lyric_song_offsets[track.id] ?? 0);
   const gravity = view === window && settings.space_gravity && !compact && !!lyrics &&
     !lyrics.instrumental && (lyrics.synced || duration > 0);
-  const estimateTiming = settings.experimental_word_sync || gravity ||
-    (!lyrics?.synced && settings.lyrics_highlighter) ||
-    (!!lyrics?.synced && presetOf(settings.lyrics_animator) !== "Lyssna");
+  const estimateTiming = settings.experimental_word_sync || gravity || (!lyrics?.synced && settings.lyrics_highlighter);
   const [analysis, setAnalysis] = useState<AudioAnalysisData>();
   const analyse = !!lyrics && estimateTiming && needsWordSync(lyrics, duration);
   useEffect(() => {

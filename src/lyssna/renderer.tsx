@@ -229,7 +229,7 @@ export function LyricsDisplay({
     if (!lyrics.synced) return;
     if (positionJumped) animator.current?.reset();
     animator.current?.update(positionMs);
-  }, [positionMs, lyrics, settings.reduce_motion]);
+  }, [positionMs, lyrics, settings.reduce_motion, settings.lyrics_simple, tuning]);
   // Romanization, translations or a word filter change only the words: the
   // view stays on the current line instead of sliding to where it rewraps.
   const timing = useMemo(

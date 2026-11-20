@@ -76,9 +76,10 @@ export const defaults = {
 export type Settings = typeof defaults;
 const key = "lyssna-lyrics.settings.v1";
 export const settingsEvent = "lyssna-lyrics:settings";
+type StoredSettings = Partial<Settings> & { legacy_preferences_migrated?: boolean; desktop_animator_default_applied?: boolean };
 
 function readRecord() {
-  const saved = JSON.parse(localStorage.getItem(key) ?? "null") as (Partial<Settings> & { legacy_preferences_migrated?: boolean }) | null;
+  const saved = JSON.parse(localStorage.getItem(key) ?? "null") as StoredSettings | null;
   return saved && typeof saved === "object" && !Array.isArray(saved) ? saved : {};
 }
 
@@ -89,7 +90,7 @@ export function legacyPreferencesMigrated() {
 
 export function readSettings(): Settings {
   try {
-    const { legacy_preferences_migrated: _migrated, ...saved } = readRecord();
+    const { legacy_preferences_migrated: _migrated, desktop_animator_default_applied: _animator, ...saved } = readRecord();
     const settings = { ...defaults, ...saved };
     const animator = settings.lyrics_animator;
     settings.lyrics_animator = animator ? {
@@ -103,7 +104,17 @@ export function readSettings(): Settings {
   }
 }
 
+export function restoreDesktopAnimatorDefault() {
+  let saved: StoredSettings;
+  try { saved = readRecord(); }
+  catch { return; }
+  if (!saved.legacy_preferences_migrated || saved.desktop_animator_default_applied ||
+      saved.sync_other_plugin_preferences || saved.lyrics_animator?.preset !== "Legacy") return;
+  const settings = readSettings();
+  saveSettings({ ...settings, lyrics_animator: { ...settings.lyrics_animator, preset: "Lyssna" } }, true);
+}
+
 export function saveSettings(settings: Settings, migrated = legacyPreferencesMigrated()) {
-  localStorage.setItem(key, JSON.stringify({ ...settings, legacy_preferences_migrated: migrated }));
+  localStorage.setItem(key, JSON.stringify({ ...settings, legacy_preferences_migrated: migrated, desktop_animator_default_applied: true }));
   window.dispatchEvent(new Event(settingsEvent));
 }
