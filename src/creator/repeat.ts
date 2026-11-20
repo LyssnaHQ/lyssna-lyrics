@@ -3,6 +3,21 @@ import type { Host, Track } from "../host";
 
 const sessions = new WeakMap<Host, symbol>();
 const pendingRestores = new WeakMap<Host, Promise<void>>();
+const repeatRecoveryKey = "lyssna-lyrics.v1.creator-repeat";
+type RepeatChange = { previous: "off" | "context"; token: string };
+
+function savedRepeatChange(): string | null {
+  try { return sessionStorage.getItem(repeatRecoveryKey); }
+  catch { return null; }
+}
+
+function rememberRepeat(previous: RepeatChange["previous"]): RepeatChange {
+  const token = `${previous}:${crypto.randomUUID()}`;
+  // Save before asking Spotify to change modes so a reload can recover an interrupted request.
+  try { sessionStorage.setItem(repeatRecoveryKey, token); }
+  catch { /* The editor can still restore the mode when it closes normally. */ }
+  return { previous, token };
+}
 
 function waitForPlayer(host: Host, ready: () => boolean, timeout: number): Promise<boolean> {
   if (ready()) return Promise.resolve(true);
@@ -23,6 +38,57 @@ function waitForPlayer(host: Host, ready: () => boolean, timeout: number): Promi
   });
 }
 
+async function restoreRepeat(host: Host, change: RepeatChange) {
+  const saved = savedRepeatChange();
+  if (saved && saved !== change.token) return;
+  if (host.repeat() === "track") {
+    await host.setRepeat(change.previous);
+    await waitForPlayer(host, () => host.repeat() !== "track", 700);
+  }
+  if (host.repeat() !== "track" && savedRepeatChange() === change.token) {
+    try { sessionStorage.removeItem(repeatRecoveryKey); }
+    catch { /* A later startup can discard the completed recovery. */ }
+  }
+}
+
+export function startCreatorRepeatRecovery(host: Host) {
+  const token = savedRepeatChange();
+  const previous = token?.split(":")[0];
+  if (!token || (previous !== "off" && previous !== "context")) return () => {};
+  let stopped = false;
+  let markReady: () => void;
+  const ready = new Promise<void>((resolve) => { markReady = resolve; });
+  const restored = ready.then(async () => {
+    if (stopped || savedRepeatChange() !== token) return;
+    // Spotify can publish the saved repeat mode shortly after it restores the track.
+    await waitForPlayer(host, () => host.repeat() === "track", 700);
+    if (!stopped && savedRepeatChange() === token) await restoreRepeat(host, { previous, token });
+  }).catch(() => {
+    // Preserve the saved mode if Spotify rejects the recovery.
+  }).finally(() => {
+    if (pendingRestores.get(host) === restored) pendingRestores.delete(host);
+  });
+  pendingRestores.set(host, restored);
+
+  let unwatch: (() => void) | undefined;
+  function stopWatching() {
+    unwatch?.();
+    unwatch = undefined;
+  }
+  function onState() {
+    if (!host.track() || host.djNarrating()) return;
+    stopWatching();
+    markReady();
+  }
+  unwatch = host.watchControls(onState);
+  onState();
+  return () => {
+    stopped = true;
+    stopWatching();
+    markReady();
+  };
+}
+
 export function useCreatorRepeat(host: Host, notify: (message: string, error?: boolean) => void, enabled: boolean) {
   useEffect(() => {
     if (!enabled) return;
@@ -32,11 +98,12 @@ export function useCreatorRepeat(host: Host, notify: (message: string, error?: b
     let open = true;
     let prepared: Promise<void> | undefined;
     let stopWaiting: (() => void) | undefined;
-    let restoreRepeat: (() => Promise<void>) | undefined;
+    let repeatChange: RepeatChange | undefined;
     let restoreContext: (() => Promise<void>) | undefined;
 
     async function prepare(track: Track, previousRepeat: ReturnType<Host["repeat"]>) {
       if (previousRepeat === "track") return;
+      const restoreMode = previousRepeat;
       const originalPlayback = host.playbackId();
       const originalContext = host.playbackContextUri();
       const sameTrack = () => host.track()?.id === track.id && !host.djNarrating();
@@ -47,9 +114,7 @@ export function useCreatorRepeat(host: Host, notify: (message: string, error?: b
       const original = () => sameTrack() && (!originalPlayback || host.playbackId() === originalPlayback) &&
         (!originalContext || host.playbackContextUri() === originalContext);
       async function requestRepeat() {
-        restoreRepeat = async () => {
-          if (host.repeat() === "track") await host.setRepeat(previousRepeat);
-        };
+        repeatChange ??= rememberRepeat(restoreMode);
         try { await host.setRepeat("track"); } catch { /* A blocked context can reject the command. */ }
       }
 
@@ -113,7 +178,7 @@ export function useCreatorRepeat(host: Host, notify: (message: string, error?: b
       stopWaiting?.();
       const restored = Promise.resolve(previousRestore).then(() => prepared).then(async () => {
         if (!ownsSession()) return;
-        try { await restoreRepeat?.(); } catch { /* Spotify can reject the old mode. */ }
+        try { if (repeatChange) await restoreRepeat(host, repeatChange); } catch { /* Spotify can reject the old mode. */ }
         if (ownsSession()) await restoreContext?.();
       }).catch(() => {}).finally(() => {
         if (ownsSession()) sessions.delete(host);

@@ -40,6 +40,7 @@ import { lyssnaApiNotice, lyssnaInstallReady } from "./lyssna-api";
 import { revalidateLyssnaSong, resumeLyssnaRequests } from "./lyssna-provider";
 import { submitLyssnaTtml } from "./lyssna-submission";
 import { CreatorSurface, type CreatorPlayback } from "./creator/surface";
+import { startCreatorRepeatRecovery } from "./creator/repeat";
 import { createSpotifyCapture, type SpotifyCapture } from "./creator/spotify-capture";
 import { AutoRecordPrompt } from "./creator/auto-record";
 import { dismissDraft, draftPreview, liveDraftChanged } from "./creator/ttml-working";
@@ -1183,11 +1184,13 @@ export default function start(options: BuildOptions) {
   }
   const observer = new MutationObserver(syncHost);
   observer.observe(document.body, { childList: true, subtree: true });
+  const stopCreatorRepeatRecovery = startCreatorRepeatRecovery(host);
   syncHost();
   const stopReleaseNotices = startReleaseNotices(host, options);
   return {
     dispose() {
       disposed = true;
+      stopCreatorRepeatRecovery();
       stopReleaseNotices();
       observer.disconnect();
       stopViewSwitch();
