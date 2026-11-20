@@ -1201,7 +1201,9 @@ export function TtmlCreator({
   useEffect(() => {
     if (!editable) return;
     const onKey = (event: KeyboardEvent) => {
+      if (state.speedEnabled && event.key === " ") return;
       const target = event.composedPath()[0] as HTMLElement | null;
+      if (target?.closest(".lyrics-settings-backdrop, .ttml-recording-popover")) return;
       if (root.querySelector(".ttml-menu, .ttml-dialog")) return;
       if (target?.closest(".ttml-bar button, .ttml-spectrum button") && (event.key === " " || event.key === "Enter")) return;
       if (
@@ -1366,6 +1368,7 @@ export function TtmlCreator({
     return () => window.removeEventListener("keydown", onKey, true);
   }, [
     editable,
+    state.speedEnabled,
     showSync,
     here,
     tap,
@@ -2946,7 +2949,7 @@ export function TtmlCreator({
       {barSlot && createPortal(
         <TtmlBar position={position} duration={track.duration_ms}
           peaks={peaks?.uri === track.uri ? peaks.values : null} spans={barSpans} onSeek={seek}
-          recording={here ? recording : undefined} />, barSlot)}
+          track={track} recording={here ? recording : undefined} />, barSlot)}
       {barSlot && createPortal(
         <CreatorSpeed speed={shownSpeed} min={MIN_SPEED} max={MAX_SPEED}
           disabled={!here || (!state.speedEnabled && !replayAvailable)}

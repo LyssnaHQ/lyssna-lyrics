@@ -27,6 +27,7 @@ export type CreatorEnvironmentValue = {
   spectrumKey: string;
   spectrumAudioUri?: string;
   openAudio: () => void;
+  manageStoredData(trigger: HTMLElement | null): void;
   waveform: (uri: string, buckets: number) => Promise<Uint8Array>;
   spectrogram: (uri: string, from: number, to: number, columns: number, rows: number, signal: AbortSignal) => Promise<Uint16Array>;
   playClip: (uri: string, start: number, end: number) => void;

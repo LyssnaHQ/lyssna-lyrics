@@ -20,6 +20,14 @@ const conversions = new Map<string, CoverConversion>();
 const noMotion: MotionCover = { state: "idle" };
 const loadingMotion: MotionCover = { state: "loading" };
 
+export function clearMotionArtworkCache() {
+  upcs.clear();
+  covers.clear();
+  for (const conversion of conversions.values()) conversion.cancel();
+  conversions.clear();
+  convertedCovers.clear();
+}
+
 function rememberConvertedCover(source: string, cover: Blob) {
   if (cover.size > convertedCoverBudget) return;
   convertedCovers.set(source, cover);
@@ -151,7 +159,7 @@ function albumUpc(album: string) {
       .map((item) => normalizeUpc(item.id)).find(Boolean) ?? null;
   }
   const result = lookup().catch(() => undefined).then((value) => {
-    if (value === undefined) upcs.delete(album);
+    if (value === undefined && upcs.get(album) === result) upcs.delete(album);
     return value;
   });
   upcs.set(album, result);

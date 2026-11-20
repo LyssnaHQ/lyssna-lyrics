@@ -1,9 +1,10 @@
 import { useEffect, useId, useRef, useState, type CSSProperties } from "react";
-import { ChevronDown, ChevronUp, Gauge, Headphones, Pause, Play } from "lucide-react";
+import { AudioLines, ChevronDown, ChevronRight, ChevronUp, Download, Gauge, HardDrive, Headphones, Pause, Play, RotateCcw, Trash2 } from "lucide-react";
 import { useCreatorEnvironment, type RecordingStatus } from "./environment";
 import { useAnchoredPopover } from "../anchored-popover";
 import { recordingExportEnabled, recordingFormats, type RecordingFormat } from "./recording-export";
 import { formatTime } from "./ttml-creator-model";
+import type { Track } from "./types";
 
 export function CreatorSpeed({ speed, min, max, disabled, onChange, openAudio }: {
   speed: number; min: number; max: number; disabled: boolean; onChange(value: number): void; openAudio?: () => void;
@@ -41,8 +42,8 @@ export interface BarSpan {
   current: boolean;
 }
 
-function RecordingDetails({ percent, sharing, deleting, returnToSpotify, remove, exportAudio }: RecordingStatus) {
-  const { view } = useCreatorEnvironment();
+function RecordingDetails({ track, percent, sharing, deleting, returnToSpotify, remove, exportAudio }: RecordingStatus & { track: Track }) {
+  const { view, manageStoredData } = useCreatorEnvironment();
   const [open, setOpen] = useState(false);
   const [format, setFormat] = useState<RecordingFormat>("flac");
   const [exporting, setExporting] = useState(false);
@@ -50,6 +51,9 @@ function RecordingDetails({ percent, sharing, deleting, returnToSpotify, remove,
   const trigger = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);
   const id = useId();
+  const cover = track.album.images[0]?.url;
+  const artists = track.artists.map(({ name }) => name).join(", ");
+  const complete = percent === 100;
   useAnchoredPopover(view, open, trigger, panel);
   async function exportRecording() {
     setExporting(true);
@@ -66,35 +70,59 @@ function RecordingDetails({ percent, sharing, deleting, returnToSpotify, remove,
       <span className="ttml-recording-ring" aria-hidden="true" style={{ "--recorded": `${percent}%` } as CSSProperties} />
       <span>{percent}%</span>
     </button>
-    <div className="ttml-recording-popover" ref={panel} id={id} popover="auto" role="dialog" aria-label="Saved audio"
+    <div className="ttml-recording-popover" ref={panel} id={id} popover="auto" role="dialog" aria-labelledby={`${id}-title`}
       onToggle={(event) => { if (event.newState === "closed") setOpen(false); }}>
-      <strong>Saved audio</strong>
-      <p>{percent === 100 ? "The full song is saved on this device."
-        : `${percent}% of this song is recorded on this device. Use the speed slider to sync with the recording.`}</p>
-      {returnToSpotify && <button type="button" onClick={() => { returnToSpotify(); trigger.current?.focus(); setOpen(false); }}>
-        Return to Spotify playback
-      </button>}
-      {sharing && <p>Stop sharing Spotify audio to delete this recording.</p>}
-      <button type="button" disabled={sharing || deleting || exporting || percent === 0} onClick={() => void remove()}>
-        {deleting ? "Deleting…" : "Delete recording"}
-      </button>
-      {open && percent > 0 && recordingExportEnabled() && <div className="ttml-recording-export">
-        <select aria-label="Audio export format" value={format} disabled={exporting || deleting}
-          onChange={(event) => setFormat(event.currentTarget.value as RecordingFormat)}>
-          {Object.entries(recordingFormats).map(([id, label]) => <option key={id} value={id}>{label}</option>)}
-        </select>
-        <button type="button" disabled={exporting || deleting} onClick={() => void exportRecording()}>
-          {exporting ? "Exporting…" : percent === 100 ? "Export audio" : "Export section"}
+      <h2 id={`${id}-title`}>Saved audio</h2>
+      <div className="ttml-recording-track">
+        <span className="ttml-recording-cover" aria-hidden="true">
+          <AudioLines size={22} />
+          {cover && <img key={cover} src={cover} alt="" onError={({ currentTarget }) => { currentTarget.hidden = true; }} />}
+        </span>
+        <div>
+          <strong title={track.name}>{track.name}</strong>
+          {artists && <span title={artists}>{artists}</span>}
+        </div>
+      </div>
+      <div className="ttml-recording-status" data-complete={complete || undefined}>
+        <span id={`${id}-progress`}>{complete ? "Full song saved on this device" : "Saved on this device"}</span>
+        <span aria-hidden="true">{percent}%</span>
+        <progress value={percent} max={100} aria-labelledby={`${id}-progress`} />
+      </div>
+      <div className="ttml-recording-actions">
+        {returnToSpotify && <button type="button" className="ttml-recording-return" onClick={() => {
+          returnToSpotify(); trigger.current?.focus(); setOpen(false);
+        }}><RotateCcw size={15} aria-hidden="true" />Return to Spotify playback</button>}
+        {open && percent > 0 && recordingExportEnabled() && <div className="ttml-recording-export">
+          <label>
+            <select aria-label="Audio export format" value={format} disabled={exporting || deleting}
+              onChange={(event) => setFormat(event.currentTarget.value as RecordingFormat)}>
+              {Object.entries(recordingFormats).map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+            </select>
+            <ChevronDown size={14} aria-hidden="true" />
+          </label>
+          <button type="button" disabled={exporting || deleting} onClick={() => void exportRecording()}>
+            <Download size={15} aria-hidden="true" />{exporting ? "Exporting…" : complete ? "Export audio" : "Export section"}
+          </button>
+        </div>}
+        {error && <p className="ttml-recording-error" role="alert">{error}</p>}
+      </div>
+      <div className="ttml-recording-manage">
+        {percent > 0 && <button type="button" className="ttml-recording-delete" disabled={sharing || deleting || exporting} onClick={() => void remove()}>
+          <Trash2 size={15} aria-hidden="true" />{deleting ? "Deleting…" : "Delete recording"}
+        </button>}
+        {sharing && percent > 0 && <p>Stop sharing Spotify audio to delete this recording.</p>}
+        <button type="button" onClick={() => { setOpen(false); manageStoredData(trigger.current); }}>
+          <HardDrive size={15} aria-hidden="true" />Manage Stored Data<ChevronRight size={15} aria-hidden="true" />
         </button>
-      </div>}
-      {error && <p role="alert">{error}</p>}
+      </div>
     </div>
   </div>;
 }
 
-export function TtmlBar({ position, duration, peaks, spans, onSeek, recording }: {
+export function TtmlBar({ position, duration, peaks, spans, onSeek, recording, track }: {
   position: number; duration: number; peaks: Uint8Array | null; spans: BarSpan[]; onSeek(ms: number): void;
   recording?: RecordingStatus;
+  track: Track;
 }) {
   const { view: window } = useCreatorEnvironment();
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -242,7 +270,7 @@ export function TtmlBar({ position, duration, peaks, spans, onSeek, recording }:
         }}
       />
       <span className="ttml-bar-time">{formatTime(duration)}</span>
-      {recording && <RecordingDetails {...recording} />}
+      {recording && <RecordingDetails track={track} {...recording} />}
     </div>
   );
 }

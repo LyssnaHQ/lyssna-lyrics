@@ -46,6 +46,19 @@ export async function readLiveTiles(uri: string, first: number, last: number): P
   return result(db.transaction("tiles").objectStore("tiles").getAll(range(uri, first, last)));
 }
 
+export const liveSpectrumCleared = "lyssna-lyrics:spectrograms-cleared";
+
+export async function clearLiveSpectrograms() {
+  const db = await openSpectrum();
+  await new Promise<void>((resolve, reject) => {
+    const transaction = db.transaction("tiles", "readwrite");
+    transaction.oncomplete = () => resolve();
+    transaction.onabort = () => reject(transaction.error);
+    transaction.objectStore("tiles").clear();
+  });
+  window.dispatchEvent(new Event(liveSpectrumCleared));
+}
+
 export function mergeLiveTile(target: LiveTile, update: LiveTile, overwrite: boolean) {
   for (let column = 0; column < LIVE_COLUMNS; column++) {
     const incoming = update.filled[column];

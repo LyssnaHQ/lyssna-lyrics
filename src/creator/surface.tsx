@@ -14,7 +14,7 @@ import { submitLyssnaTtml } from "../lyssna-submission";
 import { revalidateLyssnaSong } from "../lyssna-provider";
 import { lyssnaInstallReady } from "../lyssna-api";
 import { CreatorEnvironment } from "./environment";
-import { couldBeComplete, createCapturedReplay, recordedCoverage, type RecordingCoverage, type SavedRecording } from "./captured-replay";
+import { couldBeComplete, createCapturedReplay, recordedCoverage, savedAudioCleared, type RecordingCoverage, type SavedRecording } from "./captured-replay";
 import { downloadRecording, recordingExportEnabled, type RecordingFormat } from "./recording-export";
 import { readRecordingMetadata } from "./recording-metadata";
 import { useCreatorPlaybar } from "./playbar";
@@ -49,7 +49,9 @@ async function seedTimings(host: Host, lyrics: Lyrics, duration: number, trackId
   } : undefined) ?? lyrics;
 }
 
-export function CreatorSurface({ host, view: owner, settings, close }: { host: Host; view: Window; settings: Settings; close: () => void }) {
+export function CreatorSurface({ host, view: owner, settings, close, manageStoredData }: {
+  host: Host; view: Window; settings: Settings; close: () => void; manageStoredData(trigger: HTMLElement | null): void;
+}) {
   const view = owner as Window & typeof globalThis;
   const { track, playing } = usePlayback(host);
   const duration = host.duration();
@@ -76,6 +78,7 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
   const picker = useRef<HTMLInputElement>(null);
   const openAudio = useCallback(() => picker.current?.click(), []);
   const audioLoad = useRef(0);
+  const audioCacheGeneration = useRef(0);
   const transportRevision = useRef(0);
   const clip = useRef<{ uri: string; end: number; from: number; expires: number; started: boolean }>(undefined);
   const audioForSong = audio?.uri === current?.uri ? audio : undefined;
@@ -113,8 +116,11 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
     const uri = current?.uri;
     if (!uri) return;
     let live = true;
+    const generation = audioCacheGeneration.current;
     void recordedCoverage(uri).then((summary) => {
-      if (live && summary) setRecorded((previous) => previous?.uri === uri && previous.frames >= summary.frames ? previous : summary);
+      if (live && summary && generation === audioCacheGeneration.current) {
+        setRecorded((previous) => previous?.uri === uri && previous.frames >= summary.frames ? previous : summary);
+      }
     }).catch(() => {});
     return () => { live = false; };
   }, [current?.uri]);
@@ -122,8 +128,9 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
     const uri = current?.uri;
     if (!uri || fullRecording || deletingRecording || !saved || !couldBeComplete(saved.frames, duration, saved.sampleRate)) return;
     let live = true;
+    const generation = audioCacheGeneration.current;
     void captured.read(uri, 0, duration, true).then((recording) => {
-      if (live && recording) setCompleteAudio({ uri, duration, recording });
+      if (live && recording && generation === audioCacheGeneration.current) setCompleteAudio({ uri, duration, recording });
     }).catch(() => { if (live) notify("Couldn’t open the saved recording.", true); });
     return () => { live = false; };
   }, [captured, current?.uri, deletingRecording, duration, fullRecording, notify, saved?.frames, saved?.sampleRate]);
@@ -235,6 +242,35 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
         setVolume(request.volume / 100);
     }
   }, [audioForSong, current?.uri, host, notify]);
+
+  useLayoutEffect(() => {
+    if (!audioForSong) return;
+
+    function onSpace(event: KeyboardEvent) {
+      if ((event.code !== "Space" && event.key !== " ") || event.altKey || event.ctrlKey ||
+        event.metaKey || event.shiftKey || event.isComposing || event.defaultPrevented) return;
+      const element = audioElement.current;
+      if (!element) return;
+
+      const target = event.composedPath()[0];
+      event.stopImmediatePropagation();
+      if (target instanceof view.Element && target.closest(
+        "button:not(.ttml-unit), input, textarea, select, [contenteditable]:not([contenteditable='false']), .lyrics-settings-backdrop, .ttml-dialog, .ttml-menu, .ttml-recording-popover",
+      )) return;
+
+      event.preventDefault();
+      if (event.type === "keydown" && !event.repeat) {
+        player({ command: element.paused ? "play" : "pause" });
+      }
+    }
+
+    view.addEventListener("keydown", onSpace, true);
+    view.addEventListener("keyup", onSpace, true);
+    return () => {
+      view.removeEventListener("keydown", onSpace, true);
+      view.removeEventListener("keyup", onSpace, true);
+    };
+  }, [audioForSong, player, view]);
 
   const playClip = useCallback((uri: string, from: number, end: number) => {
     if (uri !== current?.uri || end <= from) return;
@@ -383,6 +419,22 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
     setAudio(undefined);
   }
 
+  useLayoutEffect(() => {
+    const cleared = () => {
+      audioCacheGeneration.current++;
+      audioLoad.current++;
+      setCompleteAudio(undefined);
+      setRecorded(undefined);
+      if (audioForSong?.replay) {
+        returnToSpotify();
+        setAudio(undefined);
+      }
+      setSpotifyOnly(undefined);
+    };
+    window.addEventListener(savedAudioCleared, cleared);
+    return () => window.removeEventListener(savedAudioCleared, cleared);
+  }, [audioForSong, returnToSpotify]);
+
   const state: CreatorState = {
     settings: { lyric_offset_ms: settings.lyric_offset_ms + (track ? settings.lyric_song_offsets[track.id] ?? 0 : 0), reduce_motion: settings.reduce_motion },
     playback: { item: current, is_playing: isPlaying, volume: volume * 100 },
@@ -418,7 +470,7 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
         playingFullRecording: !!audioForSong?.replay?.full,
         replayAvailable: !deletingRecording && !!saved && saved.frames >= saved.sampleRate / 2, replayCaptured,
         spectrumKey: audio?.buffer ? audio.url : "spotify", spectrumAudioUri: audio?.buffer ? audio.uri : undefined,
-        openAudio, playClip }}>
+        openAudio, playClip, manageStoredData }}>
         <TtmlCreator state={state} onPlayer={player} onToggle={() => player({ command: isPlaying ? "pause" : "play" })}
           onSpeed={setSpeed} notify={notify} barSlot={playbar?.wave ?? bar} playbar={playbar}
           onClose={close}

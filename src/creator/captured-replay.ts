@@ -156,6 +156,18 @@ async function deleteRecording(uri: string) {
   await done;
 }
 
+export const savedAudioCleared = "lyssna-lyrics:saved-audio-cleared";
+
+export async function clearRecordedAudio() {
+  const db = await openRecording();
+  const transaction = db.transaction(["tiles", "tracks"], "readwrite");
+  const done = complete(transaction);
+  transaction.objectStore("tiles").clear();
+  transaction.objectStore("tracks").clear();
+  await done;
+  window.dispatchEvent(new Event(savedAudioCleared));
+}
+
 export function createCapturedReplay(onSaved: (summary: RecordingCoverage) => void, onError: () => void) {
   let pending: ReplayPacket[] = [];
   let saving = Promise.resolve();

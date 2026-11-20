@@ -397,7 +397,8 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
   const { track, playing, narrating } = usePlayback(host, true);
   const preferences = useLiveSettings();
   const settings = useReviewerSettings(preferences, track?.id);
-  const [showSettings, setShowSettings] = useState(false);
+  const [settingsPage, setSettingsPage] = useState<"settings" | "storage">();
+  const showSettings = !!settingsPage;
   const [showTtml, setShowTtml] = useState(false);
   const showCreator = !!closeCreator;
   const [fullscreen, setFullscreen] = useState(fullscreenRequest > 0);
@@ -410,17 +411,28 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
   const exitingDisplay = useRef(false);
   const toolsTimer = useRef<number>(0);
   const lyricsPage = useRef<HTMLElement>(null);
+  const creatorPage = useRef<HTMLDivElement>(null);
   const ttmlButton = useRef<HTMLButtonElement>(null);
+  const settingsTrigger = useRef<HTMLElement | undefined>(undefined);
+
+  function closeSettings() {
+    setNotice("");
+    setSettingsPage(undefined);
+    const trigger = settingsTrigger.current;
+    settingsTrigger.current = undefined;
+    if (trigger) view.requestAnimationFrame(() => trigger.focus({ preventScroll: true }));
+  }
   useLayoutEffect(() => { if (lyricsPage.current) lyricsPage.current.inert = showTtml; }, [showTtml, showCreator]);
+  useLayoutEffect(() => { if (creatorPage.current) creatorPage.current.inert = showSettings; }, [showSettings, showCreator]);
   useLayoutEffect(() => {
     if (!settingsRequest) return;
     setNotice("");
     setShowTtml(false);
-    setShowSettings(true);
+    setSettingsPage("settings");
   }, [settingsRequest]);
   useEffect(() => {
     if (!showCreator) return;
-    setShowSettings(false);
+    setSettingsPage(undefined);
     setShowTtml(false);
   }, [showCreator]);
   const fonts = appFontStyles(settings);
@@ -569,12 +581,12 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
   }, [externalCinema, settings.space_gravity, settings.reduce_motion]);
   useEffect(() => {
     const keyboard = (event: KeyboardEvent) => {
-      if (showCreator) return;
+      if (showCreator && !showSettings) return;
       if (event.key !== "Escape" && event.key !== "F11") return;
       event.preventDefault();
       event.stopImmediatePropagation();
       if (showTtml) closeTtml();
-      else if (showSettings) setShowSettings(false);
+      else if (showSettings) closeSettings();
       else if (event.key === "F11") toggleFullscreen(event.shiftKey);
       else closeLyrics();
     };
@@ -601,8 +613,12 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
     {!showCreator && backgroundImage && <img className="lyrics-background" src={backgroundImage}
       style={{ "--artwork-blur": `${settings.lyrics_background_blur}px` } as CSSProperties}
       onError={banner ? () => setArtistHeader((current) => current?.url === banner && current.uri === artistUri ? undefined : current) : undefined} alt="" />}
-    {closeCreator ? <div className="lyssna-creator-container" style={pageStyle}>
-      <CreatorSurface host={host} view={view} settings={preferences} close={closeCreator} />
+    {closeCreator ? <div className="lyssna-creator-container" ref={creatorPage} style={pageStyle}>
+      <CreatorSurface host={host} view={view} settings={preferences} close={closeCreator} manageStoredData={(trigger) => {
+        settingsTrigger.current = trigger ?? undefined;
+        setNotice("");
+        setSettingsPage("storage");
+      }} />
     </div> : <section ref={lyricsPage} className={className} aria-label="Lyssna Lyrics" style={pageStyle}
       onPointerMove={wakeTools} onPointerLeave={sleepTools} onKeyDownCapture={wakeTools}>
       {narrating && <DJInterlude playing={playing} reduceMotion={settings.reduce_motion} />}
@@ -651,7 +667,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
           aria-label={fullscreen ? "Exit full screen" : "Full screen"}
           aria-pressed={fullscreen} onClick={(event) => toggleFullscreen(event.shiftKey)}><FullScreenIcon /></button>
         <button type="button" className="icon-button" data-icon="settings" title="Lyssna settings" aria-label="Lyssna settings"
-          onClick={() => { setNotice(""); setShowSettings(true); }}><GearIcon size={18} /></button>
+          onClick={() => { setNotice(""); setSettingsPage("settings"); }}><GearIcon size={18} /></button>
         <button type="button" className="icon-button" title={returnToLyrics ? "Leave full screen" : "Close lyrics"}
           aria-label={returnToLyrics ? "Leave full screen" : "Close lyrics"} onClick={closeLyrics}><X size={18} /></button>
       </div>
@@ -686,7 +702,8 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
       listSaved={listLocalLyrics} deleteSaved={removeLocalLyrics} onPlay={host.playTrack} onDownload={downloadTtml}
       onBulk={(files, signal) => loadBulkLyrics(files, host, signal)} searchSongs={host.searchTracks}
       attachSong={attachBulkLyrics} onClose={closeTtml} />}
-    {!showCreator && showSettings && <SettingsPanel settings={preferences} change={change} close={() => { setNotice(""); setShowSettings(false); }}
+    {settingsPage && <SettingsPanel key={settingsPage} settings={preferences} change={change} close={closeSettings}
+      initialSubmenu={settingsPage === "storage" ? "storage" : undefined}
       options={options} track={track ?? undefined} notice={notice} setNotice={setNotice} view={view} developerMode={host.developerMode} />}
   </>;
 }
@@ -775,7 +792,7 @@ export default function start(options: BuildOptions) {
 
   function openProfileSettings() {
     if (disposed || closeProfileSettings) return;
-    if (showMainSettings && !creatorOpen) {
+    if (showMainSettings) {
       showMainSettings();
       return;
     }

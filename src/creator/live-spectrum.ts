@@ -3,10 +3,11 @@ import { spectrumFrequency } from "./audio";
 import { useCreatorEnvironment } from "./environment";
 import { spotifyWindowMarker } from "./spotify-window";
 import { recordedCoverage, type ReplayPacket } from "./captured-replay";
+import { trackCapture } from "./capture-sessions";
 import processorSource from "./live-spectrum-processor.js?raw";
 import {
   hasLiveSpectrum, INTERPOLATED_COLUMN, LIVE_COLUMNS, LIVE_ROWS, LIVE_SAMPLE_MS, MEASURED_COLUMN, mergeLiveTile,
-  readLiveTiles, saveLiveTiles, type LiveTile,
+  liveSpectrumCleared, readLiveTiles, saveLiveTiles, type LiveTile,
 } from "./spectrum-storage";
 
 type CaptureHandle = { handle: string; origin?: string };
@@ -44,7 +45,8 @@ export function useLiveSpectrum(uri: string, duration: number, canCapture: boole
   const [, redraw] = useState(0);
   const tiles = useRef(new Map<number, BufferedTile>());
   const visible = useRef({ first: 0, last: -1 });
-  const session = useRef<{ stop(): void } | undefined>(undefined);
+  const session = useRef<{ stop(): Promise<void> } | undefined>(undefined);
+  const revision = useRef(0);
   const mounted = useRef(false);
 
   useLayoutEffect(() => {
@@ -60,8 +62,16 @@ export function useLiveSpectrum(uri: string, duration: number, canCapture: boole
   useLayoutEffect(() => { if (!canCapture) session.current?.stop(); }, [canCapture]);
   useEffect(() => {
     let current = true;
-    void hasLiveSpectrum(uri).then((saved) => { if (current && saved) setHasSaved(true); }).catch(() => {});
-    return () => { current = false; };
+    const generation = revision.current;
+    const cleared = () => {
+      revision.current++;
+      tiles.current.clear();
+      setHasSaved(false);
+      redraw((value) => value + 1);
+    };
+    window.addEventListener(liveSpectrumCleared, cleared);
+    void hasLiveSpectrum(uri).then((saved) => { if (current && saved && generation === revision.current) setHasSaved(true); }).catch(() => {});
+    return () => { current = false; window.removeEventListener(liveSpectrumCleared, cleared); };
   }, [uri]);
 
   const trim = useCallback(() => {
@@ -77,8 +87,9 @@ export function useLiveSpectrum(uri: string, duration: number, canCapture: boole
     visible.current = { first, last };
     if (last < first) return () => {};
     let current = true;
+    const generation = revision.current;
     void readLiveTiles(uri, first, last).then((loaded) => {
-      if (!current) return;
+      if (!current || generation !== revision.current) return;
       for (const tile of loaded) {
         const existing = tiles.current.get(tile.index);
         if (existing) {
@@ -111,6 +122,9 @@ export function useLiveSpectrum(uri: string, duration: number, canCapture: boole
     let saveTimer = 0;
     let worklet: AudioWorkletNode | undefined;
     let configured = false;
+    const writes = new Set<Promise<void>>();
+    let stopping: Promise<void> | undefined;
+    let untrack: (() => void) | undefined;
     const flush = () => {
       const changed = [...dirty].flatMap((index) => {
         const entry = tiles.current.get(index);
@@ -120,15 +134,17 @@ export function useLiveSpectrum(uri: string, duration: number, canCapture: boole
       });
       if (!changed.length) return;
       dirty.clear();
-      void saveLiveTiles(changed.map(({ snapshot }) => snapshot)).then(() => {
+      const write = saveLiveTiles(changed.map(({ snapshot }) => snapshot)).then(() => {
         for (const { entry, revision } of changed) entry.savedRevision = Math.max(entry.savedRevision, revision);
         trim();
       }).catch(() => {
         if (mounted.current) setMessage("Couldn’t save the spectrogram to Spotify’s local storage.");
-      });
+      }).finally(() => writes.delete(write));
+      writes.add(write);
     };
     const stop = (notice = "") => {
-      if (session.current !== active) return;
+      if (stopping) return stopping;
+      if (session.current !== active) return Promise.resolve();
       session.current = undefined;
       view.clearInterval(timer);
       view.clearInterval(saveTimer);
@@ -145,15 +161,17 @@ export function useLiveSpectrum(uri: string, duration: number, canCapture: boole
       }
       if (context) void context.close().catch(() => {});
       flush();
-      void flushReplay();
+      stopping = Promise.allSettled([...writes, flushReplay()]).then(() => { untrack?.(); });
       setRecordingAudio(false);
       if (mounted.current) {
         setStatus("idle");
         setMessage(notice);
       }
+      return stopping;
     };
     const active = { stop };
     session.current = active;
+    untrack = trackCapture(stop);
     setRecordingAudio(true);
     setStatus("selecting");
     setMessage(sharePrompt);

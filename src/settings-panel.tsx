@@ -12,6 +12,7 @@ import { exportSettings, importSettings } from "./settings-transfer";
 import { pictureInPicture } from "./popout";
 import { quickEffects } from "./quick-effects";
 import { AccountSettings } from "./account-settings";
+import { StoredDataSettings } from "./creator/stored-data-settings";
 import type { Track } from "./host";
 
 export type Channel = "stable" | "beta" | "canary";
@@ -33,6 +34,7 @@ const placeKey = "lyssna-lyrics.settings-place";
 const submenus = {
   sources: "Manage Sources",
   library: "TTML Database",
+  storage: "Manage Stored Data",
   builds: "Build Channels",
   hidden: "Hidden Settings",
 };
@@ -67,7 +69,7 @@ function visualRowKey(row: ReactNode) {
   return isValidElement(row) && row.key !== null ? String(row.key) : "";
 }
 
-export function SettingsPanel({ settings, change, close, options, track, notice, setNotice, view = window, developerMode }: {
+export function SettingsPanel({ settings, change, close, options, track, notice, setNotice, view = window, developerMode, initialSubmenu }: {
   settings: Settings;
   change: (patch: Partial<Settings>) => void;
   close: () => void;
@@ -77,9 +79,11 @@ export function SettingsPanel({ settings, change, close, options, track, notice,
   setNotice: (message: string) => void;
   view?: Window;
   developerMode?: boolean;
+  initialSubmenu?: "storage";
 }) {
   const trackId = track?.id;
-  const [initial] = useState(() => readPlace(settings.settings_remember_place));
+  const [initial] = useState<Place>(() => initialSubmenu
+    ? { tab: "Advanced", scroll: 0, submenu: initialSubmenu } : readPlace(settings.settings_remember_place));
   const [tab, setTab] = useState(initial.tab);
   const [submenu, setSubmenu] = useState(initial.submenu);
   const [query, setQuery] = useState("");
@@ -91,7 +95,7 @@ export function SettingsPanel({ settings, change, close, options, track, notice,
   const mainScroll = useRef(initial.scroll);
   const submenuScroll = useRef(initial.submenuScroll ?? 0);
   const backButton = useRef<HTMLButtonElement>(null);
-  const openedFrom = useRef<Submenu>(undefined);
+  const openedFrom = useRef<Submenu>(initialSubmenu);
   const tabButtons = useRef<(HTMLButtonElement | null)[]>([]);
   const transferInput = useRef<HTMLInputElement>(null);
   const searching = !!query.trim();
@@ -111,7 +115,8 @@ export function SettingsPanel({ settings, change, close, options, track, notice,
     if (scroll.current) scroll.current.scrollTop = submenu ? submenuScroll.current : mainScroll.current;
     if (submenu) backButton.current?.focus({ preventScroll: true });
     else if (openedFrom.current) {
-      view.document.getElementById(`lyssna-open-${openedFrom.current}`)?.focus({ preventScroll: true });
+      const root = scroll.current?.getRootNode() as Document | ShadowRoot | undefined;
+      root?.getElementById(`lyssna-open-${openedFrom.current}`)?.focus({ preventScroll: true });
       openedFrom.current = undefined;
     }
   }, [submenu, tuning, view]);
@@ -284,6 +289,10 @@ export function SettingsPanel({ settings, change, close, options, track, notice,
     ]],
     ["Advanced", "Advanced", [
       <AccountSettings key="lyssna-account" ready={options.lyssnaSignIn === true} />,
+      <SettingRow key="manage-storage" label="Manage Stored Data" help="Clear recordings, spectrograms, and cached animated cover art."
+        keywords="cache storage disk audio cover art">
+        {submenuButton("storage", "Manage")}
+      </SettingRow>,
       flag("ttml_creator", "TTML Creator", "Add an editor button beside fullscreen in the playbar to write and time lyrics for the playing song.",
         "ttml creator maker editor sync timing word by word karaoke amll make lyrics"),
       <SettingRow key="channel" label="Build Channel" help={`${channelLabels[options.channel]}${version ? ` · v${version}` : ""}`} keywords="version canary stable beta">
@@ -387,6 +396,7 @@ export function SettingsPanel({ settings, change, close, options, track, notice,
       }}>
         {submenu === "sources" && <SourcesManager settings={settings} change={change} />}
         {submenu === "library" && <LyricsLibrary notice={setNotice} />}
+        {submenu === "storage" && <StoredDataSettings notice={setNotice} />}
         {submenu === "builds" && <div className="lyrics-settings-group">
           {(Object.keys(options.channels) as Channel[]).map((channel) => <SettingRow key={channel} label={channelLabels[channel]}
             help={options.channels[channel] ? `v${options.channels[channel]}` : "No build published."}>
