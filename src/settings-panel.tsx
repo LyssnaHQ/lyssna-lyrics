@@ -304,6 +304,9 @@ export function SettingsPanel({ settings, change, close, options, track, notice,
         </div>
       </SettingRow>,
     ]],
+    ["Advanced", "Lyssna Account", [
+      <AccountSettings key="lyssna-account" ready={options.lyssnaSignIn === true} />,
+    ]],
     ["Advanced", "Build Channel", [
       <SettingRow key="channel" label="Current build" help={`${activeBuild}${version ? ` · v${version}` : ""}`} keywords="build channel version canary stable beta">
         {submenuButton("builds", "Manage")}
@@ -331,7 +334,6 @@ export function SettingsPanel({ settings, change, close, options, track, notice,
       </SettingRow>,
     ]],
     ["Advanced", "Advanced", [
-      <AccountSettings key="lyssna-account" ready={options.lyssnaSignIn === true} />,
       <SettingRow key="manage-storage" label="Manage Stored Data" help="Clear recordings, spectrograms, and cached animated cover art."
         keywords="cache storage disk audio cover art">
         {submenuButton("storage", "Manage")}
