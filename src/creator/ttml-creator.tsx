@@ -108,7 +108,8 @@ import {
 } from "./ttml-creator-model";
 import { romanizeCreatorLyrics } from "./romanize";
 import { MetadataDialog } from "./ttml-metadata";
-import { TtmlBar } from "./ttml-bar";
+import { CreatorPlay, CreatorSpectrogramToggle, CreatorSpeed, TtmlBar } from "./ttml-bar";
+import type { CreatorPlaybarSlots } from "./playbar";
 import { TtmlSpectrogram } from "./ttml-spectrogram";
 import { createPortal } from "../host-dom";
 import {
@@ -257,6 +258,7 @@ export function TtmlCreator({
   notify,
   renderPreview,
   barSlot,
+  playbar,
   onClose,
 }: {
   state: CreatorState;
@@ -273,6 +275,7 @@ export function TtmlCreator({
   notify: (message: string, error?: boolean) => void;
   renderPreview?: (lyrics: Lyrics, position: number, track: Track) => ReactNode;
   barSlot?: HTMLElement | null;
+  playbar?: CreatorPlaybarSlots;
   onClose?: () => void;
 }) {
   const { root, view: window, waveform, playClip, replayAvailable, replayCaptured } = useCreatorEnvironment();
@@ -1146,8 +1149,9 @@ export function TtmlCreator({
   const changeSpeed = useCallback(
     (next: number) => {
       if (state.speedEnabled) void onSpeed(next).catch((error) => notify(String(error), true));
+      else if (here && replayAvailable) replayCaptured(next);
     },
-    [onSpeed, notify, state.speedEnabled],
+    [onSpeed, notify, state.speedEnabled, here, replayAvailable, replayCaptured],
   );
   const [speedDraft, setSpeedDraft] = useState<number | null>(null);
   const speedTimer = useRef(0);
@@ -1161,20 +1165,6 @@ export function TtmlCreator({
   };
   useEffect(() => () => clearTimeout(speedTimer.current), []);
   const shownSpeed = speedDraft ?? rate;
-  const [volumeDraft, setVolumeDraft] = useState<number | null>(null);
-  const volumeTimer = useRef(0);
-  const changeVolume = (percent: number) => {
-    setVolumeDraft(percent);
-    clearTimeout(volumeTimer.current);
-    volumeTimer.current = window.setTimeout(() => {
-      onPlayer({ command: "volume", volume: Math.round(percent) });
-      volumeTimer.current = window.setTimeout(() => setVolumeDraft(null), 1500);
-    }, 80);
-  };
-  useEffect(() => () => clearTimeout(volumeTimer.current), []);
-  const barVolume =
-    volumeDraft ??
-    state.playback.volume;
 
   const [keys, setKeys] = useState<KeyMap>(loadKeys);
   const keysRef = useRef(keys);
@@ -2967,41 +2957,18 @@ export function TtmlCreator({
           canOpenAudio={here}
         />
       )}
-      {barSlot &&
-        createPortal(
-          <TtmlBar
-            position={position}
-            duration={track.duration_ms}
-            playing={isPlaying}
-            peaks={peaks?.uri === track.uri ? peaks.values : null}
-            spectrogram={spectrogram}
-            spectrogramId={spectrogramId}
-            onSpectrogram={showSpectrogram}
-            spans={barSpans}
-            onToggle={onToggle}
-            onSeek={seek}
-            speed={shownSpeed}
-            minSpeed={MIN_SPEED}
-            maxSpeed={MAX_SPEED}
-            speedEnabled={state.speedEnabled}
-            replay={here && replayAvailable ? replayCaptured : undefined}
-            onSpeed={(value) => slideSpeed(clampSpeed(value))}
-            volume={barVolume}
-            onVolume={changeVolume}
-            song={
-              <>
-                {track.album.images[0] && <img className="cover" src={track.album.images[0].url} alt="" />}
-                <span>
-                  <strong title={track.name}>{track.name}</strong>
-                  <small>
-                    {formatTime(track.duration_ms).replace(/\.\d+$/, "")}
-                  </small>
-                </span>
-              </>
-            }
-          />,
-          barSlot,
-        )}
+      {barSlot && createPortal(
+        <TtmlBar position={position} duration={track.duration_ms}
+          peaks={peaks?.uri === track.uri ? peaks.values : null} spans={barSpans} onSeek={seek} />, barSlot)}
+      {barSlot && createPortal(
+        <CreatorSpeed speed={shownSpeed} min={MIN_SPEED} max={MAX_SPEED}
+          disabled={!here || (!state.speedEnabled && !replayAvailable)}
+          onChange={(value) => slideSpeed(clampSpeed(value))} />, playbar?.speed ?? barSlot)}
+      {playbar?.play && here && state.speedEnabled && createPortal(
+        <CreatorPlay playing={isPlaying} onToggle={onToggle} />, playbar.play)}
+      {barSlot && createPortal(
+        <CreatorSpectrogramToggle open={spectrogram} id={spectrogramId}
+          onToggle={() => showSpectrogram(!spectrogram)} />, playbar?.spectrogram ?? barSlot)}
     </section>
   );
 }

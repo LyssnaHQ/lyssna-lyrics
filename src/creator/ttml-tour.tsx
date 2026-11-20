@@ -177,18 +177,18 @@ function steps(keys: KeyMap): Step[] {
       target: ".ttml-bar-wave, .ttml-spectrum",
       body: (
         <>
-          Click or drag to seek. The current line is shaded. The arrow on the
-          right opens the spectrogram, where right-clicking a word plays only
+          Click or drag to seek. The current line is shaded. The arrow beside
+          the editor button opens the spectrogram, where right-clicking a word plays only
           that word.
         </>
       ),
     },
     {
-      title: "Speed and volume",
-      target: '[aria-label="Playback controls"]',
+      title: "Playback speed",
+      target: '.lyssna-editor-speed',
       body: (
         <>
-          Slow the song down for fast parts. {key("slower")} and {key("faster")}{" "}
+          Share Spotify audio or open a local audio file to enable slower playback. {key("slower")} and {key("faster")}{" "}
           change speed and {key("normalSpeed")} resets it.
         </>
       ),
@@ -265,7 +265,7 @@ export function TtmlTour({
   useEffect(() => {
     setDone(false);
     const find = () =>
-      step.target ? root.querySelector(step.target) ?? barSlot?.querySelector(step.target) ?? null : null;
+      step.target ? root.querySelector(step.target) ?? barSlot?.querySelector(step.target) ?? document.querySelector(step.target) : null;
     const target = find();
     target?.scrollIntoView({
       block: target.closest(".ttml-lines") ? "center" : "nearest",

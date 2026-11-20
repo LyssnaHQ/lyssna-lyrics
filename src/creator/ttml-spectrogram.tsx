@@ -272,7 +272,7 @@ export function TtmlSpectrogram({
   const localAudio = spectrumAudioUri === uri;
   const canShare = canOpenAudio && !localAudio && duration > 0;
   const liveSpectrum = useLiveSpectrum(uri, duration, canShare);
-  const [introSeen, setIntroSeen] = useStored("lyssna.ttml-live-spectrum-intro", false, isBoolean);
+  const [introSeen, setIntroSeen] = useStored("lyssna.ttml-recording-intro", false, isBoolean);
   const showIntro = canShare && !introSeen && liveSpectrum.status === "idle";
   const shareButton = useRef<HTMLButtonElement>(null);
   const intro = useRef<HTMLDivElement>(null);
@@ -870,7 +870,7 @@ export function TtmlSpectrogram({
           ref={shareButton} type="button" disabled={liveSpectrum.status === "selecting"}
           aria-label={liveSpectrum.status === "live" ? "Stop sharing Spotify audio" : "Share Spotify audio"}
           aria-describedby={showIntro ? introId : undefined}
-          title={liveSpectrum.status === "live" ? "Stop sharing Spotify audio" : "Share Spotify audio for the spectrogram and slow replay"}
+          title={liveSpectrum.status === "live" ? "Stop sharing Spotify audio" : "Share Spotify audio and save a recording on this device"}
           onClick={() => {
             if (showIntro) setIntroSeen(true);
             if (liveSpectrum.status === "live") liveSpectrum.stop();
@@ -882,7 +882,7 @@ export function TtmlSpectrogram({
           <strong>Live spectrogram</strong>
           <p>Click <b>Share Spotify audio</b>. {liveSpectrum.sharePrompt}</p>
           <p>Play the sections you want to capture. Click the same button to stop. The spectrogram stays in this Spotify client.</p>
-          <p>The last 12 seconds of audio stay in memory for slow replay until you switch songs or close Creator.</p>
+          <p>To record the whole song, share before playing it from the start. Recorded audio stays on this device for slow replay.</p>
           <button type="button" onClick={() => {
             setIntroSeen(true);
             shareButton.current?.focus({ preventScroll: true });

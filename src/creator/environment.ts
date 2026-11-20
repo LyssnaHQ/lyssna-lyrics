@@ -8,6 +8,8 @@ export type CreatorEnvironmentValue = {
   read: (at?: number) => number;
   readCapturePosition: (uri: string) => { ms: number; transportRevision: number; volume: number } | undefined;
   appendReplay: (packet: ReplayPacket) => void;
+  flushReplay: () => Promise<void>;
+  setRecordingAudio: (recording: boolean) => void;
   replayAvailable: boolean;
   replayCaptured: (rate: number) => void;
   spectrumKey: string;

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { spectrumFrequency } from "./audio";
 import { useCreatorEnvironment } from "./environment";
 import { spotifyWindowMarker } from "./spotify-window";
+import { replaySampleRate, type ReplayPacket } from "./captured-replay";
 import processorSource from "./live-spectrum-processor.js?raw";
 import {
   hasLiveSpectrum, INTERPOLATED_COLUMN, LIVE_COLUMNS, LIVE_ROWS, LIVE_SAMPLE_MS, MEASURED_COLUMN, mergeLiveTile,
@@ -34,7 +35,7 @@ function captureError(error: unknown) {
 }
 
 export function useLiveSpectrum(uri: string, duration: number, canCapture: boolean) {
-  const { view, readCapturePosition, appendReplay } = useCreatorEnvironment();
+  const { view, readCapturePosition, appendReplay, flushReplay, setRecordingAudio } = useCreatorEnvironment();
   const desktop = view.location.hostname === "xpui.app.spotify.com";
   const sharePrompt = desktop ? "Choose the Spotify window and enable window audio." : "Choose this Spotify tab and enable tab audio.";
   const [status, setStatus] = useState<CaptureStatus>("idle");
@@ -144,6 +145,8 @@ export function useLiveSpectrum(uri: string, duration: number, canCapture: boole
       }
       if (context) void context.close().catch(() => {});
       flush();
+      void flushReplay();
+      setRecordingAudio(false);
       if (mounted.current) {
         setStatus("idle");
         setMessage(notice);
@@ -151,6 +154,7 @@ export function useLiveSpectrum(uri: string, duration: number, canCapture: boole
     };
     const active = { stop };
     session.current = active;
+    setRecordingAudio(true);
     setStatus("selecting");
     setMessage(sharePrompt);
     try {
@@ -160,7 +164,7 @@ export function useLiveSpectrum(uri: string, duration: number, canCapture: boole
         devices.setCaptureHandleConfig?.({ handle, exposeOrigin: true, permittedOrigins: [origin] });
         configured = true;
       }
-      context = new view.AudioContext();
+      context = new view.AudioContext({ sampleRate: replaySampleRate });
       void context.resume().catch(() => {});
       const options: DisplayOptions = {
         video: { displaySurface: desktop ? "window" : "browser", frameRate: { ideal: 1 } },
@@ -222,8 +226,11 @@ export function useLiveSpectrum(uri: string, duration: number, canCapture: boole
       const frequencies = Array.from({ length: LIVE_ROWS + 1 }, (_, row) => spectrumFrequency(1 - row / LIVE_ROWS));
       let previousClock: { ms: number; audioMs: number; transportRevision: number; volume: number } | undefined;
       let captureFrom = 0;
+      let replayFrom = 0;
       let columnOffset: number | undefined;
       let replayOrigin: number | undefined;
+      const leadingAudio: ReplayPacket[] = [];
+      let replayHeard = false;
       let noSignalSince = 0;
       let suspendedSince = 0;
       let heard = false;
@@ -254,14 +261,19 @@ export function useLiveSpectrum(uri: string, duration: number, canCapture: boole
           playback.ms < previousClock.ms - 40 || Math.abs(playback.ms - previousClock.ms - (audioMs - previousClock.audioMs)) > 100;
         if (discontinuity) {
           captureFrom = audioMs + 160;
+          // Allow the first worklet batch at the beginning of a track. Other
+          // discontinuities need time for the captured audio to catch up.
+          replayFrom = playback.ms < 200 ? audioMs - 125 : captureFrom;
           columnOffset = undefined;
           replayOrigin = undefined;
+          leadingAudio.length = 0;
+          replayHeard = false;
         }
         if (discontinuity || playback.volume !== previousClock?.volume) {
           referencePeak = signalFloor;
         }
         previousClock = { ...playback, audioMs };
-        return { ms: playback.ms, now, audioMs };
+        return { ms: playback.ms, now, audioMs, volume: playback.volume };
       };
       const acceptSignal = (signal: boolean, now: number) => {
         if (signal) noSignalSince = 0;
@@ -350,7 +362,7 @@ export function useLiveSpectrum(uri: string, duration: number, canCapture: boole
           previousSampleAt = clock.now;
         }, LIVE_SAMPLE_MS);
       };
-      saveTimer = view.setInterval(flush, 1000);
+      saveTimer = view.setInterval(() => { flush(); void flushReplay(); }, 1000);
       try {
         const url = view.URL.createObjectURL(new view.Blob([processorSource], { type: "text/javascript" }));
         try { await audioContext.audioWorklet.addModule(url); }
@@ -369,9 +381,27 @@ export function useLiveSpectrum(uri: string, duration: number, canCapture: boole
           if (audio.muted) { acceptSignal(false, clock.now); return; }
           if ("samples" in data) {
             const sampleRate = audioContext.sampleRate;
-            if (heard && data.firstFrame * 1000 / sampleRate >= captureFrom) {
-              replayOrigin ??= clock.ms - clock.audioMs;
-              appendReplay({ uri, sampleRate, originMs: replayOrigin, ...data });
+            if (clock.volume !== 0 && sampleRate === replaySampleRate && data.firstFrame * 1000 / sampleRate >= replayFrom) {
+              replayOrigin ??= Math.round((clock.ms - clock.audioMs) * sampleRate / 1000);
+              const startFrame = data.firstFrame + replayOrigin;
+              const remaining = Math.round(duration * sampleRate / 1000) - startFrame;
+              if (remaining <= 0) return;
+              const samples = data.samples.subarray(0, remaining * 2);
+              const packet = { uri, startFrame, samples };
+              if (!replayHeard) {
+                replayHeard = samples.some((sample) => Math.abs(sample) > 1);
+                if (!replayHeard) {
+                  leadingAudio.push(packet);
+                  if (leadingAudio.length > 50) leadingAudio.shift();
+                  return;
+                }
+                leadingAudio.forEach(appendReplay);
+                leadingAudio.length = 0;
+              }
+              appendReplay(packet);
+            } else if (clock.volume === 0) {
+              replayHeard = false;
+              leadingAudio.length = 0;
             }
             return;
           }

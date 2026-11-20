@@ -1,21 +1,31 @@
+import { useEffect, useRef, useState } from "react";
+import { ChevronDown, ChevronUp, Gauge, Pause, Play } from "lucide-react";
 import { useCreatorEnvironment } from "./environment";
-import {
-  useEffect,
-  useId,
-  useRef,
-  useState,
-  type PointerEvent as ReactPointerEvent,
-  type ReactNode,
-} from "react";
-import {
-  ChevronDown,
-  ChevronUp,
-  Music2,
-  Pause,
-  Play,
-} from "lucide-react";
 import { formatTime } from "./ttml-creator-model";
-import { usePlaybarPopover } from "./playbar-popover";
+
+export function CreatorSpeed({ speed, min, max, disabled, onChange }: {
+  speed: number; min: number; max: number; disabled: boolean; onChange(value: number): void;
+}) {
+  return <label className="lyssna-editor-speed" title={disabled ? "Share Spotify audio or open a local file to change speed" : "Playback speed"}>
+    <Gauge size={15} aria-hidden="true" />
+    <input type="range" aria-label="Playback speed" min={min} max={max} step={0.05}
+      value={speed} disabled={disabled} onChange={(event) => onChange(event.currentTarget.valueAsNumber)} />
+    <output>{speed.toFixed(2)}×</output>
+  </label>;
+}
+
+export function CreatorPlay({ playing, onToggle }: { playing: boolean; onToggle(): void }) {
+  return <button type="button" className="ttml-bar-play" onClick={onToggle} aria-label={playing ? "Pause" : "Play"}>
+    {playing ? <Pause size={16} fill="currentColor" /> : <Play size={16} fill="currentColor" />}
+  </button>;
+}
+
+export function CreatorSpectrogramToggle({ open, id, onToggle }: { open: boolean; id: string; onToggle(): void }) {
+  return <button type="button" className="lyssna-playbar-view-button" aria-label="Spectrogram" aria-expanded={open}
+    aria-controls={open ? id : undefined} title={open ? "Hide the spectrogram" : "Show the spectrogram"} onClick={onToggle}>
+    {open ? <ChevronDown size={18} /> : <ChevronUp size={18} />}
+  </button>;
+}
 
 export interface BarSpan {
   start: number;
@@ -23,110 +33,10 @@ export interface BarSpan {
   current: boolean;
 }
 
-export function TtmlBar({
-  position,
-  duration,
-  playing,
-  peaks,
-  spectrogram,
-  spectrogramId,
-  onSpectrogram,
-  spans,
-  onToggle,
-  onSeek,
-  speed,
-  minSpeed,
-  maxSpeed,
-  speedEnabled,
-  replay,
-  onSpeed,
-  volume,
-  onVolume,
-  song,
-}: {
-  position: number;
-  duration: number;
-  playing: boolean;
-  peaks: Uint8Array | null;
-  spectrogram: boolean;
-  spectrogramId: string;
-  onSpectrogram: (on: boolean) => void;
-  spans: BarSpan[];
-  onToggle: () => void;
-  onSeek: (ms: number) => void;
-  speed: number;
-  minSpeed: number;
-  maxSpeed: number;
-  speedEnabled: boolean;
-  replay?: (rate: number) => void;
-  onSpeed: (speed: number) => void;
-  volume: number;
-  onVolume: (percent: number) => void;
-  song: ReactNode;
+export function TtmlBar({ position, duration, peaks, spans, onSeek }: {
+  position: number; duration: number; peaks: Uint8Array | null; spans: BarSpan[]; onSeek(ms: number): void;
 }) {
   const { view: window } = useCreatorEnvironment();
-  const [panel, setPanel] = useState(false);
-  // Like AMLL's tool, hovering the button shows the panel too; a click
-  // pins it open.
-  const [hovered, setHovered] = useState(false);
-  const leaving = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const pressing = useRef(false);
-  const hoverProps = {
-    onPointerEnter: (event: ReactPointerEvent) => {
-      if (event.pointerType !== "mouse") return;
-      clearTimeout(leaving.current);
-      setHovered(true);
-    },
-    onPointerLeave: (event: ReactPointerEvent) => {
-      if (event.pointerType !== "mouse") return;
-      clearTimeout(leaving.current);
-      const close = () => {
-        // A slider dragged past the panel's edge keeps it open until let go.
-        if (pressing.current) leaving.current = setTimeout(close, 150);
-        else setHovered(false);
-      };
-      leaving.current = setTimeout(close, 250);
-    },
-  };
-  useEffect(() => {
-    const release = () => (pressing.current = false);
-    window.addEventListener("pointerup", release, true);
-    return () => {
-      window.removeEventListener("pointerup", release, true);
-      clearTimeout(leaving.current);
-    };
-  }, []);
-  const panelShown = panel || hovered;
-  const root = useRef<HTMLDivElement>(null);
-  const trigger = useRef<HTMLButtonElement>(null);
-  const panelElement = useRef<HTMLDivElement>(null);
-  const panelId = useId();
-  usePlaybarPopover(window, panelShown, trigger, panelElement);
-  const closePanel = () => {
-    clearTimeout(leaving.current);
-    setHovered(false);
-    setPanel(false);
-  };
-  useEffect(() => {
-    if (!panelShown) return;
-    const away = (event: PointerEvent) =>
-      !root.current?.contains(event.composedPath()[0] as Node) && closePanel();
-    const escape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.stopPropagation();
-      if (panelElement.current?.contains(event.composedPath()[0] as Node)) trigger.current?.focus({ preventScroll: true });
-      closePanel();
-    };
-    window.addEventListener("pointerdown", away, true);
-    window.addEventListener("keydown", escape, true);
-    return () => {
-      window.removeEventListener("pointerdown", away, true);
-      window.removeEventListener("keydown", escape, true);
-    };
-  }, [panelShown]);
-  const fill = (value: number, min: number, max: number) => ({
-    ["--fill" as string]: `${((value - min) / (max - min)) * 100}%`,
-  });
   const canvas = useRef<HTMLCanvasElement>(null);
   const [width, setWidth] = useState(0);
   const [dragging, setDragging] = useState<number | null>(null);
@@ -236,93 +146,7 @@ export function TtmlBar({
     );
   };
   return (
-    <div className="ttml-bar" ref={root}>
-      <button
-        ref={trigger}
-        className={`ttml-bar-round${panelShown ? " active" : ""}`}
-        aria-label="Playback controls"
-        aria-expanded={panelShown}
-        aria-controls={panelShown ? panelId : undefined}
-        title="Speed and volume"
-        {...hoverProps}
-        onClick={() => {
-          setHovered(false);
-          setPanel(!panel);
-        }}
-      >
-        <Music2 size={16} />
-      </button>
-      {panelShown && (
-        <div
-          ref={panelElement}
-          id={panelId}
-          popover="manual"
-          className="ttml-bar-panel"
-          role="dialog"
-          aria-label="Playback controls"
-          {...hoverProps}
-          onPointerDown={() => (pressing.current = true)}
-        >
-          <div className="ttml-bar-panel-row">
-            <strong>Playback speed</strong>
-            <output>{speed.toFixed(2)}×</output>
-          </div>
-          <div className="ttml-bar-presets">
-            {[0.5, 0.75, 1, 1.25].map((preset) => (
-              <button
-                key={preset}
-                className={Math.abs(speed - preset) < 0.001 ? "active" : ""}
-                disabled={!speedEnabled && !(replay && preset < 1)}
-                title={!speedEnabled && replay && preset < 1 ? `Replay captured audio at ${preset}×` : undefined}
-                onClick={() => speedEnabled ? onSpeed(preset) : replay?.(preset)}
-              >
-                {preset}×
-              </button>
-            ))}
-          </div>
-          <input
-            type="range"
-            aria-label="Playback speed"
-            min={minSpeed}
-            max={maxSpeed}
-            step={0.05}
-            value={speed}
-            disabled={!speedEnabled}
-            style={fill(speed, minSpeed, maxSpeed)}
-            onChange={(event) => onSpeed(Number(event.target.value))}
-          />
-          {!speedEnabled && (
-            <small>{replay ? "Choose 0.5× or 0.75× to replay the captured section."
-              : "Share Spotify audio from the spectrogram for slow replay, or open a local audio file."}</small>
-          )}
-          <div className="ttml-bar-panel-row">
-            <strong>Volume</strong>
-            <output>{Math.round(volume)}%</output>
-          </div>
-          <input
-            type="range"
-            aria-label="Volume"
-            min={0}
-            max={100}
-            step={1}
-            value={volume}
-            style={fill(volume, 0, 100)}
-            onChange={(event) => onVolume(Number(event.target.value))}
-          />
-          <div className="ttml-bar-song">{song}</div>
-        </div>
-      )}
-      <button
-        className="ttml-bar-play"
-        onClick={onToggle}
-        aria-label={playing ? "Pause" : "Play"}
-      >
-        {playing ? (
-          <Pause size={16} fill="currentColor" />
-        ) : (
-          <Play size={16} fill="currentColor" />
-        )}
-      </button>
+    <div className="ttml-bar">
       <span className="ttml-bar-time">{formatTime(shown)}</span>
       <canvas
         ref={canvas}
@@ -358,18 +182,6 @@ export function TtmlBar({
         }}
       />
       <span className="ttml-bar-time">{formatTime(duration)}</span>
-      <div className="ttml-bar-extras">
-        <button
-          className="icon-button"
-          aria-label="Spectrogram"
-          aria-expanded={spectrogram}
-          aria-controls={spectrogram ? spectrogramId : undefined}
-          title={spectrogram ? "Hide the spectrogram" : "Show the spectrogram"}
-          onClick={() => onSpectrogram(!spectrogram)}
-        >
-          {spectrogram ? <ChevronDown size={18} /> : <ChevronUp size={18} />}
-        </button>
-      </div>
     </div>
   );
 }

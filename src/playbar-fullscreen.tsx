@@ -31,8 +31,10 @@ export function playbarViewButtons(host: Host, onFullscreen: (event: MouseEvent)
   const popout = onPopout && viewButton(host, "Pop out lyrics", <PopoutIcon />, onPopout);
   const cinema = viewButton(host, "Cinema Lyrics Window", <CinemaIcon />, onCinema);
   const creator = viewButton(host, "TTML Creator", <FilePenLine size={19} />, onCreator);
+  const spectrogram = document.createElement("div");
+  spectrogram.className = "lyssna-editor-spectrogram-slot";
 
-  function placeBefore(control: HTMLButtonElement | undefined, anchor: HTMLElement, show: boolean) {
+  function placeBefore(control: HTMLElement | undefined, anchor: HTMLElement, show: boolean) {
     if (!control) return;
     if (!show || !anchor.isConnected) {
       control.remove();
@@ -58,10 +60,11 @@ export function playbarViewButtons(host: Host, onFullscreen: (event: MouseEvent)
       const previous = anchor.previousElementSibling;
       const before = previous instanceof HTMLElement && previous.matches(nativeSelector) ? previous : anchor;
       placeBefore(creator.button, before, showCreator);
+      placeBefore(spectrogram, creator.button, showCreator && creatorActive);
       const pressed = String(creatorActive);
       if (creator.button.getAttribute("aria-pressed") !== pressed) creator.button.setAttribute("aria-pressed", pressed);
       const legacyPopout = document.getElementById("LyssnaLyrics_PopupLyricsButton");
-      const popoutAnchor = creator.button.isConnected ? creator.button : before;
+      const popoutAnchor = creator.button.isConnected ? spectrogram.isConnected ? spectrogram : creator.button : before;
       placeBefore(popout?.button, popoutAnchor, showPopout && !legacyPopout);
       const cinemaAnchor = legacyPopout ?? (popout?.button.isConnected ? popout.button : popoutAnchor);
       placeBefore(cinema.button, cinemaAnchor, showCinema && !document.getElementById("LyssnaLyrics_ExternalCinemaButton"));
@@ -72,6 +75,7 @@ export function playbarViewButtons(host: Host, onFullscreen: (event: MouseEvent)
     dispose() {
       popout?.dispose();
       cinema.dispose();
+      spectrogram.remove();
       creator.dispose();
       fullscreen.dispose();
     },
