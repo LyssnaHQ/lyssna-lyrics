@@ -42,7 +42,8 @@ mkdirSync(entrypoint, { recursive: true });
 copyFileSync("loader/lyssna-lyrics.mjs", join(output, "spotikit", "extension.js"));
 copyFileSync("loader/spotikit.json", join(output, "spotikit", "spotikit.json"));
 const notices = readFileSync("THIRD_PARTY_NOTICES.md", "utf8");
-const licenses = ["lucide-react/LICENSE", "@kawarp/core/LICENSE", "transliteration/LICENSE.txt"]
+const licenses = ["lucide-react/LICENSE", "@kawarp/core/LICENSE", "transliteration/LICENSE.txt",
+  "compromise/LICENSE", "compromise-speech/LICENSE", "efrt/LICENSE", "suffix-thumb/LICENSE"]
   .map((path) => readFileSync(join("node_modules", path), "utf8").trim());
 for (const path of ["src/fonts/Inter-OFL.txt", "src/fonts/Metropolis-Unlicense.txt", "src/fonts/Adobe-Blank-OFL.txt"]) {
   licenses.push(readFileSync(path, "utf8").trim());

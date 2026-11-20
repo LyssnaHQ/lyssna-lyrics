@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { ChevronUp, Disc3, FoldVertical, MicVocal, Music2, PanelLeftOpen, Settings as GearIcon, UnfoldVertical, X } from "lucide-react";
+import { ChevronUp, Disc3, FoldVertical, MicVocal, Music2, PanelLeftOpen, Settings as GearIcon, UnfoldVertical, Wand2, X } from "lucide-react";
 import { getHost, type CanvasInfo, type Host, type Track } from "./host";
 import { useArtworkColor } from "./lyssna/artwork-color";
 import { Ambience } from "./lyssna/ambience";
@@ -38,6 +38,8 @@ import { readViewSession, saveViewSession } from "./view-session";
 import { lyssnaApiNotice, lyssnaInstallReady } from "./lyssna-api";
 import { revalidateLyssnaSong, resumeLyssnaRequests } from "./lyssna-provider";
 import { submitLyssnaTtml } from "./lyssna-submission";
+import { CreatorSurface } from "./creator/surface";
+import { dismissDraft, draftPreview } from "./creator/ttml-working";
 import { trackLyssnaListens, useLyssnaPlay } from "./lyssna-plays";
 import { MotionArtwork, useMotionArtwork } from "./motion-artwork";
 import fontCss from "./fonts/fonts.css?inline";
@@ -115,6 +117,14 @@ function LyricsForTrack({ track, host, playing, settings, view = window, fullVie
 }) {
   const duration = host.duration();
   const data = useTrackLyrics(track, duration, view, settings);
+  const uri = `spotify:track:${track.id}`;
+  const [draft, setDraft] = useState(() => fullView ? draftPreview(uri) : null);
+  useEffect(() => { setDraft(fullView ? draftPreview(uri) : null); }, [uri, fullView]);
+  if (draft) return <>
+    <button type="button" className="lyssna-dismiss-draft" onClick={() => { dismissDraft(uri); setDraft(null); }}>Hide draft preview</button>
+    <TrackLyrics track={track} host={host} playing={playing} settings={settings} view={view} fullView={fullView}
+      duration={duration} lyrics={draft} waiting={false} />
+  </>;
   return <TrackLyrics track={track} host={host} playing={playing} settings={settings} view={view} fullView={fullView}
     duration={duration} {...data} />;
 }
@@ -346,6 +356,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
   const settings = useLiveSettings();
   const [showSettings, setShowSettings] = useState(false);
   const [showTtml, setShowTtml] = useState(false);
+  const [showCreator, setShowCreator] = useState(false);
   const [fullscreen, setFullscreen] = useState(fullscreenRequest > 0);
   const [leaving, setLeaving] = useState(false);
   const [narrow, setNarrow] = useState(false);
@@ -357,6 +368,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
   const toolsTimer = useRef<number>(0);
   const lyricsPage = useRef<HTMLElement>(null);
   const ttmlButton = useRef<HTMLButtonElement>(null);
+  const creatorButton = useRef<HTMLButtonElement>(null);
   useLayoutEffect(() => { if (lyricsPage.current) lyricsPage.current.inert = showTtml; }, [showTtml]);
   const fonts = useAppFonts(settings, view.document);
   const artwork = narrating ? DJ_COVER : track?.cover;
@@ -402,9 +414,9 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
   }
 
   useEffect(() => {
-    wakeTools();
+    if (!showCreator) wakeTools();
     return () => window.clearTimeout(toolsTimer.current);
-  }, []);
+  }, [showCreator]);
   useEffect(() => {
     if (!notice || showSettings) return;
     const id = window.setTimeout(() => setNotice(""), 3_000);
@@ -506,6 +518,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
   }, [externalCinema, settings.space_gravity, settings.reduce_motion]);
   useEffect(() => {
     const keyboard = (event: KeyboardEvent) => {
+      if (showCreator) return;
       if (event.key !== "Escape" && event.key !== "F11") return;
       event.preventDefault();
       event.stopImmediatePropagation();
@@ -532,12 +545,17 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
   const playback = (fullscreen || externalCinema) && <FullscreenControls host={host} playing={playing} settings={settings}
     view={view} trackId={track?.id} narrating={narrating} />;
   return <>
-    {hasAmbience && <Ambience image={artwork} animate={playing && background === "animated"}
+    {!showCreator && hasAmbience && <Ambience image={artwork} animate={playing && background === "animated"}
       reduceMotion={settings.reduce_motion} followCanvas={canvas ? "window" : false} />}
-    {backgroundImage && <img className="lyrics-background" src={backgroundImage}
+    {!showCreator && backgroundImage && <img className="lyrics-background" src={backgroundImage}
       style={{ "--artwork-blur": `${settings.lyrics_background_blur}px` } as CSSProperties}
       onError={banner ? () => setArtistHeader((current) => current?.url === banner && current.uri === artistUri ? undefined : current) : undefined} alt="" />}
-    <section ref={lyricsPage} className={className} aria-label="Lyssna Lyrics" style={pageStyle}
+    {showCreator ? <div className="lyssna-creator-container" style={pageStyle}>
+      <CreatorSurface host={host} view={view} settings={settings} close={() => {
+        setShowCreator(false);
+        view.requestAnimationFrame(() => creatorButton.current?.focus({ preventScroll: true }));
+      }} />
+    </div> : <section ref={lyricsPage} className={className} aria-label="Lyssna Lyrics" style={pageStyle}
       onPointerMove={wakeTools} onPointerLeave={sleepTools} onKeyDownCapture={wakeTools}>
       {narrating && <DJInterlude playing={playing} reduceMotion={settings.reduce_motion} />}
       {!narrating && (track ? <>
@@ -575,6 +593,8 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
         <span className="toolbar-divider" aria-hidden="true" />
         <button ref={ttmlButton} type="button" className="icon-button" data-icon="upload" title="Load TTML" aria-label="Load TTML"
           aria-haspopup="dialog" onClick={() => { setNotice(""); setShowTtml(true); }}><UploadIcon /></button>
+        <button ref={creatorButton} type="button" className="icon-button" title="TTML Creator" aria-label="TTML Creator"
+          onClick={() => setShowCreator(true)}><Wand2 size={17} /></button>
         {settings.lyrics_cache_button && <button type="button" className="icon-button" data-icon="retry" title="Refresh lyrics" aria-label="Refresh lyrics"
           disabled={!track} onClick={() => { refreshLyrics(track ?? undefined, settings.lyrics_cache_action); setNotice("Refreshing lyrics…"); }}><RetryIcon /></button>}
         <button type="button" className="icon-button" data-icon="fullscreen" title={fullscreen ? "Exit full screen" : externalCinema ? "Full screen" : "Full screen (Shift for cinema)"}
@@ -587,7 +607,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
       </div>
       {!showSettings && notice && <div className="lyssna-popout-error" role="status">{notice}</div>}
       {!artworkDock && playback}
-    </section>
+    </section>}
     {showTtml && <LoadTtml song={track ? track.title || "Unknown song" : undefined} glass={settings.liquid_glass} theme={settings.theme} style={fonts}
       onSubmit={async (file) => {
         if (!track) throw new Error("Play the song you want to submit lyrics for.");

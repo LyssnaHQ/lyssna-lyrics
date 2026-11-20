@@ -1,0 +1,385 @@
+import { useCreatorEnvironment } from "./environment";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from "react";
+import {
+  ChevronDown,
+  ChevronUp,
+  PanelBottom,
+  FilePenLine,
+  Music2,
+  Pause,
+  Play,
+} from "lucide-react";
+import { formatTime } from "./ttml-creator-model";
+
+export interface BarSpan {
+  start: number;
+  end: number;
+  current: boolean;
+}
+
+export function TtmlBar({
+  position,
+  duration,
+  playing,
+  peaks,
+  spectrum,
+  spectrogram,
+  onSpectrogram,
+  spans,
+  onToggle,
+  onSeek,
+  onShowPlayer,
+  onClose,
+  speed,
+  minSpeed,
+  maxSpeed,
+  speedEnabled,
+  onSpeed,
+  volume,
+  onVolume,
+  song,
+}: {
+  position: number;
+  duration: number;
+  playing: boolean;
+  peaks: Uint8Array | null;
+  spectrum: ReactNode;
+  spectrogram: boolean;
+  onSpectrogram: (on: boolean) => void;
+  spans: BarSpan[];
+  onToggle: () => void;
+  onSeek: (ms: number) => void;
+  onShowPlayer: () => void;
+  onClose?: () => void;
+  speed: number;
+  minSpeed: number;
+  maxSpeed: number;
+  speedEnabled: boolean;
+  onSpeed: (speed: number) => void;
+  volume: number;
+  onVolume: (percent: number) => void;
+  song: ReactNode;
+}) {
+  const { view: window } = useCreatorEnvironment();
+  const [panel, setPanel] = useState(false);
+  // Like AMLL's tool, hovering the button shows the panel too; a click
+  // pins it open.
+  const [hovered, setHovered] = useState(false);
+  const leaving = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const pressing = useRef(false);
+  const hoverProps = {
+    onPointerEnter: (event: ReactPointerEvent) => {
+      if (event.pointerType !== "mouse") return;
+      clearTimeout(leaving.current);
+      setHovered(true);
+    },
+    onPointerLeave: (event: ReactPointerEvent) => {
+      if (event.pointerType !== "mouse") return;
+      clearTimeout(leaving.current);
+      const close = () => {
+        // A slider dragged past the panel's edge keeps it open until let go.
+        if (pressing.current) leaving.current = setTimeout(close, 150);
+        else setHovered(false);
+      };
+      leaving.current = setTimeout(close, 250);
+    },
+  };
+  useEffect(() => {
+    const release = () => (pressing.current = false);
+    window.addEventListener("pointerup", release, true);
+    return () => {
+      window.removeEventListener("pointerup", release, true);
+      clearTimeout(leaving.current);
+    };
+  }, []);
+  const panelShown = panel || hovered;
+  const root = useRef<HTMLDivElement>(null);
+  const closePanel = () => {
+    clearTimeout(leaving.current);
+    setHovered(false);
+    setPanel(false);
+  };
+  useEffect(() => {
+    if (!panelShown) return;
+    const away = (event: PointerEvent) =>
+      !root.current?.contains(event.composedPath()[0] as Node) && closePanel();
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.stopPropagation();
+      closePanel();
+    };
+    window.addEventListener("pointerdown", away, true);
+    window.addEventListener("keydown", escape, true);
+    return () => {
+      window.removeEventListener("pointerdown", away, true);
+      window.removeEventListener("keydown", escape, true);
+    };
+  }, [panelShown]);
+  const fill = (value: number, min: number, max: number) => ({
+    ["--fill" as string]: `${((value - min) / (max - min)) * 100}%`,
+  });
+  const canvas = useRef<HTMLCanvasElement>(null);
+  const [width, setWidth] = useState(0);
+  const [dragging, setDragging] = useState<number | null>(null);
+  const [hover, setHover] = useState<number | null>(null);
+  useEffect(() => {
+    const element = canvas.current;
+    if (!element) return;
+    const observer = new ResizeObserver(([entry]) =>
+      setWidth(entry.contentRect.width),
+    );
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [spectrogram]);
+  const shown = dragging ?? position;
+  useEffect(() => {
+    const element = canvas.current;
+    const context = element?.getContext("2d");
+    if (!element || !context || !width) return;
+    const scale = window.devicePixelRatio;
+    const height = element.clientHeight;
+    // Resizing the backing store every frame is costly; only on change.
+    if (element.width !== Math.round(width * scale))
+      element.width = Math.round(width * scale);
+    if (element.height !== Math.round(height * scale))
+      element.height = Math.round(height * scale);
+    context.setTransform(scale, 0, 0, scale, 0, 0);
+    context.clearRect(0, 0, width, height);
+    const span = Math.max(1, duration);
+    const x = (ms: number) => (Math.min(span, Math.max(0, ms)) / span) * width;
+    // A filled envelope with the played part tinted and the current line
+    // shaded, after the AMLL TTML Tool's timeline.
+    const played = x(shown);
+    const middle = height / 2;
+    const reach = middle - 4;
+    const columns = Math.ceil(width);
+    const level = new Float32Array(columns + 1);
+    for (let left = 0; left <= columns; left++) {
+      let loud = 0;
+      if (peaks?.length) {
+        const from = Math.floor((left / width) * peaks.length);
+        const to = Math.max(
+          from + 1,
+          Math.floor(((left + 1) / width) * peaks.length),
+        );
+        for (let index = from; index < to && index < peaks.length; index++)
+          loud = Math.max(loud, peaks[index] / 255);
+      }
+      level[left] = loud;
+    }
+    context.beginPath();
+    context.moveTo(0, middle);
+    for (let left = 0; left <= columns; left++) {
+      const near =
+        (level[Math.max(0, left - 1)] +
+          level[left] * 2 +
+          level[Math.min(columns, left + 1)]) /
+        4;
+      context.lineTo(left, middle - Math.max(0.5, near * reach));
+    }
+    for (let left = columns; left >= 0; left--) {
+      const near =
+        (level[Math.max(0, left - 1)] +
+          level[left] * 2 +
+          level[Math.min(columns, left + 1)]) /
+        4;
+      context.lineTo(left, middle + Math.max(0.5, near * reach));
+    }
+    context.closePath();
+    context.fillStyle = "#1ed76066";
+    context.fill();
+    context.fillStyle = "#1ed7601f";
+    context.fillRect(0, 0, played, height);
+    for (const line of spans) {
+      if (!line.current) continue;
+      const left = x(line.start);
+      const right = Math.max(left + 1, x(line.end));
+      context.fillStyle = "#1ed76033";
+      context.fillRect(left, 0, right - left, height);
+      context.fillStyle = "#1ed76099";
+      context.fillRect(left, 0, 1, height);
+      context.fillRect(right - 1, 0, 1, height);
+    }
+    if (hover !== null && dragging === null) {
+      context.fillStyle = "#1ed760a6";
+      context.fillRect(Math.round(hover), 0, 1, height);
+      const label = formatTime((hover / width) * span);
+      context.font = '11px "Cascadia Mono", Consolas, monospace';
+      const box = context.measureText(label).width + 10;
+      const at = hover + box + 4 > width ? hover - box - 4 : hover + 4;
+      context.fillStyle = "#000000b3";
+      context.beginPath();
+      context.roundRect(at, 4, box, 16, 4);
+      context.fill();
+      context.fillStyle = "#fff";
+      context.textBaseline = "middle";
+      context.fillText(label, at + 5, 12.5);
+    }
+    context.fillStyle = "#1ed760";
+    context.fillRect(Math.round(played) - 1, 0, 2, height);
+  }, [width, peaks, spans, shown, duration, spectrogram, hover, dragging]);
+
+  const timeAt = (clientX: number) => {
+    const box = canvas.current!.getBoundingClientRect();
+    return (
+      (Math.min(box.width, Math.max(0, clientX - box.left)) / box.width) *
+      duration
+    );
+  };
+  return (
+    <div className={`ttml-bar${spectrogram ? " spectral" : ""}`} ref={root}>
+      {panelShown && (
+        <div
+          className="ttml-bar-panel"
+          role="dialog"
+          aria-label="Playback controls"
+          {...hoverProps}
+          onPointerDown={() => (pressing.current = true)}
+        >
+          <div className="ttml-bar-panel-row">
+            <strong>Playback speed</strong>
+            <output>{speed.toFixed(2)}×</output>
+          </div>
+          <div className="ttml-bar-presets">
+            {[0.5, 0.75, 1, 1.25].map((preset) => (
+              <button
+                key={preset}
+                className={Math.abs(speed - preset) < 0.001 ? "active" : ""}
+                disabled={!speedEnabled}
+                onClick={() => onSpeed(preset)}
+              >
+                {preset}×
+              </button>
+            ))}
+          </div>
+          <input
+            type="range"
+            aria-label="Playback speed"
+            min={minSpeed}
+            max={maxSpeed}
+            step={0.05}
+            value={speed}
+            disabled={!speedEnabled}
+            style={fill(speed, minSpeed, maxSpeed)}
+            onChange={(event) => onSpeed(Number(event.target.value))}
+          />
+          {!speedEnabled && (
+            <small>Open an audio file to change playback speed.</small>
+          )}
+          <div className="ttml-bar-panel-row">
+            <strong>Volume</strong>
+            <output>{Math.round(volume)}%</output>
+          </div>
+          <input
+            type="range"
+            aria-label="Volume"
+            min={0}
+            max={100}
+            step={1}
+            value={volume}
+            style={fill(volume, 0, 100)}
+            onChange={(event) => onVolume(Number(event.target.value))}
+          />
+          <div className="ttml-bar-song">{song}</div>
+        </div>
+      )}
+      <button
+        className={`ttml-bar-round${panelShown ? " active" : ""}`}
+        aria-label="Playback controls"
+        aria-expanded={panelShown}
+        title="Speed and volume"
+        {...hoverProps}
+        onClick={() => {
+          setHovered(false);
+          setPanel(!panel);
+        }}
+      >
+        <Music2 size={16} />
+      </button>
+      <button
+        className="ttml-bar-play"
+        onClick={onToggle}
+        aria-label={playing ? "Pause" : "Play"}
+      >
+        {playing ? (
+          <Pause size={16} fill="currentColor" />
+        ) : (
+          <Play size={16} fill="currentColor" />
+        )}
+      </button>
+      <span className="ttml-bar-time">{formatTime(shown)}</span>
+      {spectrogram ? (
+        spectrum
+      ) : (
+        <canvas
+          ref={canvas}
+          className={`ttml-bar-wave${peaks ? "" : " loading"}`}
+          role="slider"
+          aria-label="Song position"
+          aria-valuemin={0}
+          aria-valuemax={duration}
+          aria-valuenow={Math.round(shown)}
+          tabIndex={0}
+          onPointerDown={(event) => {
+            event.currentTarget.setPointerCapture(event.pointerId);
+            setDragging(timeAt(event.clientX));
+          }}
+          onPointerMove={(event) => {
+            setHover(
+              event.clientX - event.currentTarget.getBoundingClientRect().left,
+            );
+            if (dragging !== null) setDragging(timeAt(event.clientX));
+          }}
+          onPointerLeave={() => setHover(null)}
+          onPointerUp={(event) => {
+            if (dragging === null) return;
+            onSeek(timeAt(event.clientX));
+            setDragging(null);
+          }}
+          onPointerCancel={() => setDragging(null)}
+          onKeyDown={(event) => {
+            if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+            event.preventDefault();
+            event.stopPropagation();
+            onSeek(position + (event.key === "ArrowLeft" ? -3000 : 3000));
+          }}
+        />
+      )}
+      <span className="ttml-bar-time">{formatTime(duration)}</span>
+      <div className="player-extras ttml-bar-extras">
+        <button
+          className="icon-button"
+          onClick={onShowPlayer}
+          title="Show the player bar"
+          aria-label="Show the player bar"
+        >
+          <PanelBottom size={18} />
+        </button>
+        {onClose && (
+          <button
+            className="icon-button ttml-button active"
+            title="TTML Creator"
+            onClick={onClose}
+          >
+            <FilePenLine size={19} />
+          </button>
+        )}
+        <button
+          className="icon-button"
+          aria-label="Spectrogram"
+          aria-pressed={spectrogram}
+          title={spectrogram ? "Hide the spectrogram" : "Show the spectrogram"}
+          onClick={() => onSpectrogram(!spectrogram)}
+        >
+          {spectrogram ? <ChevronDown size={18} /> : <ChevronUp size={18} />}
+        </button>
+      </div>
+    </div>
+  );
+}
