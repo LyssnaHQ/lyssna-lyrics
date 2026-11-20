@@ -470,18 +470,23 @@ export default function start(options: BuildOptions) {
     const parent = document.createElement("div");
     parent.className = "lyssna-lyrics-view";
     const main = host.mainView();
-    (main ?? document.body).append(parent);
     if (!main) parent.classList.add("lyssna-full-window");
+    const shadowHost = document.createElement("div");
+    shadowHost.className = "lyssna-lyrics-view lyssna-lyrics-host";
+    // Spotify's scrollbar observer excludes mutations inside shadow roots.
+    const shadow = shadowHost.attachShadow({ mode: "open" });
+    shadow.append(stylesheet.cloneNode(true), parent);
+    (main ?? document.body).append(shadowHost);
     const root = host.mount(parent);
     const dismiss = () => {
       close = undefined;
       mainContainer = undefined;
       button?.setActive(false);
       root.unmount();
-      parent.remove();
+      shadowHost.remove();
     };
     close = dismiss;
-    mainContainer = parent;
+    mainContainer = shadowHost;
     button?.setActive(true);
     root.render(<LyricsView host={host} options={options} close={dismiss} parent={parent} openPopout={openPopout} />);
   }

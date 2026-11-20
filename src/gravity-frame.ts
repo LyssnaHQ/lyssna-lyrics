@@ -1,8 +1,6 @@
 type WordView = {
   size?: { width: number; height: number };
   transform?: string;
-  effect?: KeyframeEffect;
-  animation?: Animation;
 };
 
 export function trackGravityStage(stage: HTMLElement) {
@@ -27,7 +25,6 @@ export function trackGravityStage(stage: HTMLElement) {
       observer.observe(node, { box: "border-box" });
     },
     remove(node: HTMLElement) {
-      words.get(node)?.animation?.cancel();
       words.delete(node);
       observer.unobserve(node);
     },
@@ -41,19 +38,10 @@ export function trackGravityStage(stage: HTMLElement) {
       const word = words.get(node);
       if (!word || word.transform === transform) return;
       word.transform = transform;
-      // A held animation updates the transform without mutating the style
-      // attribute watched by Spotify's scrollbar observer.
-      const keyframes = [{ transform }, { transform }];
-      if (word.effect) word.effect.setKeyframes(keyframes);
-      else {
-        word.effect = new KeyframeEffect(node, keyframes, { duration: 1, fill: "both" });
-        word.animation = new Animation(word.effect, node.ownerDocument.timeline);
-        word.animation.currentTime = 0;
-      }
+      node.style.transform = transform;
     },
     dispose() {
       observer.disconnect();
-      for (const word of words.values()) word.animation?.cancel();
       words.clear();
     },
   };

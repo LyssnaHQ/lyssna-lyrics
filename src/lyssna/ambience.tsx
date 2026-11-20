@@ -192,13 +192,14 @@ export const Ambience = memo(function Ambience({
     // this ambience's panel is searched, so the lyrics page's Canvas never
     // tints Now Playing.
     const panel = surface.current?.parentElement?.parentElement;
+    const root = panel?.getRootNode() as Document | ShadowRoot | undefined;
     const look = () => {
       const video =
         followCanvas === "window"
-          ? (document.querySelector<HTMLVideoElement>(
+          ? (root?.querySelector<HTMLVideoElement>(
               ".lyrics-page video[data-canvas-video]",
             ) ??
-            document.querySelector<HTMLVideoElement>(
+            panel?.ownerDocument.querySelector<HTMLVideoElement>(
               ".now-playing video[data-canvas-video]",
             ))
           : panel?.querySelector<HTMLVideoElement>("video[data-canvas-video]");

@@ -632,34 +632,51 @@ export function SpaceGravityLyrics({
   const [count, setCount] = useState<number>(GRAVITY.minVisibleWords);
   const visible = visibleGravity(prepared, time, count);
   const visibleKeys = visible.map((entity) => entity.key).join("|");
-  // Words that just left stay a moment to fade out.
-  const [leaving, setLeaving] = useState<Entity[]>([]);
-  const previous = useRef<Entity[]>([]);
+  // Each departing batch keeps its own fade, even when more words leave.
+  const [leaving, setLeaving] = useState(() => new Map<Entity, number>());
+  const fadeTimers = useRef(new Set<number>());
+  const previous = useRef<{ prepared: typeof prepared; visible: Entity[] }>(undefined);
   useEffect(() => {
-    const now = new Set(visible.map((entity) => entity.key));
-    const gone = previous.current.filter((entity) => !now.has(entity.key));
-    previous.current = visible;
+    const timers = fadeTimers.current;
+    return () => {
+      for (const timer of timers) window.clearTimeout(timer);
+      timers.clear();
+    };
+  }, [prepared]);
+  useEffect(() => {
+    const before = previous.current;
+    previous.current = { prepared, visible };
+    if (before?.prepared !== prepared) {
+      setLeaving((current) => current.size ? new Map() : current);
+      return;
+    }
+    const now = new Set(visible);
+    const gone = before.visible.filter((entity) => !now.has(entity));
     if (!gone.length) return;
-    setLeaving((current) => [
-      ...current.filter((entity) => !now.has(entity.key)),
-      ...gone,
-    ]);
-    const timer = setTimeout(
-      () =>
-        setLeaving((current) =>
-          current.filter((entity) => !gone.includes(entity)),
-        ),
-      GRAVITY.presenceFadeMs + 40,
-    );
-    return () => clearTimeout(timer);
+    const timer = window.setTimeout(() => {
+      fadeTimers.current.delete(timer);
+      setLeaving((current) => {
+        // A word that leaves again after a seek belongs to its newer batch.
+        const expired = gone.filter((entity) => current.get(entity) === timer);
+        if (!expired.length) return current;
+        const remaining = new Map(current);
+        for (const entity of expired) remaining.delete(entity);
+        return remaining;
+      });
+    }, GRAVITY.presenceFadeMs + 40);
+    fadeTimers.current.add(timer);
+    setLeaving((current) => {
+      const fading = new Map(current);
+      for (const entity of gone) fading.set(entity, timer);
+      return fading;
+    });
     // visibleKeys captures every change to the visible set.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visibleKeys]);
+  }, [prepared, visibleKeys]);
   const anchorLine = gravityAnchor(prepared, time).line;
-  const shown = [
-    ...visible,
-    ...leaving.filter((entity) => !visible.includes(entity)),
-  ];
+  const shown = previous.current?.prepared === prepared
+    ? [...visible, ...Array.from(leaving.keys()).filter((entity) => !visible.includes(entity))]
+    : visible;
 
   const elements = useRef(new Map<string, HTMLElement>());
   const stageView = useRef<ReturnType<typeof trackGravityStage>>(undefined);

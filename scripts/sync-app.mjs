@@ -143,6 +143,51 @@ for (const [file, content] of snapshot) {
   if (file === "space-gravity-lyrics.tsx") source = source
     .replace('import { LyricAnimator } from "./lyric-animator";', 'import { LyricAnimator } from "./lyric-animator";\nimport { presetOf } from "./animator-tuning";')
     .replace('import { frameDue } from "./frame-cap";', 'import { frameDue } from "./frame-cap";\nimport { trackGravityStage } from "../gravity-frame";')
+    .replace(slice(source, "  // Words that just left stay a moment to fade out.", "  const elements = useRef"), `  // Each departing batch keeps its own fade, even when more words leave.
+  const [leaving, setLeaving] = useState(() => new Map<Entity, number>());
+  const fadeTimers = useRef(new Set<number>());
+  const previous = useRef<{ prepared: typeof prepared; visible: Entity[] }>(undefined);
+  useEffect(() => {
+    const timers = fadeTimers.current;
+    return () => {
+      for (const timer of timers) window.clearTimeout(timer);
+      timers.clear();
+    };
+  }, [prepared]);
+  useEffect(() => {
+    const before = previous.current;
+    previous.current = { prepared, visible };
+    if (before?.prepared !== prepared) {
+      setLeaving((current) => current.size ? new Map() : current);
+      return;
+    }
+    const now = new Set(visible);
+    const gone = before.visible.filter((entity) => !now.has(entity));
+    if (!gone.length) return;
+    const timer = window.setTimeout(() => {
+      fadeTimers.current.delete(timer);
+      setLeaving((current) => {
+        // A word that leaves again after a seek belongs to its newer batch.
+        const expired = gone.filter((entity) => current.get(entity) === timer);
+        if (!expired.length) return current;
+        const remaining = new Map(current);
+        for (const entity of expired) remaining.delete(entity);
+        return remaining;
+      });
+    }, GRAVITY.presenceFadeMs + 40);
+    fadeTimers.current.add(timer);
+    setLeaving((current) => {
+      const fading = new Map(current);
+      for (const entity of gone) fading.set(entity, timer);
+      return fading;
+    });
+    // visibleKeys captures every change to the visible set.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prepared, visibleKeys]);
+  const anchorLine = gravityAnchor(prepared, time).line;
+  const shown = previous.current?.prepared === prepared
+    ? [...visible, ...Array.from(leaving.keys()).filter((entity) => !visible.includes(entity))]
+    : visible;`)
     .replace("  const elements = useRef(new Map<string, HTMLElement>());", `  const elements = useRef(new Map<string, HTMLElement>());
   const stageView = useRef<ReturnType<typeof trackGravityStage>>(undefined);`)
     .replace(/        if \(element\) elements\.current\.set\(key, element\);\n        else elements\.current\.delete\(key\);/, `        const previous = elements.current.get(key);
@@ -231,6 +276,10 @@ write("ambience.tsx", read("frontend/ambience.tsx")
     let engine: Kawarp;`)
   .replace("const reduced = matchMedia(", "const reduced = view.matchMedia(")
   .replaceAll("!document.hidden", "!page.hidden")
+  .replace("    const panel = surface.current?.parentElement?.parentElement;", `    const panel = surface.current?.parentElement?.parentElement;
+    const root = panel?.getRootNode() as Document | ShadowRoot | undefined;`)
+  .replace("? (document.querySelector<HTMLVideoElement>(", "? (root?.querySelector<HTMLVideoElement>(")
+  .replace("            document.querySelector<HTMLVideoElement>(", "            panel?.ownerDocument.querySelector<HTMLVideoElement>(")
   .replace("frameRate: Math.max(1, ambienceFps(windowActivity()))", "frameRate: Math.max(1, ambienceFps(openerActivity()))")
   .replaceAll("frame = requestAnimationFrame(tick)", "frame = view.requestAnimationFrame(tick)")
   .replaceAll("cancelAnimationFrame(frame)", "view.cancelAnimationFrame(frame)")

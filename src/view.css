@@ -15,6 +15,10 @@
   --lead-top: 31vh;
 }
 
+.lyssna-lyrics-host {
+  display: contents;
+}
+
 .lyssna-playbar-button {
   display: inline-flex !important;
 }
