@@ -25,6 +25,7 @@ import { CanvasArtwork, nowPlayingSelector, SpotifyVisualiser, useCanvas } from 
 import { clock, usePlayback, usePosition } from "./playback";
 import { LyricsPopout, pictureInPicture } from "./popout";
 import { startEnhancements } from "./enhancements";
+import { startPreferenceSync } from "./preference-sync";
 import fontCss from "./fonts/fonts.css?inline";
 import desktopCss from "./lyssna/lyrics.css?inline";
 import settingsCss from "./lyssna/settings.css?inline";
@@ -172,7 +173,7 @@ function LyricsView({ host, options, close, parent, openPopout }: {
   host: Host; options: BuildOptions; close: () => void; parent: HTMLElement; openPopout: () => Promise<void>;
 }) {
   const { track, playing } = usePlayback(host);
-  const [settings, setSettings] = useState(readSettings);
+  const settings = useLiveSettings();
   const [showSettings, setShowSettings] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
   const [leaving, setLeaving] = useState(false);
@@ -186,7 +187,6 @@ function LyricsView({ host, options, close, parent, openPopout }: {
   const lyricsPage = useRef<HTMLElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const importTrack = useRef<Track | null>(null);
-  const settingsRef = useRef(settings);
   const fonts = useAppFonts(settings);
   const coverColour = useArtworkColor(track?.cover);
   const canvas = useCanvas(track?.id, settings.canvas_lyrics && !settings.lyrics_hide_artwork);
@@ -252,10 +252,7 @@ function LyricsView({ host, options, close, parent, openPopout }: {
   }, [host, background, artistUri, trackId]);
 
   function change(patch: Partial<Settings>) {
-    const next = { ...settingsRef.current, ...patch };
-    settingsRef.current = next;
-    saveSettings(next);
-    setSettings(next);
+    saveSettings({ ...readSettings(), ...patch });
   }
 
   function toggleFullscreen() {
@@ -278,9 +275,6 @@ function LyricsView({ host, options, close, parent, openPopout }: {
     parent.classList.toggle("immersive", fullscreen);
     parent.classList.toggle("lyssna-slide-away", leaving);
   }, [parent, fullscreen, leaving]);
-  useEffect(() => {
-    setFrameCap(settings.animation_fps_cap_enabled ? settings.animation_fps_cap : 0);
-  }, [settings.animation_fps_cap_enabled, settings.animation_fps_cap]);
   useEffect(() => {
     const update = () => setWindowActivity({ minimized: document.hidden, focused: document.hasFocus() });
     update();
@@ -382,14 +376,15 @@ function LyricsView({ host, options, close, parent, openPopout }: {
 
 export default function start(options: BuildOptions) {
   const host = getHost();
-  const settings = readSettings();
-  setFrameCap(settings.animation_fps_cap_enabled ? settings.animation_fps_cap : 0);
+  const stopPreferenceSync = startPreferenceSync();
   const stylesheet = document.createElement("style");
   stylesheet.textContent = `${fontCss}\n${desktopCss}\n${settingsCss}\n${viewCss}`;
   document.head.append(stylesheet);
   let stopProvider: (() => void) | undefined;
-  function syncProvider() {
-    const disabled = readSettings().lyrics_sources_disabled;
+  function applyRuntimeSettings() {
+    const settings = readSettings();
+    setFrameCap(settings.animation_fps_cap_enabled ? settings.animation_fps_cap : 0);
+    const disabled = settings.lyrics_sources_disabled;
     if (!disabled.includes("spicy") || !disabled.includes("apple")) {
       stopProvider ??= startSpicyProvider();
     } else {
@@ -397,10 +392,10 @@ export default function start(options: BuildOptions) {
       stopProvider = undefined;
     }
   }
-  syncProvider();
-  window.addEventListener(settingsEvent, syncProvider);
+  applyRuntimeSettings();
+  window.addEventListener(settingsEvent, applyRuntimeSettings);
   function disposeProvider() {
-    window.removeEventListener(settingsEvent, syncProvider);
+    window.removeEventListener(settingsEvent, applyRuntimeSettings);
     stopProvider?.();
   }
   let close: (() => void) | undefined;
@@ -410,6 +405,7 @@ export default function start(options: BuildOptions) {
   let card: HTMLElement | undefined;
   let closePopout: (() => void) | undefined;
   let opening = false;
+  let switchingLyricsView = false;
   let disposed = false;
 
   async function openPopout() {
@@ -444,9 +440,16 @@ export default function start(options: BuildOptions) {
     }
   }
 
-  function open() {
+  async function open() {
     if (close) { close(); return; }
-    host.leaveOtherLyricsView();
+    if (switchingLyricsView || disposed) return;
+    switchingLyricsView = true;
+    try { await host.leaveOtherLyricsView(); }
+    catch (error) {
+      console.warn("[Lyssna Lyrics] Could not leave the other lyrics view:", error);
+      return;
+    } finally { switchingLyricsView = false; }
+    if (disposed) return;
     const parent = document.createElement("div");
     parent.className = "lyssna-lyrics-view";
     const main = host.mainView();
@@ -473,6 +476,7 @@ export default function start(options: BuildOptions) {
   } catch (error) {
     button?.remove();
     disposeProvider();
+    stopPreferenceSync();
     stylesheet.remove();
     throw error;
   }
@@ -506,6 +510,7 @@ export default function start(options: BuildOptions) {
       close?.();
       button?.remove();
       disposeProvider();
+      stopPreferenceSync();
       stopEnhancementStartup();
       stylesheet.remove();
     },

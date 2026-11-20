@@ -285,6 +285,7 @@ export function SettingsPanel({ settings, change, close, options, trackId, impor
         </div>
       </SettingRow>,
       flag("settings_remember_place", "Remember settings location", "Reopen Settings on the tab and at the place it was closed.", "tab location remember reopen"),
+      flag("sync_other_plugin_preferences", "Sync preferences with other plugins", "Apply changes to compatible preferences from Legacy, Spicy Lyrics or Spotify+."),
       flag("settings_allow_hiding", "Allow hiding settings", "Hide settings you never change. Restore them from Hidden settings.", "hide manage"),
       settings.settings_allow_hiding && flag("settings_hide_buttons", "Show hide buttons", "Put a hide button beside each setting's name.", "hide hidden settings buttons eye"),
       settings.settings_allow_hiding && <SettingRow key="manage-hidden" label="Manage Hidden Settings" help="Restore settings hidden from the main window.">

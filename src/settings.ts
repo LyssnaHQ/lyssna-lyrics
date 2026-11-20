@@ -66,6 +66,7 @@ export const defaults = {
   lyrics_source_order: ["local", "spicy", "apple", "lrcred", "lrclib", "netease"] as string[],
   lyrics_sources_disabled: ["lrcred", "lrclib", "netease"] as string[],
   lyrics_prefer_apple: true,
+  sync_other_plugin_preferences: false,
   settings_remember_place: true,
   settings_allow_hiding: false,
   settings_hide_buttons: true,
@@ -76,10 +77,19 @@ export type Settings = typeof defaults;
 const key = "lyssna-lyrics.settings.v1";
 export const settingsEvent = "lyssna-lyrics:settings";
 
+function readRecord() {
+  const saved = JSON.parse(localStorage.getItem(key) ?? "null") as (Partial<Settings> & { legacy_preferences_migrated?: boolean }) | null;
+  return saved && typeof saved === "object" && !Array.isArray(saved) ? saved : {};
+}
+
+export function legacyPreferencesMigrated() {
+  try { return readRecord().legacy_preferences_migrated === true; }
+  catch { return false; }
+}
+
 export function readSettings(): Settings {
   try {
-    const saved = JSON.parse(localStorage.getItem(key) ?? "null") as Partial<Settings> | null;
-    if (!saved || typeof saved !== "object") return { ...defaults };
+    const { legacy_preferences_migrated: _migrated, ...saved } = readRecord();
     const settings = { ...defaults, ...saved };
     const animator = settings.lyrics_animator;
     settings.lyrics_animator = animator ? {
@@ -93,7 +103,7 @@ export function readSettings(): Settings {
   }
 }
 
-export function saveSettings(settings: Settings) {
-  localStorage.setItem(key, JSON.stringify(settings));
+export function saveSettings(settings: Settings, migrated = legacyPreferencesMigrated()) {
+  localStorage.setItem(key, JSON.stringify({ ...settings, legacy_preferences_migrated: migrated }));
   window.dispatchEvent(new Event(settingsEvent));
 }

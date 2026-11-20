@@ -6,13 +6,14 @@ import { defaults, type Settings } from "./settings";
 
 export async function exportSettings(settings: Settings) {
   const offsets = Object.fromEntries(Object.entries(settings.lyric_song_offsets).map(([id, offset]) => [`spotify:track:${id}`, offset]));
+  const { sync_other_plugin_preferences: _sync, ...preferences } = settings;
   const file: SettingsTransfer = {
     format: "lyssna-settings", version: 1, source: "standalone", exportedAt: new Date().toISOString(),
-    standalone: { settings: { ...settings, lyric_song_offsets: offsets } }, lyrics: await listLocalLyrics(),
+    standalone: { settings: { ...preferences, lyric_song_offsets: offsets } }, lyrics: await listLocalLyrics(),
   };
   const plugin = pluginPreferences(file);
-  const { enhancements: _enhancements, ...preferences } = plugin;
-  downloadTransfer({ ...file, source: "plugin", plugin: { ...preferences, enhancements: {} } }, "lyssna-lyrics");
+  const { enhancements: _enhancements, ...pluginSettings } = plugin;
+  downloadTransfer({ ...file, source: "plugin", plugin: { ...pluginSettings, enhancements: {} } }, "lyssna-lyrics");
 }
 
 const choices = {
@@ -26,14 +27,11 @@ const choices = {
   lyrics_cache_action: ["song", "reload", "all"],
 };
 
-export async function importSettings(file: File) {
-  if (file.size > TRANSFER_LIMIT) throw new Error("Settings files must be under 100 MB.");
-  const transfer = parseTransfer(await file.text());
-  const input = standalonePreferences(transfer);
+export function validatePreferences(input: Record<string, unknown>) {
   const patch: Record<string, unknown> = {};
   for (const [key, fallback] of Object.entries(defaults)) {
     const value = input[key];
-    if (value === undefined) continue;
+    if (value === undefined || key === "sync_other_plugin_preferences") continue;
     if (Object.hasOwn(choices, key)) {
       if (choices[key as keyof typeof choices].includes(String(value))) patch[key] = value;
     } else if (Array.isArray(fallback)) {
@@ -59,11 +57,18 @@ export async function importSettings(file: File) {
     const animator = patch.lyrics_animator;
     patch.lyrics_animator = {
       ...animator,
-      custom: cleanAnimatorValues(animator.custom),
-      saved: cleanSavedPresets(animator.saved),
+      ...(Object.hasOwn(animator, "custom") ? { custom: cleanAnimatorValues(animator.custom) } : {}),
+      ...(Object.hasOwn(animator, "saved") ? { saved: cleanSavedPresets(animator.saved) } : {}),
     };
   }
+  return patch as Partial<Settings>;
+}
+
+export async function importSettings(file: File) {
+  if (file.size > TRANSFER_LIMIT) throw new Error("Settings files must be under 100 MB.");
+  const transfer = parseTransfer(await file.text());
+  const patch = validatePreferences(standalonePreferences(transfer));
   const ttml = transfer.lyrics.filter((entry) => entry.kind === "ttml" && /^spotify:track:[A-Za-z0-9]{22}$/.test(entry.uri));
   if (ttml.length) await saveLocalLyrics(ttml);
-  return { patch: patch as Partial<Settings>, skipped: transfer.lyrics.length - ttml.length };
+  return { patch, skipped: transfer.lyrics.length - ttml.length };
 }

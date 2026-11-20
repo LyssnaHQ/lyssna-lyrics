@@ -2,8 +2,7 @@ import { useState, useSyncExternalStore } from "react";
 import { getSettings, getCachedPlaylistFolders, setSetting, subscribeSettings, type EnhancementKey, type PlaylistFolderEntry } from "./config";
 import { refreshPlaylistFolderCache } from "./playlistFolders";
 import { SettingRow, Toggle } from "../lyssna/setting-row";
-import { legacyOwnsEnhancements } from "./index";
-import { storage } from "./compat";
+import { externalEnhancementOwner } from "./index";
 
 type ToggleDefinition = { key: EnhancementKey; label: string; description?: string };
 const groups: { title: string; settings: ToggleDefinition[] }[] = [
@@ -35,20 +34,9 @@ export default function EnhancementsSection({ notice }: { notice: (message: stri
   const settings = useSyncExternalStore(subscribeSettings, getSettings);
   const [folders, setFolders] = useState<PlaylistFolderEntry[]>(getCachedPlaylistFolders);
   const [scanning, setScanning] = useState(false);
+  const owner = externalEnhancementOwner();
   function change<Key extends EnhancementKey>(key: Key, value: ReturnType<typeof getSettings>[Key]) {
-    if (legacyOwnsEnhancements() && key === "hideLyricsButton") {
-      // Legacy reconciles this enhancement against its lyrics preference on startup.
-      for (const name of ["LL:settings", "SL:settings"]) {
-        try {
-          const settings = JSON.parse(storage.get(name) ?? "{}");
-          if (settings && typeof settings === "object" && !Array.isArray(settings)) {
-            storage.set(name, JSON.stringify({ ...settings, removeSpotifyLyricsButton: value }));
-          }
-        } catch { /* Keep invalid legacy preferences intact. */ }
-      }
-    }
     setSetting(key, value);
-    if (legacyOwnsEnhancements()) notice("Saved. Changes apply when Spotify restarts while Legacy is active.");
   }
   const scan = async () => {
     if (scanning) return;
@@ -61,6 +49,7 @@ export default function EnhancementsSection({ notice }: { notice: (message: stri
     finally { setScanning(false); }
   };
   return <>
+    {owner && <SettingRow label={`${owner} controls enhancements`} help="Changes here apply when this plugin controls Spotify’s interface." />}
     {groups.map(group => {
       const playlistGroup = group.title === "Playlists";
       return <section className="lyrics-settings-section" key={group.title}>

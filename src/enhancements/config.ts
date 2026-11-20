@@ -1,9 +1,8 @@
 import { Spicetify, storage } from "./compat";
 
-export const SETTINGS_CHANGED_EVENT = "lyssna-lyrics:enhancements-changed";
-const storageKey = "LL:enhancements";
-const folderKey = "LL:enhancement-playlist-folders";
-const spotifyPlusEvent = "spotify-plus:settings-changed";
+export const SETTINGS_CHANGED_EVENT = "lyssna-rewrite:enhancements-changed";
+const storageKey = "lyssna-lyrics.rewrite-enhancements.v1";
+const folderKey = "lyssna-lyrics.rewrite-playlist-folders.v1";
 
 const defaults = {
   hideYourUpdatesSection: true,
@@ -41,8 +40,38 @@ export function hasStandaloneSpotifyPlus() {
   return configuredExtensions().some((name) => /(?:^|[/\\])spotify-plus\.(?:js|mjs)$/i.test(name.trim()));
 }
 
+const legacyFile = /(?:^|[/\\])lyssna-lyrics-legacy\.(?:js|mjs)(?:[?#]|$)/i;
+
+export function hasLegacyLoader() {
+  return configuredExtensions().some((name) => legacyFile.test(name.trim())) ||
+    Array.from(document.scripts).some((script) => legacyFile.test(script.src));
+}
+
 function parse(value: string | null) {
   try { return JSON.parse(value ?? "null"); } catch { return null; }
+}
+
+export function enhancementPreferences(saved: Record<string, unknown>) {
+  const patch: Partial<EnhancementSettings> = {};
+  for (const key of Object.keys(defaults) as EnhancementKey[]) {
+    const setting = saved[key];
+    const fallback = defaults[key];
+    if (Array.isArray(fallback) ? Array.isArray(setting) && setting.every((item) => typeof item === "string") : typeof setting === typeof fallback) {
+      (patch as Record<string, unknown>)[key] = setting;
+    }
+  }
+  if (!patch.playlistOverrideFolderIds && patch.playlistBaseFolderId) patch.playlistOverrideFolderIds = [patch.playlistBaseFolderId];
+  return patch;
+}
+
+export function readSpotifyPlusPreferences(read: (key: string) => Record<string, unknown> | undefined) {
+  return enhancementPreferences(Object.fromEntries(Object.keys(defaults).map((key) => [key, read(`spotify-plus-settings.${key}`)?.value])));
+}
+
+export function initializeEnhancementPreferences() {
+  if (storage.get(storageKey) != null) return;
+  const existing = parse(storage.get("LL:enhancements")) ?? {};
+  storage.set(storageKey, JSON.stringify(enhancementPreferences(existing)));
 }
 
 let lastSaved: string | null | undefined;
@@ -50,20 +79,8 @@ let snapshot = defaults;
 export function getSettings(): EnhancementSettings {
   const value = storage.get(storageKey);
   if (value === lastSaved) return snapshot;
-  const saved = parse(value);
-  const next = { ...defaults };
-  for (const key of Object.keys(defaults) as EnhancementKey[]) {
-    const setting = saved?.[key] ?? parse(storage.get(`spotify-plus-settings.${key}`))?.value;
-    const fallback = defaults[key];
-    if (Array.isArray(fallback) ? Array.isArray(setting) && setting.every((item) => typeof item === "string") : typeof setting === typeof fallback) {
-      (next as Record<EnhancementKey, unknown>)[key] = setting;
-    }
-  }
-  if (!next.playlistOverrideFolderIds.length && next.playlistBaseFolderId && !Array.isArray(saved?.playlistOverrideFolderIds)) {
-    next.playlistOverrideFolderIds = [next.playlistBaseFolderId];
-  }
   lastSaved = value;
-  snapshot = next;
+  snapshot = { ...defaults, ...enhancementPreferences(parse(value) ?? {}) };
   return snapshot;
 }
 
@@ -72,12 +89,17 @@ export function getSetting<Key extends EnhancementKey>(key: Key) {
 }
 
 export function setSetting<Key extends EnhancementKey>(key: Key, value: EnhancementSettings[Key]) {
-  storage.set(storageKey, JSON.stringify({ ...getSettings(), [key]: value }));
-  if (hasStandaloneSpotifyPlus()) {
-    storage.set(`spotify-plus-settings.${key}`, JSON.stringify({ value }));
-    window.dispatchEvent(new CustomEvent(spotifyPlusEvent, { detail: { key, value } }));
-  }
-  window.dispatchEvent(new CustomEvent(SETTINGS_CHANGED_EVENT, { detail: { key } }));
+  saveEnhancementPreferences({ [key]: value });
+}
+
+export function saveEnhancementPreferences(patch: Partial<EnhancementSettings>) {
+  const current = getSettings();
+  const changed = (Object.keys(patch) as EnhancementKey[]).filter((key) => JSON.stringify(patch[key]) !== JSON.stringify(current[key]));
+  if (!changed.length) return;
+  const next = JSON.stringify({ ...current, ...patch });
+  storage.set(storageKey, next);
+  if (storage.get(storageKey) !== next) throw new Error("Enhancement preferences could not be saved.");
+  for (const key of changed) window.dispatchEvent(new CustomEvent(SETTINGS_CHANGED_EVENT, { detail: { key } }));
 }
 
 export function subscribeSettings(update: () => void) {
@@ -86,7 +108,7 @@ export function subscribeSettings(update: () => void) {
 }
 
 export function getCachedPlaylistFolders(): PlaylistFolderEntry[] {
-  const saved = parse(storage.get(folderKey)) ?? parse(storage.get("spotify-plus.playlist-folders"))?.value;
+  const saved = parse(storage.get(folderKey));
   if (!Array.isArray(saved)) return [];
   return saved.filter((folder) => typeof folder?.id === "string" && typeof folder.label === "string" && typeof folder.path === "string")
     .map((folder) => ({
@@ -103,11 +125,5 @@ export function getCachedPlaylistFolders(): PlaylistFolderEntry[] {
 
 export function setCachedPlaylistFolders(folders: PlaylistFolderEntry[]) {
   storage.set(folderKey, JSON.stringify(folders));
-  if (hasStandaloneSpotifyPlus()) {
-    storage.set("spotify-plus.playlist-folders", JSON.stringify({ value: folders }));
-    window.dispatchEvent(new CustomEvent(spotifyPlusEvent, { detail: {
-      key: "playlistOverrideFolderIds", value: getSetting("playlistOverrideFolderIds"),
-    } }));
-  }
   window.dispatchEvent(new CustomEvent(SETTINGS_CHANGED_EVENT, { detail: { key: "playlistOverrideFolderIds" } }));
 }

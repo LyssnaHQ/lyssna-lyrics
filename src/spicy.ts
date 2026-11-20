@@ -13,7 +13,7 @@ function legacyProviderAvailable() {
   return !!legacy?.ready && legacy.frameWindow !== null;
 }
 
-function standaloneInstalled() {
+export function standaloneSpicyInstalled() {
   const globals = window as Window & { _spicy_lyrics?: unknown; SpicyLyrics?: unknown };
   if (globals._spicy_lyrics || globals.SpicyLyrics) return true;
   if (Array.from(document.scripts).some((script) => spicyName.test(script.src))) return true;
@@ -28,7 +28,7 @@ function standaloneInstalled() {
 }
 
 function externalProviderAvailable() {
-  return standaloneInstalled() || legacyProviderAvailable();
+  return standaloneSpicyInstalled() || legacyProviderAvailable();
 }
 
 type ProviderHost = Pick<Spicetify, "Config" | "Platform" | "CosmosAsync"> & {

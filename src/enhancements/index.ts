@@ -1,4 +1,4 @@
-import { configuredExtensions, getSettings, hasStandaloneSpotifyPlus, SETTINGS_CHANGED_EVENT } from "./config";
+import { getSettings, hasLegacyLoader, hasStandaloneSpotifyPlus, SETTINGS_CHANGED_EVENT } from "./config";
 import { startProfileMenuController } from "./features/profileMenu";
 import { startPlaylistMenuController } from "./features/playlistMenu";
 import { startDisablePeekController } from "./features/disablePeek";
@@ -14,27 +14,22 @@ const runtime = window as Window & {
   __LYSSNA_REWRITE_ENHANCEMENTS__?: true;
 };
 
-export function legacyOwnsEnhancements() {
-  return !runtime.__LYSSNA_REWRITE_ENHANCEMENTS__ &&
-    runtime.__LYSSNA_LYRICS_INTEGRATION__?.hasEnhancements === true &&
-    runtime.__LYSSNA_LYRICS_INTEGRATION__.phase !== "standalone" &&
-    runtime.__SPOTIFY_PLUS_RUNTIME__?.state !== "active";
+export function externalEnhancementOwner() {
+  if (runtime.__LYSSNA_REWRITE_ENHANCEMENTS__) return;
+  const standalone = runtime.__SPOTIFY_PLUS_RUNTIME__;
+  if (standalone?.state === "active" || (hasStandaloneSpotifyPlus() && standalone?.protocol !== 1)) return "Spotify+";
+  const legacy = runtime.__LYSSNA_LYRICS_INTEGRATION__;
+  if (legacy?.phase === "loading" || (legacy?.phase !== "standalone" && (hasLegacyLoader() || legacy?.hasEnhancements))) return "Lyssna Lyrics Legacy";
 }
 
-// The controllers own Spotify chrome for the life of the page, including when
-// Lyssna switches builds. Legacy and Spotify+ use the same preferences.
+// Keep only one set of Spotify interface controllers for the life of the page.
 export function startEnhancements() {
-  const legacy = configuredExtensions().some((file) => /(?:^|[/\\])lyssna-lyrics-legacy\.(?:js|mjs)$/i.test(file.trim()));
   function activate() {
     if (runtime.__LYSSNA_REWRITE_ENHANCEMENTS__) return stop();
-    const integration = runtime.__LYSSNA_LYRICS_INTEGRATION__;
-    if (legacy && integration?.phase !== "standalone") return;
-    if (integration?.hasEnhancements && integration.phase !== "standalone") return;
-    const standalone = runtime.__SPOTIFY_PLUS_RUNTIME__;
-    if (standalone?.state === "active" || (hasStandaloneSpotifyPlus() && standalone?.protocol !== 1)) return;
+    if (externalEnhancementOwner()) return;
     runtime.__LYSSNA_REWRITE_ENHANCEMENTS__ = true;
     stop();
-    if (!legacy) {
+    if (!hasLegacyLoader()) {
       runtime.__LYSSNA_LYRICS_INTEGRATION__ = { protocol: 1, phase: "integrated", hasEnhancements: true };
       window.dispatchEvent(new Event(integrationEvent));
     }

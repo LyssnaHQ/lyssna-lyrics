@@ -15,6 +15,10 @@
   --lead-top: 31vh;
 }
 
+.lyssna-playbar-button {
+  display: inline-flex !important;
+}
+
 .lyssna-playbar-button > .Wrapper-small-only {
   display: flex;
   align-items: center;

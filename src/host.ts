@@ -253,13 +253,29 @@ export function getHost() {
     mainView() {
       return document.querySelector<HTMLElement>(".Root__main-view, .main-view-panel, #main-view");
     },
-    leaveOtherLyricsView() {
+    async leaveOtherLyricsView() {
       const routes = history();
       if (routes && lyricsRoute(routes.location)) {
         const index = routes.index ?? 0;
         const previous = routes.entries?.slice(0, index).findLastIndex((location) => !lyricsRoute(location)) ?? -1;
-        if (routes.go && previous >= 0) routes.go(previous - index);
-        else routes.replace("/");
+        const go = routes.go?.bind(routes);
+        if (go && previous >= 0) {
+          // Browser history can finish after the button handler returns. Wait so
+          // its route notification closes the old page before mounting ours.
+          let unlisten: Removal | undefined;
+          let timeout: number | undefined;
+          try {
+            await new Promise<void>((resolve) => {
+              unlisten = routes.listen(() => { if (!lyricsRoute(routes.location)) resolve(); });
+              timeout = window.setTimeout(resolve, 500);
+              go(previous - index);
+            });
+          } finally {
+            clearTimeout(timeout);
+            unlisten?.();
+          }
+        }
+        if (lyricsRoute(routes.location)) routes.replace("/");
         return;
       }
       // Some Spotify clients open lyrics as a Now Playing sidebar variant.
