@@ -85,6 +85,7 @@ export class LyricAnimator {
     private reduceMotion: boolean,
     private simple = false,
     private view: Window = window,
+    private motionStrength = 1,
   ) {
     this.ends = lyrics.lines.map(vocalEnd);
   }
@@ -205,8 +206,8 @@ export class LyricAnimator {
       write(target, "--gradient-ratio", `${goal.gradient / 100}`);
     }
     if (this.reduceMotion) return;
-    const motion = target.springs.step(goal, seconds);
-    const calm = target.calm;
+    const motion = target.springs.step(goal, seconds * this.motionStrength);
+    const calm = target.calm * this.motionStrength;
     write(target, "scale", (1 + (motion.scale - 1) * calm).toFixed(4));
     write(target, "translate", `0 ${(motion.lift * calm).toFixed(4)}em`);
     if (!glow) return;

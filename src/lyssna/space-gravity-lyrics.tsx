@@ -911,8 +911,7 @@ export function SpaceGravityLyrics({
     };
   }, []);
 
-  // The normal lyrics animator drives the syllables, exactly as in the
-  // regular lyrics view.
+  // Let the sung syllables stand out against the words' floating motion.
   const animator = useRef<LyricAnimator>(undefined);
   const tuningKey = JSON.stringify(tuning ?? {});
   useLayoutEffect(() => {
@@ -924,6 +923,9 @@ export function SpaceGravityLyrics({
           `.gravity-line[data-line="${index}"]`,
         ) ?? null,
       reduceMotion,
+      false,
+      stage.current?.ownerDocument.defaultView ?? window,
+      1.45,
     );
     animator.current = instance;
     return () => instance.dispose();

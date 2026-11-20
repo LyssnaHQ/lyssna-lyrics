@@ -65,7 +65,7 @@ export function CanvasArtwork({ info, cover, playing, onUnavailable }: {
     if (playing) void ref.current?.play().catch(() => {});
     else ref.current?.pause();
   }, [playing]);
-  return <div className="cover lyrics-canvas-cover"><video ref={ref} data-canvas-video=""
+  return <div className="lyrics-canvas-cover"><video ref={ref} data-canvas-video=""
     poster={cover || undefined} muted autoPlay={playing} loop playsInline
     onCanPlay={(event) => { if (playing) void event.currentTarget.play().catch(() => {}); }} aria-label="Spotify Canvas" /></div>;
 }

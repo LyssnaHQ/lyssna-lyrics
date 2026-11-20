@@ -136,7 +136,8 @@ for (const [file, content] of snapshot) {
     .replace("  ref?: Ref<HTMLDivElement>;\n}) {", "}, ref: React.ForwardedRef<HTMLDivElement>) {")
     .replace(/\}\);\s*$/, "}));\n");
   if (file === "lyric-animator.ts") source = source
-    .replace("    private simple = false,\n", "    private simple = false,\n    private view: Window = window,\n")
+    .replace("    private simple = false,\n", "    private simple = false,\n    private view: Window = window,\n    private motionStrength = 1,\n")
+    .replace("const motion = target.springs.step(goal, seconds);\n    const calm = target.calm;", "const motion = target.springs.step(goal, seconds * this.motionStrength);\n    const calm = target.calm * this.motionStrength;")
     .replaceAll("cancelAnimationFrame(this.frame)", "this.view.cancelAnimationFrame(this.frame)")
     .replaceAll("requestAnimationFrame(this.run)", "this.view.requestAnimationFrame(this.run)");
   if (file === "space-gravity-lyrics.tsx") source = source
@@ -185,6 +186,8 @@ for (const [file, content] of snapshot) {
       stageView.current = undefined;
     };`)
     .replace("}, [time, lyrics]);", "}, [time, lyrics, reduceMotion, tuningKey]);")
+    .replace("  // The normal lyrics animator drives the syllables, exactly as in the\n  // regular lyrics view.", "  // Let the sung syllables stand out against the words' floating motion.")
+    .replace("      reduceMotion,\n    );\n    animator.current = instance;", "      reduceMotion,\n      false,\n      stage.current?.ownerDocument.defaultView ?? window,\n      1.45,\n    );\n    animator.current = instance;")
     .replace('      className={`gravity-lyrics ', '      data-animator={presetOf(tuning)}\n      className={`gravity-lyrics space-gravity ');
   if (file === "setting-row.tsx") source = source.replace("inert={!!unavailable}", "ref={(element) => { if (element) element.inert = !!unavailable; }}");
   write(file, source);
