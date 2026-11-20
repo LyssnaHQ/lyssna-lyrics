@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState, type CSSProperties } from "react";
 import Kawarp from "@kawarp/core";
 import {
   ambienceFps,
@@ -13,6 +13,7 @@ export const Ambience = memo(function Ambience({
   warp = 1,
   speed = 1,
   shade = true,
+  brightness = 100,
   saturation = 3,
   followCanvas = false,
 }: {
@@ -26,6 +27,8 @@ export const Ambience = memo(function Ambience({
   speed?: number;
   /** Omit when the parent applies this same gradient with its other shading. */
   shade?: boolean;
+  /** Percentage of the default lighting. */
+  brightness?: number;
   /** Kawarp colour boost. 3, its maximum, stands in for Spicy Lyrics'
    * `saturate(2.5)` filter on top of 1.5 without a full-panel filter pass. */
   saturation?: number;
@@ -263,6 +266,7 @@ export const Ambience = memo(function Ambience({
   return (
     <div
       className={`ambience ${reduceMotion ? "still" : ""}`}
+      style={{ "--ambience-brightness": brightness / 100 } as CSSProperties}
       aria-hidden="true"
     >
       <canvas

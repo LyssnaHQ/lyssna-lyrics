@@ -87,7 +87,7 @@ export function LyricsPopout({ host, view, close, track, playing, settings, narr
   return <section className={`lyrics-popout${narrating ? " dj-narration" : ""}`} aria-label="Lyrics pop-out" data-awake={awake || undefined}
     onPointerMove={wake} onPointerLeave={hide}
     style={{ ...fonts, "--lyric-size": `${Math.round(settings.lyric_size * 1.6)}px` } as CSSProperties}>
-    {artwork && <Ambience image={artwork} animate={playing} reduceMotion={settings.reduce_motion} />}
+    {artwork && <Ambience image={artwork} animate={playing} reduceMotion={settings.reduce_motion} brightness={settings.lyrics_background_brightness} />}
     <div className="lyssna-popout-grab" aria-hidden="true" />
     <button type="button" className="icon-button lyrics-popout-close" aria-label="Close lyrics pop-out" onClick={close}><X size={18} /></button>
     <header className="lyrics-popout-title">

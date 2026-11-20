@@ -509,7 +509,8 @@ export function CreatorSurface({ host, view: owner, settings, close, previewing,
             const artwork = cover && !settings.lyrics_hide_artwork && !settings.lyrics_compact;
             return <div className={`lyssna-creator-preview${settings.lyrics_artwork_right ? " artwork-right" : ""}`}>
               {cover && (settings.lyrics_background === "animated" || settings.lyrics_background === "static") &&
-                <Ambience image={cover} animate={isPlaying && settings.lyrics_background === "animated"} reduceMotion={settings.reduce_motion} />}
+                <Ambience image={cover} animate={isPlaying && settings.lyrics_background === "animated"}
+                  reduceMotion={settings.reduce_motion} brightness={settings.lyrics_background_brightness} />}
               {artwork && <div className="lyssna-creator-preview-album">
                 <img src={cover} alt="" /><strong>{song.name}</strong><span>{song.artists.map(({ name }) => name).join(", ")}</span>
               </div>}

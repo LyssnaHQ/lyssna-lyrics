@@ -1,4 +1,4 @@
-import { cloneElement, isValidElement, useEffect, useLayoutEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
+import { cloneElement, isValidElement, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
 import { AlignLeft, AppWindow, ChevronLeft, FileText, FlaskConical, Info, Palette, Pin, Search, Settings2, WandSparkles, Wrench, X } from "lucide-react";
 import EnhancementsSection from "./enhancements/section";
 import { AnimatorPanel } from "./lyssna/animator-settings";
@@ -6,7 +6,7 @@ import { appFontStyles, FontSettings } from "./font-settings";
 import { HiddenSettings, SettingRow, SettingsQuery, Toggle } from "./lyssna/setting-row";
 import { visualRows } from "./lyssna/visual-settings";
 import { lyricSources, refreshLyrics } from "./lyric-sources";
-import type { Settings } from "./settings";
+import { defaults, maxBackgroundBrightness, type Settings } from "./settings";
 import { LyricsLibrary, SourcesManager } from "./settings-library";
 import { exportSettings, importSettings } from "./settings-transfer";
 import { pictureInPicture } from "./popout";
@@ -214,7 +214,10 @@ export function SettingsPanel({ settings, change, close, options, track, notice,
     ]],
     ["Appearance", "Appearance", [
       flag("liquid_glass", "Liquid Glass", "Use translucent glass for settings, source management, and the TTML database.", "theme glass blur translucent"),
-      ...appearanceRows.map((key) => visualRowsByKey.get(key)),
+      visualRowsByKey.get("background"),
+      range("lyrics_background_brightness", "Dynamic background brightness", "Adjust the brightness of animated and still artwork backgrounds.",
+        "background brightness ambience dynamic animated artwork dim", [0, maxBackgroundBrightness, 1], defaults.lyrics_background_brightness, "%"),
+      ...appearanceRows.filter((key) => key !== "background").map((key) => visualRowsByKey.get(key)),
       flag("animation_fps_cap_enabled", "Limit animation frame rate", "Cap how often lyrics, scrolling and the moving background redraw, to save power.", "fps frame rate"),
       range("animation_fps_cap", "Animation frame rate", "The most frames per second animations draw while the limit is on.",
         "fps frame rate", [15, 240, 5], 60, " fps", !settings.animation_fps_cap_enabled),
@@ -234,13 +237,13 @@ export function SettingsPanel({ settings, change, close, options, track, notice,
           onChange={(displayNames) => change({ lyrics_discord_usernames: !displayNames })} />
       </SettingRow>,
       <SettingRow key="global-offset" label="Lyric timing offset" help="Positive values show lyrics earlier." keywords="delay timing offset">
-        <input className="number-field" aria-label="Global offset in milliseconds" type="number" min={-10000} max={10000} step={50}
-          value={settings.lyric_offset_ms} onChange={(event) => change({ lyric_offset_ms: boundedOffset(event.target.valueAsNumber) })} />
+        <TimingOffsetSlider label="Lyric timing offset" value={settings.lyric_offset_ms}
+          onChange={(lyric_offset_ms) => change({ lyric_offset_ms })} />
       </SettingRow>,
       <SettingRow key="song-offset" label="This song's offset" help="Added to the global lyric timing offset." unavailable={emptyTrack}>
-        <input className="number-field" aria-label="Song offset in milliseconds" type="number" min={-10000} max={10000} step={50} value={offset}
-          onChange={(event) => {
-            if (trackId) change({ lyric_song_offsets: { ...settings.lyric_song_offsets, [trackId]: boundedOffset(event.target.valueAsNumber) } });
+        <TimingOffsetSlider label="This song's offset" value={offset} disabled={!trackId}
+          onChange={(value) => {
+            if (trackId) change({ lyric_song_offsets: { ...settings.lyric_song_offsets, [trackId]: value } });
           }} />
       </SettingRow>,
       ...visuals.Display,
@@ -433,6 +436,16 @@ export function SettingsPanel({ settings, change, close, options, track, notice,
   </div>;
 }
 
-function boundedOffset(value: number) {
-  return Math.max(-10_000, Math.min(10_000, value || 0));
+function TimingOffsetSlider({ label, value, disabled, onChange }: {
+  label: string; value: number; disabled?: boolean; onChange(value: number): void;
+}) {
+  const limit = 10_000;
+  const text = `${value > 0 ? "+" : ""}${value} ms`;
+  const fill = (Math.max(-limit, Math.min(limit, value)) + limit) / (limit * 2) * 100;
+  return <span className="settings-range">
+    <input type="range" aria-label={label} aria-valuetext={text} min={-limit} max={limit} step={1}
+      value={value} disabled={disabled} style={{ "--fill": `${fill}%` } as CSSProperties}
+      onChange={(event) => onChange(event.currentTarget.valueAsNumber)} />
+    <output>{text}</output>
+  </span>;
 }

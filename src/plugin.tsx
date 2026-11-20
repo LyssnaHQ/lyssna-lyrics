@@ -269,7 +269,8 @@ function NowPlayingBackdrop({ host, panel }: { host: Host; panel: HTMLElement })
     return () => panel.classList.remove("lyssna-npv-ambient-panel");
   }, [enabled, panel]);
 
-  return enabled && <Ambience image={track?.cover} animate={playing} reduceMotion={settings.reduce_motion} followCanvas={canvas} />;
+  return enabled && <Ambience image={track?.cover} animate={playing} reduceMotion={settings.reduce_motion}
+    brightness={settings.lyrics_background_brightness} followCanvas={canvas} />;
 }
 
 function SpotifyMotionCover({ host }: { host: Host }) {
@@ -639,7 +640,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
     view={view} trackId={trackId} narrating={narrating} localPlayback={localPlayback} />;
   return <>
     {!showCreator && hasAmbience && <Ambience image={artwork} animate={playing && background === "animated"}
-      reduceMotion={settings.reduce_motion} followCanvas={canvas ? "window" : false} />}
+      reduceMotion={settings.reduce_motion} brightness={settings.lyrics_background_brightness} followCanvas={canvas ? "window" : false} />}
     {!showCreator && backgroundImage && <img className="lyrics-background" src={backgroundImage}
       style={{ "--artwork-blur": `${settings.lyrics_background_blur}px` } as CSSProperties}
       onError={banner ? () => setArtistHeader((current) => current?.url === banner && current.uri === artistUri ? undefined : current) : undefined} alt="" />}

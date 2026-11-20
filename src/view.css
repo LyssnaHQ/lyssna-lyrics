@@ -771,8 +771,12 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   pointer-events: none;
 }
 
-.lyssna-npv-backdrop .ambient-shade {
-  background: #0005;
+.lyssna-lyrics-view .ambience > .ambient-shade {
+  background: rgb(0 0 0 / clamp(0, calc(1 - var(--ambient-base-light, 166 / 255) * var(--ambience-brightness, 1)), 1));
+}
+
+.lyssna-npv-backdrop .ambience {
+  --ambient-base-light: calc(2 / 3);
 }
 
 .lyssna-npv-ambient-panel [data-npv-root] {

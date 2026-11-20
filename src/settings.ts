@@ -2,6 +2,7 @@ import { cleanAnimatorValues, cleanSavedPresets, type AnimatorSettings } from ".
 import type { WordFilter } from "./lyssna/word-filter";
 
 export const spotifyMix = "Spotify Mix";
+export const maxBackgroundBrightness = 150;
 export const defaults = {
   theme: "dark" as "dark" | "light" | "system",
   liquid_glass: false,
@@ -30,6 +31,7 @@ export const defaults = {
   experimental_word_sync: false,
   lyrics_animator: {} as AnimatorSettings,
   lyrics_background: "animated" as "animated" | "static" | "cover" | "artist" | "color" | "none",
+  lyrics_background_brightness: 100,
   lyrics_background_blur: 0,
   lyrics_pinned_footer: "off" as "off" | "no_writers" | "full",
   lyrics_year_position: "left" as "off" | "left" | "right",
@@ -106,6 +108,9 @@ export function readSettings(): Settings {
     const { legacy_preferences_migrated: _migrated, desktop_animator_default_applied: _animator,
       lyrics_credit_lyssna: _legacyCredit, ...saved } = readRecord();
     const settings = { ...defaults, ...saved };
+    const brightness = settings.lyrics_background_brightness;
+    settings.lyrics_background_brightness = Number.isFinite(brightness)
+      ? Math.max(0, Math.min(maxBackgroundBrightness, Math.round(brightness))) : defaults.lyrics_background_brightness;
     const animator = settings.lyrics_animator;
     settings.lyrics_animator = animator ? {
       ...animator,
