@@ -2,7 +2,7 @@ const repository = "LyssnaHQ/lyssna-lyrics";
 export async function readStableRelease(signal, catalog) {
   // Older cached entrypoints call this without a catalog.
   if (!catalog) {
-    const response = await fetch(`https://raw.githubusercontent.com/${repository}/master/loader/channels.json`, {
+    const response = await fetch(`https://raw.githubusercontent.com/${repository}/refs/heads/master/loader/channels.json`, {
       credentials: "omit", cache: "no-store", signal: AbortSignal.any([signal, AbortSignal.timeout(8_000)]),
     });
     if (!response.ok) throw new Error(`Build channels HTTP ${response.status}`);

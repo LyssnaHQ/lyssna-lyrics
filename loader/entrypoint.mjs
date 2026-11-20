@@ -1,7 +1,7 @@
 import { importBundle, importStableRelease, readStableRelease } from "./github-stable.mjs";
 
 const website = new URL("https://ipixelgalaxy.com/lyssna-plugin/");
-const repository = "https://raw.githubusercontent.com/LyssnaHQ/lyssna-lyrics/master/";
+const repository = "https://raw.githubusercontent.com/LyssnaHQ/lyssna-lyrics/refs/heads/master/";
 const channelKey = "lyssna-lyrics.v1.channel";
 const hiddenKey = "lyssna-lyrics.v1.hidden-build";
 const names = ["stable", "beta", "canary"];
