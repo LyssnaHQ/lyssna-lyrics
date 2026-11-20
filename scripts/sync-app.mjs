@@ -29,7 +29,14 @@ const components = read("frontend/components.tsx");
 const state = read("frontend/state.ts");
 const types = slice(read("frontend/types.ts"), "export interface Word {", "export interface PlayingDetails {")
   .replace("export interface Word {", "export interface Word {\n  romanization?: string;")
-  .replace("export interface Lyrics {", "export interface Lyrics {\n  lyssna?: { songId: string; contributors: { user_id?: string; username?: string }[] };");
+  .replace("export interface Lyrics {", `export interface LyssnaContributor {
+  user_id?: string;
+  username?: string;
+  avatar_url?: string;
+  share: number;
+}
+export interface Lyrics {
+  lyssna?: { songId: string; contributors: LyssnaContributor[] };`);
 const lyrics = [
   slice(styles, "\n.lyric-end-credits {", "\n.credit-avatar {"),
   slice(styles, "\n.ambience {", "\n.lyrics-page {"),

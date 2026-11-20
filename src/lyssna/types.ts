@@ -18,8 +18,14 @@ export interface Line {
   background: boolean;
   opposite: boolean;
 }
+export interface LyssnaContributor {
+  user_id?: string;
+  username?: string;
+  avatar_url?: string;
+  share: number;
+}
 export interface Lyrics {
-  lyssna?: { songId: string; contributors: { user_id?: string; username?: string }[] };
+  lyssna?: { songId: string; contributors: LyssnaContributor[] };
   songwriters?: string[];
   attribution?: { uploader?: Contributor; maker?: Contributor };
   lines: Line[];

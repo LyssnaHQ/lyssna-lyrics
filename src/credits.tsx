@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
+import { UserRound } from "lucide-react";
 import { CREDIT_NAME_OVERRIDES, lookupDiscordUser, type DiscordIdentity } from "./discord-lookup";
 import type { Contributor, Lyrics } from "./lyssna/types";
 import { readSettings, settingsEvent } from "./settings";
@@ -60,17 +61,42 @@ function LyssnaCredits({ attribution, timing, expanded }: { attribution: NonNull
     window.addEventListener(settingsEvent, update);
     return () => window.removeEventListener(settingsEvent, update);
   }, []);
-  if (!showProvider && !attribution.contributors.length) return null;
+  const contributors = attribution.contributors.slice(0, 5);
+  const named = contributors.slice(0, (contributors[1]?.share ?? 0) >= 30 ? 2 : 1);
+  if (!showProvider && !contributors.length) return null;
   return <div className={`lyric-source lyssna-provider-credits${expanded ? " expanded" : ""}`}>
-    {showProvider && <div>Lyrics provided by <a href="https://lyssna.org" target="_blank" rel="noopener noreferrer">Lyssna</a>
+    {showProvider && <div>Lyrics provided by: Lyssna
       {timing && <> <span className="lyssna-credit-timing">{timing}</span></>}
     </div>}
-    {attribution.contributors.length > 0 && <div className="lyssna-community-credits">
-      <span>Contributors</span>
-      {attribution.contributors.map(({ user_id, username }, index) => username
-        ? <a key={user_id ?? index} className="lyssna-credit-profile" href={`https://lyssna.org/u/${encodeURIComponent(username)}`}
-          target="_blank" rel="noopener noreferrer"><span className="lyssna-credit-name">{username}</span></a>
-        : <span key={user_id ?? index}>Deleted user</span>)}
+    {contributors.length > 0 && <div className="lyssna-community-credits lyssna-contributors">
+      <span>Contributors:</span>
+      <span className="lyssna-contributor-avatars">
+        {contributors.map(({ user_id, username, avatar_url }, index) => {
+          const name = username || "Deleted user";
+          const position = { "--avatar-layer": contributors.length - index } as CSSProperties;
+          const avatar = <>
+            <UserRound aria-hidden="true" />
+            {username && avatar_url && <img key={avatar_url} src={avatar_url} alt="" loading="lazy" referrerPolicy="no-referrer"
+              onError={(event) => { event.currentTarget.hidden = true; }} />}
+          </>;
+          return username
+            ? <a key={user_id ?? index} className="lyssna-contributor-avatar" style={position} href={lyssnaProfile(username)}
+              target="_blank" rel="noopener noreferrer" title={name} aria-label={name}>{avatar}</a>
+            : <span key={user_id ?? index} className="lyssna-contributor-avatar" style={position} role="img"
+              title={name} aria-label={name}>{avatar}</span>;
+        })}
+      </span>
+      <span className="lyssna-contributor-names">
+        {named.map(({ user_id, username }, index) => <span key={user_id ?? index}>
+          {username ? <a className="lyssna-credit-profile" href={lyssnaProfile(username)} target="_blank" rel="noopener noreferrer">
+            <span className="lyssna-credit-name">{username}</span>
+          </a> : "Deleted user"}{index < named.length - 1 && ","}
+        </span>)}
+      </span>
     </div>}
   </div>;
+}
+
+function lyssnaProfile(username: string) {
+  return `https://lyssna.org/u/${encodeURIComponent(username)}`;
 }

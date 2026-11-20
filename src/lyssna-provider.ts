@@ -1,14 +1,14 @@
 import type { Track } from "./host";
 import { parseLocalTtml } from "./local-lyrics";
 import { lyssnaRequest } from "./lyssna-api";
-import type { Line, Lyrics } from "./lyssna/types";
+import type { Line, Lyrics, LyssnaContributor } from "./lyssna/types";
 
 type LyricsView = {
   song: { id: string };
   ttml: string;
   offset_ms: number;
   timing_kind: "word" | "line" | "static";
-  contributors: { user_id?: string; username?: string }[];
+  contributors: LyssnaContributor[];
 };
 type CacheEntry = {
   value: LyricsView | null;

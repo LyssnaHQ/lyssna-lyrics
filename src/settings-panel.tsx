@@ -247,7 +247,7 @@ export function SettingsPanel({ settings, change, close, options, trackId, impor
     ]],
     ["Effects", "Lyric effects", visuals.Effects.filter((row) => !appearanceRows.includes(visualRowKey(row)))],
     ["Sources", "Sources", [
-      flag("lyrics_credit_lyssna", "Credit Lyssna", "Show the link to Lyssna beside lyrics it provides.", "attribution provider credits"),
+      flag("lyrics_credit_lyssna", "Credit Lyssna", "Show Lyssna beside lyrics it provides.", "attribution provider credits"),
       <SettingRow key="source-order" label="Manage Sources" help="Set lyric source priority, availability, and provider options."
         keywords={`sources order ${sourceSearch}`}>
         {submenuButton("sources", "Manage")}
