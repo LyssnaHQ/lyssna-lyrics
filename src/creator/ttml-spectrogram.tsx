@@ -330,6 +330,7 @@ export function TtmlSpectrogram({
   const [preview, setPreview] = useState<CreatorLine[] | null>(null);
   const [, setLoaded] = useState(0);
   const [failed, setFailed] = useState<string | null>(null);
+  const spectrum = useRef<HTMLElement>(null);
   const area = useRef<HTMLDivElement>(null);
   const ruler = useRef<HTMLCanvasElement>(null);
   const target = useRef({ zoom, scroll });
@@ -380,18 +381,23 @@ export function TtmlSpectrogram({
 
   useEffect(() => {
     const element = area.current;
-    if (!element) return;
+    const panel = spectrum.current;
+    if (!element || !panel) return;
     const observer = new ResizeObserver(([entry]) =>
       setWidth(entry.contentRect.width),
     );
     observer.observe(element);
     const wheel = (event: WheelEvent) => {
+      if (!event.ctrlKey && !event.composedPath().includes(element)) return;
       event.preventDefault();
       browsed.current = performance.now();
-      const box = element.getBoundingClientRect();
-      const x = event.clientX - box.left;
       const goal = target.current;
       if (event.ctrlKey) {
+        // Spotify also handles Ctrl+Wheel on window and ignores defaultPrevented.
+        event.stopPropagation();
+        if (!event.deltaY) return;
+        const box = element.getBoundingClientRect();
+        const x = Math.max(0, Math.min(box.width, event.clientX - box.left));
         const at = (goal.scroll + x) / goal.zoom;
         const zoomTo = Math.min(
           MAX_ZOOM,
@@ -412,10 +418,10 @@ export function TtmlSpectrogram({
       }
       glide();
     };
-    element.addEventListener("wheel", wheel, { passive: false });
+    panel.addEventListener("wheel", wheel, { capture: true, passive: false });
     return () => {
       observer.disconnect();
-      element.removeEventListener("wheel", wheel);
+      panel.removeEventListener("wheel", wheel, true);
     };
   }, []);
 
@@ -691,6 +697,7 @@ export function TtmlSpectrogram({
 
   return (
     <section
+      ref={spectrum}
       className={`ttml-spectrum${pitch ? " spotify-pitch" : ""}`}
       aria-label={liveCapture ? "Captured Spotify spectrogram" : pitch ? "Spotify pitch analysis" : "Spectrogram"}
       style={{ height }}
