@@ -3,8 +3,8 @@ const nativePreview = '[data-testid="lyrics-npv-section"]';
 const trackVisual = '[data-testid="track-visual-enhancement"]';
 const canvasSurface = '[data-canvas-surface], .main-nowPlayingView-canvasVisualEnhancement, .canvasVideoContainerNPV';
 
-export function findPlaybarCover() {
-  return document.querySelector<HTMLElement>(
+export function findPlaybarCover(page: Document = document) {
+  return page.querySelector<HTMLElement>(
     ':is([data-testid="now-playing-widget"], [data-testid="now-playing-widget-v2"], .main-nowPlayingWidget-nowPlaying) .cover-art:has(> img)',
   );
 }

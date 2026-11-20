@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState, type CSSProperties } from "react";
 import { AudioLines, ChevronDown, ChevronRight, ChevronUp, Download, Gauge, HardDrive, Headphones, Pause, Play, RotateCcw, Trash2 } from "lucide-react";
 import { useCreatorEnvironment, type RecordingStatus } from "./environment";
 import { useAnchoredPopover } from "../anchored-popover";
+import { findPlaybarCover } from "../now-playing";
 import { recordingExportEnabled, recordingFormats, type RecordingFormat } from "./recording-export";
 import { formatTime } from "./ttml-creator-model";
 import type { Track } from "./types";
@@ -42,6 +43,19 @@ export interface BarSpan {
   current: boolean;
 }
 
+function RecordingCover({ cover, page }: { cover?: string; page: Document }) {
+  const [failed, setFailed] = useState<string[]>([]);
+  const [playbarCover] = useState(() => {
+    const image = findPlaybarCover(page)?.querySelector<HTMLImageElement>(":scope > img");
+    return image?.currentSrc || image?.getAttribute("src");
+  });
+  const src = [cover, playbarCover].find((url) => url && !failed.includes(url));
+  return <span className="ttml-recording-cover" aria-hidden="true">
+    {src ? <img key={src} src={src} alt="" onError={() => setFailed((previous) => [...previous, src])} />
+      : <AudioLines size={22} />}
+  </span>;
+}
+
 function RecordingDetails({ track, percent, sharing, deleting, returnToSpotify, remove, exportAudio }: RecordingStatus & { track: Track }) {
   const { view, manageStoredData } = useCreatorEnvironment();
   const [open, setOpen] = useState(false);
@@ -51,7 +65,7 @@ function RecordingDetails({ track, percent, sharing, deleting, returnToSpotify, 
   const trigger = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);
   const id = useId();
-  const cover = track.album.images[0]?.url;
+  const cover = track.album.images.find(({ url }) => url)?.url;
   const artists = track.artists.map(({ name }) => name).join(", ");
   const complete = percent === 100;
   useAnchoredPopover(view, open, trigger, panel);
@@ -74,10 +88,7 @@ function RecordingDetails({ track, percent, sharing, deleting, returnToSpotify, 
       onToggle={(event) => { if (event.newState === "closed") setOpen(false); }}>
       <h2 id={`${id}-title`}>Saved audio</h2>
       <div className="ttml-recording-track">
-        <span className="ttml-recording-cover" aria-hidden="true">
-          <AudioLines size={22} />
-          {cover && <img key={cover} src={cover} alt="" onError={({ currentTarget }) => { currentTarget.hidden = true; }} />}
-        </span>
+        {open && <RecordingCover key={track.uri} cover={cover} page={view.document} />}
         <div>
           <strong title={track.name}>{track.name}</strong>
           {artists && <span title={artists}>{artists}</span>}

@@ -2950,7 +2950,7 @@ export function TtmlCreator({
       {barSlot && createPortal(
         <TtmlBar position={position} duration={track.duration_ms}
           peaks={peaks?.uri === track.uri ? peaks.values : null} spans={barSpans} onSeek={seek}
-          track={track} recording={here ? recording : undefined} />, barSlot)}
+          track={playing?.uri === track.uri ? playing : track} recording={here ? recording : undefined} />, barSlot)}
       {barSlot && createPortal(
         <CreatorSpeed speed={shownSpeed} min={MIN_SPEED} max={MAX_SPEED}
           disabled={!here || (!state.speedEnabled && !replayAvailable)}

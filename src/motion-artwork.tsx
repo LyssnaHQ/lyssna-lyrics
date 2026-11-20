@@ -1,46 +1,47 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { lyssnaInstallReady, lyssnaRequest, lyssnaRetryAt } from "./lyssna-api";
 import { fetchSpotifyMedia } from "./spotify-media";
+import { clearStoredMotionArtwork, readStoredMotionArtwork, saveMotionArtwork } from "./motion-artwork-storage";
 import workerSource from "./motion-artwork-worker.js?raw";
 
 const digits = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const upcs = new Map<string, Promise<string | null | undefined>>();
 const covers = new Map<string, { expires: number; value: Promise<string | undefined> }>();
-const convertedCovers = new Map<string, Blob>();
-const convertedCoverBudget = 64 * 1024 * 1024;
+const maxInputBytes = 24 * 1024 * 1024;
+const memoryBudget = 64 * 1024 * 1024;
+const recentCovers = new Map<string, Blob>();
+let cacheRevision = 0;
+let clearing: Promise<void> | undefined;
 type MotionCover =
   | { state: "idle" }
   | { state: "loading"; progress?: number }
   | { state: "ready"; url: string; progress?: number };
-type CoverConversion = {
+type CoverLoad = {
   result: Promise<Blob | undefined>; cancel(): void; users: number;
   progress?: number; listeners: Set<(progress?: number) => void>;
 };
-const conversions = new Map<string, CoverConversion>();
+const loads = new Map<string, CoverLoad>();
 const noMotion: MotionCover = { state: "idle" };
-const loadingMotion: MotionCover = { state: "loading" };
-
-export function cachedMotionArtworkBytes() {
-  let bytes = 0;
-  for (const cover of convertedCovers.values()) bytes += cover.size;
-  return bytes;
-}
 
 export function clearMotionArtworkCache() {
+  if (clearing) return clearing;
+  cacheRevision++;
   upcs.clear();
   covers.clear();
-  for (const conversion of conversions.values()) conversion.cancel();
-  conversions.clear();
-  convertedCovers.clear();
+  for (const load of loads.values()) load.cancel();
+  loads.clear();
+  recentCovers.clear();
+  clearing = clearStoredMotionArtwork().finally(() => { clearing = undefined; });
+  return clearing;
 }
 
-function rememberConvertedCover(source: string, cover: Blob) {
-  if (cover.size > convertedCoverBudget) return;
-  convertedCovers.set(source, cover);
-  let bytes = Array.from(convertedCovers.values()).reduce((sum, item) => sum + item.size, 0);
-  while (bytes > convertedCoverBudget || convertedCovers.size > 6) {
-    const [oldest, item] = convertedCovers.entries().next().value!;
-    convertedCovers.delete(oldest);
+function rememberCover(key: string, cover: Blob) {
+  if (cover.size > memoryBudget) return;
+  recentCovers.set(key, cover);
+  let bytes = Array.from(recentCovers.values()).reduce((sum, item) => sum + item.size, 0);
+  while (bytes > memoryBudget || recentCovers.size > 6) {
+    const [oldest, item] = recentCovers.entries().next().value!;
+    recentCovers.delete(oldest);
     bytes -= item.size;
   }
 }
@@ -52,94 +53,82 @@ function motionArtworkFormat(view: Window) {
     typeof WebAssembly === "object") return "webm";
 }
 
-function startConversion(input: string): CoverConversion {
-  const abort = new AbortController();
-  const result = new Promise<Blob | undefined>((resolve) => {
+async function downloadCover(source: string, signal: AbortSignal, update: (progress: number) => void) {
+  const response = await fetch(source, { signal, credentials: "omit", redirect: "error", referrerPolicy: "no-referrer" });
+  const total = Number(response.headers.get("Content-Length"));
+  if (!response.body) return;
+  if (response.status !== 200 || total > maxInputBytes) { await response.body.cancel(); return; }
+  const reader = response.body.getReader();
+  const chunks: Uint8Array<ArrayBuffer>[] = [];
+  let size = 0;
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > maxInputBytes) { await reader.cancel(); return; }
+      chunks.push(value);
+      if (total > 0) update(Math.min(99, Math.floor(100 * size / total)));
+    }
+  } finally { reader.releaseLock(); }
+  const blob = new Blob(chunks, { type: "video/mp4" });
+  const header = new Uint8Array(await blob.slice(4, 8).arrayBuffer());
+  if (String.fromCharCode(...header) === "ftyp") return blob;
+}
+
+function convertCover(input: ArrayBuffer, signal: AbortSignal, update: (progress: number) => void) {
+  return new Promise<Blob | undefined>((resolve) => {
+    if (signal.aborted) { resolve(undefined); return; }
     const script = URL.createObjectURL(new Blob([workerSource], { type: "text/javascript" }));
     let worker: Worker;
     try { worker = new Worker(script, { type: "module" }); }
     catch { resolve(undefined); return; }
     finally { URL.revokeObjectURL(script); }
 
-    const timeout = window.setTimeout(() => finish(), 60_000);
     const cancel = () => finish();
     function finish(blob?: Blob) {
-      window.clearTimeout(timeout);
-      abort.signal.removeEventListener("abort", cancel);
+      signal.removeEventListener("abort", cancel);
       worker.terminate();
       resolve(blob);
     }
-    abort.signal.addEventListener("abort", cancel, { once: true });
+    signal.addEventListener("abort", cancel, { once: true });
     worker.onmessage = ({ data }: MessageEvent<{ progress: number } | Uint8Array<ArrayBuffer> | null>) => {
       if (data && "progress" in data) {
-        conversion.progress = data.progress;
-        conversion.listeners.forEach((listener) => listener(data.progress));
+        update(data.progress);
       } else {
         finish(data?.length ? new Blob([data], { type: "video/webm" }) : undefined);
       }
     };
     worker.onerror = () => finish();
-    worker.postMessage(input);
+    try { worker.postMessage(input, [input]); }
+    catch { finish(); }
   });
-  const conversion: CoverConversion = { result, cancel: () => abort.abort(), users: 0, listeners: new Set() };
-  conversions.set(input, conversion);
-  void result.then((blob) => {
-    if (conversions.get(input) !== conversion) return;
-    conversions.delete(input);
-    if (blob) rememberConvertedCover(input, blob);
-  });
-  return conversion;
 }
 
-function usePlayableMotionArtwork(source: string | undefined, format: ReturnType<typeof motionArtworkFormat>) {
-  const [converted, setConverted] = useState<{ source: string; cover: MotionCover }>();
-  useEffect(() => {
-    if (!source || format !== "webm") return;
-    const input = source;
-    let url: string | undefined;
-    function show(blob: Blob) {
-      url = URL.createObjectURL(blob);
-      setConverted({ source: input, cover: { state: "ready", url, progress: 100 } });
-    }
-    function release() {
-      if (url) URL.revokeObjectURL(url);
-      setConverted((current) => current?.source === input ? undefined : current);
-    }
-    const cached = convertedCovers.get(input);
-    if (cached) {
-      show(cached);
-      return release;
-    }
-    const conversion = conversions.get(input) ?? startConversion(input);
-    conversion.users++;
-    let live = true;
-    const update = (progress?: number) => setConverted({ source: input, cover: { state: "loading", progress } });
-    update(conversion.progress);
-    conversion.listeners.add(update);
-    void conversion.result.then((blob) => {
-      if (!live) return;
-      if (blob) show(blob);
-      else setConverted({ source: input, cover: noMotion });
+function startCoverLoad(key: string, source: string, format: "mp4" | "webm") {
+  const abort = new AbortController();
+  const timeout = window.setTimeout(() => abort.abort(), 60_000);
+  function update(progress: number) {
+    if (progress === load.progress) return;
+    load.progress = progress;
+    load.listeners.forEach((listener) => listener(progress));
+  }
+  const result = downloadCover(source, abort.signal, (progress) => update(format === "mp4" ? progress : Math.floor(progress / 4)))
+    .then(async (mp4) => {
+      if (!mp4 || format === "mp4") return mp4;
+      return convertCover(await mp4.arrayBuffer(), abort.signal, update);
+    }).catch(() => undefined).then((blob) => {
+      if (loads.get(key) !== load || !blob) return;
+      rememberCover(key, blob);
+      void saveMotionArtwork(key, blob).catch(() => {});
+      return blob;
+    }).finally(() => {
+      window.clearTimeout(timeout);
+      if (loads.get(key) === load) loads.delete(key);
     });
-    return () => {
-      live = false;
-      conversion.listeners.delete(update);
-      if (--conversion.users === 0 && conversions.get(input) === conversion) {
-        conversions.delete(input);
-        conversion.cancel();
-      }
-      release();
-    };
-  }, [source, format]);
-  if (!source) return noMotion;
-  if (format === "mp4") return { state: "ready", url: source } satisfies MotionCover;
-  return converted?.source === source ? converted.cover : convertedCovers.has(source) ? noMotion : loadingMotion;
-}
-
-export function useAlbumMotionArtwork(albumUri: string | undefined, upc: string | undefined, enabled: boolean, view: Window = window) {
-  const format = useMemo(() => motionArtworkFormat(view), [view]);
-  const source = useMotionArtwork(albumUri, upc, !!format && enabled);
-  return usePlayableMotionArtwork(source, format);
+  const load: CoverLoad = { result, cancel: () => abort.abort(), users: 0, listeners: new Set() };
+  loads.set(key, load);
+  return load;
 }
 
 function normalizeUpc(value: unknown) {
@@ -203,38 +192,86 @@ function coverForUpc(upc: string) {
   return entry.value;
 }
 
-function useMotionArtwork(albumUri: string | undefined, suppliedUpc: string | undefined, enabled: boolean) {
-  const [art, setArt] = useState<{ album: string; url: string }>();
+export function useAlbumMotionArtwork(albumUri: string | undefined, suppliedUpc: string | undefined, enabled: boolean, view: Window = window) {
+  const format = useMemo(() => motionArtworkFormat(view), [view]);
+  const album = /^spotify:album:([A-Za-z0-9]{22})$/.exec(albumUri ?? "")?.[1];
+  const key = enabled && album && format ? `${album}:${format}` : undefined;
+  const [art, setArt] = useState<{ key: string; cover: MotionCover }>();
   useEffect(() => {
-    const album = /^spotify:album:([A-Za-z0-9]{22})$/.exec(albumUri ?? "")?.[1];
-    if (!enabled || !album || !albumUri) return;
-    let current = true;
-    let generation = 0;
+    if (!key || !album || !format) return;
+    const cacheKey = key;
+    let live = true;
+    let looking = false;
     let timer: number | undefined;
+    let objectUrl: string | undefined;
+    let unsubscribe: (() => void) | undefined;
+
+    function show(blob: Blob) {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      objectUrl = URL.createObjectURL(blob);
+      setArt({ key: cacheKey, cover: { state: "ready", url: objectUrl } });
+    }
+
     async function lookup() {
+      if (looking || objectUrl) return;
+      looking = true;
       window.clearTimeout(timer);
-      const latest = ++generation;
-      const upc = normalizeUpc(suppliedUpc) ?? await albumUpc(album!);
-      if (!current || !upc) return;
-      const url = await coverForUpc(upc);
-      if (!current || latest !== generation) return;
-      setArt(url ? { album: albumUri!, url } : undefined);
-      const delay = lyssnaRetryAt() - Date.now();
-      if (!url && !covers.has(upc) && delay > 0 && delay <= 15 * 60_000) {
-        timer = window.setTimeout(lookup, delay + 250);
+      const revision = cacheRevision;
+      const current = () => live && revision === cacheRevision;
+      try {
+        await clearing?.catch(() => {});
+        if (!current()) return;
+        const cached = await readStoredMotionArtwork(cacheKey).catch(() => undefined) ?? recentCovers.get(cacheKey);
+        if (!current()) return;
+        if (cached) { show(cached); return; }
+        const upc = normalizeUpc(suppliedUpc) ?? await albumUpc(album!);
+        if (!current() || !upc) return;
+        const url = await coverForUpc(upc);
+        if (!current()) return;
+        if (!url) {
+          const delay = lyssnaRetryAt() - Date.now();
+          if (!covers.has(upc) && delay > 0 && delay <= 15 * 60_000) timer = window.setTimeout(lookup, delay + 250);
+          return;
+        }
+        const load = loads.get(cacheKey) ?? startCoverLoad(cacheKey, url, format!);
+        load.users++;
+        const progress = (value?: number) => {
+          if (current()) setArt({ key: cacheKey, cover: { state: "loading", progress: value } });
+        };
+        progress(load.progress);
+        load.listeners.add(progress);
+        unsubscribe = () => {
+          load.listeners.delete(progress);
+          if (--load.users === 0 && loads.get(cacheKey) === load) {
+            loads.delete(cacheKey);
+            load.cancel();
+          }
+        };
+        const blob = await load.result;
+        unsubscribe?.();
+        unsubscribe = undefined;
+        if (current() && blob) show(blob);
+        else if (live) setArt(current() && format === "mp4"
+          ? { key: cacheKey, cover: { state: "ready", url } } : undefined);
+      } finally {
+        looking = false;
       }
     }
     window.addEventListener(lyssnaInstallReady, lookup);
     window.addEventListener("online", lookup);
     void lookup();
     return () => {
-      current = false;
+      live = false;
       window.clearTimeout(timer);
       window.removeEventListener(lyssnaInstallReady, lookup);
       window.removeEventListener("online", lookup);
+      unsubscribe?.();
+      unsubscribe = undefined;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      setArt((current) => current?.key === cacheKey ? undefined : current);
     };
-  }, [albumUri, suppliedUpc, enabled]);
-  return enabled && art?.album === albumUri ? art?.url : undefined;
+  }, [key, album, format, suppliedUpc]);
+  return art && art.key === key ? art.cover : noMotion;
 }
 
 function CoverProgress({ value }: { value?: number }) {
