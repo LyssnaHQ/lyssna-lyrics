@@ -35,6 +35,22 @@ type SpotifyTrack = {
   album?: { uri?: string; name?: string; images?: Array<{ url?: string }>; release_date?: string; releaseDate?: string };
   metadata?: Record<string, string>;
 };
+type PlayerState = {
+  item?: SpotifyTrack;
+  isPaused?: boolean;
+  context?: { uri?: string; metadata?: Record<string, string> };
+  signals?: string[];
+  nextItems?: SpotifyTrack[];
+};
+type PlayerAPI = {
+  _state?: PlayerState | null;
+  sendSignal?(signal: string): unknown;
+  skipTo?(item: SpotifyTrack): unknown;
+  _events?: {
+    addListener(event: "update", listener: () => void): void;
+    removeListener?(event: "update", listener: () => void): void;
+  };
+};
 
 export type Spicetify = {
   Config?: HostConfig;
@@ -49,8 +65,8 @@ export type Spicetify = {
   getAudioData?(uri: string): Promise<AudioAnalysis | null>;
   Queue?: { nextTracks?: { contextTrack?: SpotifyTrack; uri?: string }[] };
   Player: {
-    data?: { item?: SpotifyTrack; isPaused?: boolean };
-    origin?: { _state?: unknown };
+    data?: PlayerState;
+    origin?: PlayerAPI;
     getProgress(): number;
     getDuration?(): number;
     getRepeat?(): number;
@@ -87,7 +103,7 @@ type SpotiKit = {
   Queue?: { next: { title: string; artist: string; image: string }[] };
   Player: {
     track: SpotifyTrack | null;
-    state: { item?: SpotifyTrack; isPaused?: boolean } | null;
+    state: PlayerState | null;
     isPlaying: boolean;
     position: number;
     duration: number;
@@ -129,6 +145,14 @@ function artwork(url: string) {
 }
 
 const repeatModes = ["off", "context", "track"] as const;
+const djContexts = new Set([
+  "spotify:playlist:37i9dQZF1EYkqdzj48dyYq",
+  "spotify:playlist:37i9dQZF1EYkqdzj8OSOas",
+  "spotify:playlist:37i9dQZF1EYkqdzjdvy3mw",
+  "spotify:playlist:37i9dQZF1EYkqdzjicdiyA",
+  "spotify:playlist:37i9dQZF1EYkqdzjmSSxKE",
+  "spotify:playlist:37i9dQZF1EYkqdzjrzxMWI",
+]);
 const nativeLyricsButton = 'button[data-testid="lyrics-button"]';
 const otherLyricsButtons = `${nativeLyricsButton}, #LyssnaLyrics_PageButton, #LyssnaLyrics_FullscreenButton`;
 const lyricsRoute = (location?: HistoryLocation) => /^\/(?:lyrics|spicylyrics|lyssnalyrics)(?:\/|$)/i.test(location?.pathname ?? "");
@@ -175,6 +199,19 @@ export function getHost() {
   const canvases = new Map<string, Promise<CanvasInfo | null | undefined>>();
   const analyses = new Map<string, Promise<AudioAnalysis | null>>();
   const currentTrack = () => kit?.Player.state?.item ?? kit?.Player.track ?? spice?.Player.data?.item;
+  function djAction() {
+    const player = (kit?.Platform.PlayerAPI as PlayerAPI | undefined) ?? spice?.Player.origin;
+    const state = player?._state ?? kit?.Player.state ?? spice?.Player.data;
+    if (!player || !state) return;
+    if (player.sendSignal && state.signals?.includes("jump")) return () => player.sendSignal?.("jump");
+    const context = state.context;
+    if (!player.skipTo || !state.item || !context || state.item.metadata?.is_narration === "true" ||
+      (context.metadata?.lexicon_set_type !== "your_dj" && !djContexts.has(context.uri ?? ""))) return;
+    const queue = state.nextItems;
+    const jump = queue?.find((item) => item.metadata?.jump_track) ??
+      queue?.find((item) => item.metadata?.["narration.intro.ssml"] || item.metadata?.["narration.jump.ssml"]);
+    if (jump) return () => player.skipTo?.(jump);
+  }
   function graph() {
     const spiceGraph = spice?.GraphQL;
     const kitGraph = kit?.GraphQL;
@@ -297,6 +334,8 @@ export function getHost() {
     toggleShuffle: () => kit ? kit.Player.setShuffle?.(!kit.Player.shuffle) : spice?.Player.toggleShuffle?.(),
     liked: () => kit ? kit.Player.liked : spice?.Player.getHeart?.() ?? false,
     toggleLiked: () => kit ? kit.Player.setLiked?.(!kit.Player.liked) : spice?.Player.toggleHeart?.(),
+    canJumpDJ: () => !!djAction(),
+    jumpDJ: () => djAction()?.(),
     artistHeader,
     releaseYear,
     trackCanvas,
@@ -376,6 +415,13 @@ export function getHost() {
       const events = progress ? ["songchange", "onplaypause", "onprogress"] : ["songchange", "onplaypause"];
       for (const event of events) spice?.Player.addEventListener(event, listener);
       return () => events.forEach((event) => spice?.Player.removeEventListener(event, listener));
+    },
+    watchControls(listener: () => void): Removal {
+      if (kit) return kit.Player.on("state", listener);
+      const events = spice?.Player.origin?._events;
+      if (!events?.removeListener) return this.watch(listener, true);
+      events.addListener("update", listener);
+      return () => events.removeListener?.("update", listener);
     },
     button(label: string, click: () => void) {
       if (kit) {

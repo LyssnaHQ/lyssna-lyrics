@@ -1,5 +1,5 @@
 import { cloneElement, isValidElement, useEffect, useLayoutEffect, useRef, useState, type ReactElement, type ReactNode } from "react";
-import { AlignLeft, AppWindow, ChevronLeft, FileText, FlaskConical, Info, Palette, Search, Settings2, WandSparkles, Wrench, X } from "lucide-react";
+import { AlignLeft, AppWindow, ChevronLeft, FileText, FlaskConical, Info, Palette, Pin, Search, Settings2, WandSparkles, Wrench, X } from "lucide-react";
 import EnhancementsSection from "./enhancements/section";
 import { AnimatorPanel } from "./lyssna/animator-settings";
 import { FontSettings, useAppFonts } from "./lyssna/custom-fonts";
@@ -10,6 +10,7 @@ import type { Settings } from "./settings";
 import { LyricsLibrary, SourcesManager } from "./settings-library";
 import { exportSettings, importSettings } from "./settings-transfer";
 import { pictureInPicture } from "./popout";
+import { quickEffects } from "./quick-effects";
 
 export type Channel = "stable" | "beta" | "canary";
 export const channelLabels: Record<Channel, string> = { stable: "Stable", beta: "Beta", canary: "Canary" };
@@ -239,7 +240,7 @@ export function SettingsPanel({ settings, change, close, options, trackId, impor
         "cinema window external popup", pictureInPicture ? undefined : "This Spotify client does not support Picture-in-Picture windows."),
       flag("cinema_window", "Enable Cinema Lyrics Window", developerMode === true
         ? "Add a playbar button that opens the full lyrics view in a separate window."
-        : "Add a separate cinema window to the playbar. Enable Spotify DevTools with spicetify enable-devtools.",
+        : "The separate lyrics window requires Spotify DevTools. Enable it with spicetify enable-devtools.",
       "cinema window external popup devtools"),
       ...visuals.Layout,
       visualRowsByKey.get("year"),
@@ -316,10 +317,22 @@ export function SettingsPanel({ settings, change, close, options, trackId, impor
     if (section[0] === "Advanced" || section[0] === "Credits") continue;
     section[2] = section[2].map((row) => {
       if (!isValidElement(row) || row.type !== SettingRow || row.key === null) return row;
-      const setting = row as ReactElement<{ label: ReactNode; hideId?: string }>;
+      const setting = row as ReactElement<{ label: ReactNode; hideId?: string; children?: ReactNode }>;
       const id = String(row.key);
       if (hidden.has(id)) hiddenRows.set(id, typeof setting.props.label === "string" ? setting.props.label : id);
-      return cloneElement(setting, { hideId: id });
+      const effect = quickEffects.find((option) => option.id === id);
+      if (!effect) return cloneElement(setting, { hideId: id });
+      const pins = settings.pinned_lyric_effects;
+      const pinned = pins.includes(id);
+      const title = `${pinned ? "Unpin" : "Pin"} ${effect.label} ${pinned ? "from" : "to"} the lyrics toolbar`;
+      return cloneElement(setting, { hideId: id }, <>
+        <button className="icon-button setting-pin" type="button" title={title}
+          aria-label={`Pin ${effect.label} to the lyrics toolbar`} aria-pressed={pinned}
+          onClick={() => change({ pinned_lyric_effects: pinned ? pins.filter((pin) => pin !== id) : [...pins, id] })}>
+          <Pin size={14} />
+        </button>
+        {setting.props.children}
+      </>);
     });
   }
   const hiddenSettings = settings.hidden_settings.map((id) => <SettingRow key={id} label={hiddenRows.get(id) ?? id.replaceAll("_", " ")}>

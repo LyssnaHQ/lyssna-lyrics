@@ -45,6 +45,7 @@ export const defaults = {
   lyrics_word_filter: "off" as WordFilter,
   space_gravity: false,
   lyrics_highlighter: false,
+  pinned_lyric_effects: [] as string[],
   lyrics_highlighter_color: "#d4b80f",
   gravity_links: true,
   gravity_link_width: 100,

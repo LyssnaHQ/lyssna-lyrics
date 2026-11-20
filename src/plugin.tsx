@@ -1,10 +1,10 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { ChevronUp, FoldVertical, MicVocal, Music2, PanelLeftOpen, Settings as GearIcon, UnfoldVertical, X } from "lucide-react";
+import { ChevronUp, Disc3, FoldVertical, MicVocal, Music2, PanelLeftOpen, Settings as GearIcon, UnfoldVertical, X } from "lucide-react";
 import { getHost, type CanvasInfo, type Host, type Track } from "./host";
 import { useArtworkColor } from "./lyssna/artwork-color";
 import { Ambience } from "./lyssna/ambience";
 import { setFrameCap } from "./lyssna/frame-cap";
-import { FullscreenPauseIcon, FullscreenPlayIcon, FullscreenVolumeIcon, SkipNextIcon, SkipPreviousIcon } from "./lyssna/fullscreen-icons";
+import { FullscreenHeartIcon, FullscreenPauseIcon, FullscreenPlayIcon, FullscreenRepeatIcon, FullscreenShuffleIcon, FullscreenVolumeIcon, SkipNextIcon, SkipPreviousIcon } from "./lyssna/fullscreen-icons";
 import { LyricsDisplay, LyricsSkeleton, WriterCredits } from "./lyssna/renderer";
 import { markerColour } from "./lyssna/highlighter";
 import { SpaceGravityLyrics } from "./lyssna/space-gravity-lyrics";
@@ -25,11 +25,12 @@ import { CanvasArtwork, SpotifyVisualiser, useCanvas } from "./spotify-artwork";
 import { findNowPlaying, nowPlayingArtwork, nowPlayingCanvas, placeNowPlayingPreview } from "./now-playing";
 import { TrackMetadata } from "./track-metadata";
 import { useDefaultLyricsFont } from "./lyrics-font-fallback";
-import { clock, usePlayback, usePosition } from "./playback";
+import { clock, usePlayback, usePlaybackControls, usePosition } from "./playback";
 import { LyricsPopout, pictureInPicture } from "./popout";
 import { startEnhancements } from "./enhancements";
 import { startPreferenceSync } from "./preference-sync";
 import { playbarViewButtons } from "./playbar-fullscreen";
+import { quickEffects } from "./quick-effects";
 import fontCss from "./fonts/fonts.css?inline";
 import desktopCss from "./lyssna/lyrics.css?inline";
 import settingsCss from "./lyssna/settings.css?inline";
@@ -233,8 +234,22 @@ function PopoutView({ host, view, close }: { host: Host; view: Window; close: ()
   </LyricsPopout>;
 }
 
-function FullscreenControls({ host, playing, settings, view }: { host: Host; playing: boolean; settings: Settings; view: Window }) {
+function clearPointerFocus({ currentTarget }: { currentTarget: HTMLInputElement }) {
+  delete currentTarget.dataset.pointerFocus;
+}
+
+const rangeFocus = {
+  onPointerDown({ currentTarget }: { currentTarget: HTMLInputElement }) { currentTarget.dataset.pointerFocus = ""; },
+  onKeyDown: clearPointerFocus,
+  onBlur: clearPointerFocus,
+};
+
+function FullscreenControls({ host, playing, settings, view, trackId }: {
+  host: Host; playing: boolean; settings: Settings; view: Window; trackId?: string;
+}) {
   const position = usePosition(host, playing, view);
+  const { liked, shuffle, repeat, canJumpDJ, activate, cycleRepeat } = usePlaybackControls(host, trackId, true);
+  const likeLabel = liked ? "Remove from Liked Songs" : "Save to Liked Songs";
   const duration = host.duration();
   const [volume, setVolume] = useState(host.volume);
   const audible = useRef(volume || 0.5);
@@ -248,7 +263,7 @@ function FullscreenControls({ host, playing, settings, view }: { host: Host; pla
       data-level={volume <= 0 ? "muted" : volume < 0.5 ? "low" : "high"}
       style={{ "--range": `${volume * 100}%` } as CSSProperties}>
       <span className="lyrics-volume-fill" aria-hidden="true" />
-      <input aria-label="Volume" type="range" min={0} max={1} step={0.01}
+      <input aria-label="Volume" type="range" min={0} max={1} step={0.01} {...rangeFocus}
         value={volume} onChange={(event) => changeVolume(event.target.valueAsNumber)} />
       <button className="lyrics-volume-icon" type="button" aria-label={volume ? "Mute" : "Unmute"}
         onClick={() => changeVolume(volume ? 0 : audible.current)}><FullscreenVolumeIcon /></button>
@@ -262,18 +277,27 @@ function FullscreenControls({ host, playing, settings, view }: { host: Host; pla
       <time>{clock(elapsed)}</time>
       <div className="lyrics-glass-seek" style={{ "--range": `${elapsed / Math.max(1, duration) * 100}%` } as CSSProperties}>
         <span className="lyrics-glass-fill" aria-hidden="true" />
-        <input aria-label="Seek position" type="range" min={0} max={duration || 1}
+        <input aria-label="Seek position" type="range" min={0} max={duration || 1} {...rangeFocus}
           value={elapsed} onChange={(event) => host.seek(event.target.valueAsNumber)} />
       </div>
       <time>{total}</time>
     </div>
     <div className="lyssna-transport">
+      <button type="button" className={`icon-button lyrics-fullscreen-like${liked ? " is-saved" : ""}`}
+        title={likeLabel} aria-label={likeLabel} aria-pressed={liked} disabled={!trackId}
+        onClick={activate(host.toggleLiked)}><FullscreenHeartIcon /></button>
       {settings.fullscreen_volume === "left" && volumeSlider}
+      <button type="button" className="icon-button" title="Shuffle" aria-label="Shuffle" aria-pressed={shuffle}
+        onClick={activate(host.toggleShuffle)}><FullscreenShuffleIcon /></button>
       <button type="button" className="icon-button" aria-label="Previous" onClick={host.previous}><SkipPreviousIcon /></button>
       <button type="button" className="icon-button" aria-label={playing ? "Pause" : "Play"} onClick={host.toggle}>
         {playing ? <FullscreenPauseIcon /> : <FullscreenPlayIcon />}
       </button>
       <button type="button" className="icon-button" aria-label="Next" onClick={host.next}><SkipNextIcon /></button>
+      <button type="button" className="icon-button" title={`Repeat (${repeat})`} aria-label={`Repeat (${repeat})`}
+        aria-pressed={repeat !== "off"} onClick={activate(cycleRepeat)}><FullscreenRepeatIcon one={repeat === "track"} /></button>
+      {canJumpDJ && <button type="button" className="icon-button lyssna-dj" title="Change the DJ mix"
+        aria-label="Change the DJ mix" onClick={activate(host.jumpDJ)}><Disc3 /></button>}
       {settings.fullscreen_volume === "right" && volumeSlider}
     </div>
     {settings.fullscreen_volume === "below" && volumeSlider}
@@ -495,7 +519,8 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
             playing={playing && !settings.reduce_motion} onUnavailable={setUnavailableCanvas} />
             : track.cover && <div className="lyrics-media"><img className={`cover${settings.cover_animation && !settings.reduce_motion ? " crossfade" : ""}`}
               key={track.cover} src={track.cover} alt="" /></div>}
-          <TrackMetadata host={host} track={track} year={year} yearPosition={settings.lyrics_year_position} reduceMotion={settings.reduce_motion} />
+          <TrackMetadata host={host} track={track} year={year} yearPosition={settings.lyrics_year_position}
+            reduceMotion={settings.reduce_motion} artistFirst={!!canvas} />
         </div>
         <div className="lyrics-body"><LyricsForTrack key={track.id} track={track} host={host} playing={playing} settings={settings} view={view} fullView /></div>
       </> : <div className="lyrics-message"><Music2 /><h2>Play something you love</h2><p>Your lyrics will appear here.</p></div>}
@@ -511,6 +536,11 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
         ] as const).map(([key, label, Icon]) => <button type="button" key={key} data-icon={key} title={label}
           className={`icon-button${settings[key] ? " active" : ""}`} aria-label={label} aria-pressed={settings[key]}
           onClick={() => change({ [key]: !settings[key] })}><Icon /></button>)}
+        {quickEffects.filter(({ id }) => settings.pinned_lyric_effects.includes(id)).map(({ id, label, Icon }) => (
+          <button type="button" key={id} data-icon={id} title={label} aria-label={label} aria-pressed={settings[id]}
+            className={`icon-button${settings[id] ? " active" : ""}`}
+            onClick={() => change({ [id]: !settings[id] })}><Icon /></button>
+        ))}
         <span className="toolbar-divider" aria-hidden="true" />
         <button type="button" className="icon-button" data-icon="upload" title="Load TTML" aria-label="Load TTML"
           disabled={!track} onClick={importTtml}><UploadIcon /></button>
@@ -524,7 +554,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
         <button type="button" className="icon-button" title="Close lyrics" aria-label="Close lyrics" onClick={close}><X size={18} /></button>
       </div>
       {!showSettings && notice && <div className="lyssna-popout-error" role="status">{notice}</div>}
-      {(fullscreen || externalCinema) && <FullscreenControls host={host} playing={playing} settings={settings} view={view} />}
+      {(fullscreen || externalCinema) && <FullscreenControls host={host} playing={playing} settings={settings} view={view} trackId={track?.id} />}
     </section>
     <input ref={fileInput} type="file" hidden accept=".ttml,.xml,application/ttml+xml" onChange={(event) => {
       const file = event.currentTarget.files?.[0];

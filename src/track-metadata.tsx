@@ -29,17 +29,18 @@ function CatalogueLink({ host, uri, children }: { host: Host; uri?: string; chil
   }}>{children}</a> : <>{children}</>;
 }
 
-export function TrackMetadata({ host, track, year, yearPosition, reduceMotion }: {
-  host: Host; track: Track; year?: string; yearPosition: Settings["lyrics_year_position"]; reduceMotion: boolean;
+export function TrackMetadata({ host, track, year, yearPosition, reduceMotion, artistFirst = false }: {
+  host: Host; track: Track; year?: string; yearPosition: Settings["lyrics_year_position"]; reduceMotion: boolean; artistFirst?: boolean;
 }) {
   const artists = track.artistLinks?.length ? track.artistLinks : [{ name: track.artists, uri: track.artistUri }];
   const hasYear = year && yearPosition !== "off";
   const dot = hasYear && track.artists && <span className="lyrics-year-dot" aria-hidden="true">·</span>;
+  const title = <Marquee className="lyrics-title" text={track.title} reduceMotion={reduceMotion}>
+    <strong className="song-title"><CatalogueLink host={host} uri={track.albumUri}>{track.title}</CatalogueLink></strong>
+  </Marquee>;
   return <div className="lyrics-details">
-    <Marquee className="lyrics-title" text={track.title} reduceMotion={reduceMotion}>
-      <strong className="song-title"><CatalogueLink host={host} uri={track.albumUri}>{track.title}</CatalogueLink></strong>
-    </Marquee>
-    <div className="lyrics-artists">
+    {!artistFirst && title}
+    {(hasYear || track.artists) && <div className="lyrics-artists">
       {hasYear && yearPosition === "left" && <><span className="lyrics-year">{year}</span>{dot}</>}
       {track.artists && <Marquee className="lyrics-artist-names" text={track.artists} reduceMotion={reduceMotion}>
         {artists.map((artist, index) => <Fragment key={`${artist.uri ?? artist.name}-${index}`}>
@@ -47,6 +48,7 @@ export function TrackMetadata({ host, track, year, yearPosition, reduceMotion }:
         </Fragment>)}
       </Marquee>}
       {hasYear && yearPosition === "right" && <>{dot}<span className="lyrics-year">{year}</span></>}
-    </div>
+    </div>}
+    {artistFirst && title}
   </div>;
 }

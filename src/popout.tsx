@@ -3,7 +3,7 @@ import { Heart, X } from "lucide-react";
 import type { Host, Track } from "./host";
 import { Ambience } from "./lyssna/ambience";
 import { NextIcon, PauseIcon, PlayIcon, PreviousIcon, RepeatIcon, ShuffleIcon } from "./lyssna/player-icons";
-import { clock, usePosition } from "./playback";
+import { clock, usePlaybackControls, usePosition } from "./playback";
 import { useAppFonts } from "./lyssna/custom-fonts";
 import type { Settings } from "./settings";
 
@@ -32,25 +32,7 @@ function PopoutSeek({ host, playing, view }: { host: Host; playing: boolean; vie
 }
 
 function PopoutControls({ host, track, playing }: { host: Host; track: Track | null; playing: boolean }) {
-  const [controls, setControls] = useState(() => ({ liked: host.liked(), shuffle: host.shuffle(), repeat: host.repeat() }));
-  function update() {
-    const liked = host.liked(), shuffle = host.shuffle(), repeat = host.repeat();
-    setControls((old) => liked === old.liked && shuffle === old.shuffle && repeat === old.repeat ? old : { liked, shuffle, repeat });
-  }
-  useEffect(() => {
-    const unwatch = host.watch(update, true);
-    update();
-    return unwatch;
-  }, [host, track?.id]);
-  async function change(operation: () => unknown) {
-    try {
-      await operation();
-    } finally {
-      update();
-    }
-  }
-  const { liked, shuffle, repeat } = controls;
-  const activate = (operation: () => unknown) => () => { void change(operation).catch(console.error); };
+  const { liked, shuffle, repeat, activate, cycleRepeat } = usePlaybackControls(host, track?.id);
   return <div className="lyrics-popout-controls">
     <button type="button" className={`icon-button lyrics-popout-like${liked ? " active" : ""}`}
       aria-label={liked ? "Remove from Liked Songs" : "Save to Liked Songs"} aria-pressed={liked}
@@ -65,7 +47,7 @@ function PopoutControls({ host, track, playing }: { host: Host; track: Track | n
       <button type="button" className="icon-button" aria-label="Next song" onClick={host.next}><NextIcon size={22} /></button>
       <button type="button" className={`icon-button${repeat !== "off" ? " active" : ""}`}
         aria-label={`Repeat (${repeat})`} aria-pressed={repeat !== "off"}
-        onClick={activate(() => host.setRepeat(repeat === "off" ? "context" : repeat === "context" ? "track" : "off"))}>
+        onClick={activate(cycleRepeat)}>
         <RepeatIcon size={20} one={repeat === "track"} />
       </button>
     </div>

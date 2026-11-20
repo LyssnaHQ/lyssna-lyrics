@@ -13,6 +13,8 @@ With Node.js LTS installed, run `npm ci` and `npm run build`. `dist/` contains t
 
 Open Lyssna from the microphone button in Spotify’s playbar. Older SpotiKit versions use the top bar. Use the playbar’s fullscreen button to open lyrics across the display. In the lyrics view, the fullscreen button and F11 do the same. Hold Shift for cinema mode inside the Spotify window. On clients that expose Document Picture-in-Picture, the pop-out button opens a floating lyrics window with playback controls. The gear opens Lyssna settings, where changes apply immediately and persist across Spotify restarts. The Build channel selector is under Advanced. Stable takes precedence on first launch, followed by Beta and Canary.
 
+**Cinema Lyrics Window** opens the full lyrics view in a separate, resizable window and follows Spotify playback. Run `spicetify enable-devtools` with Spicetify, then turn on **Enable Cinema Lyrics Window** in Lyssna’s **Layout** settings. Click **Cinema Lyrics Window** in the playbar to open it. The separate window requires Spotify DevTools to be enabled.
+
 Artist Header uses the lead artist’s Spotify banner and falls back to the album cover. The Canvas setting uses the video Spotify exposes in Now playing. The visualiser uses Spotify’s track analysis. The host supplies these features when it has data for the current track.
 
 Effects changes the lyric renderer. Enhancements changes Spotify’s menus, playbar, and playlist picker. The controllers were ported from iPixelGalaxy’s legacy revision `c3e02aa`. When Legacy owns the controllers, changes made in the rewrite apply on the next Spotify restart.
