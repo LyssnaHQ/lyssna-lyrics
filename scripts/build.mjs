@@ -44,6 +44,9 @@ copyFileSync("loader/spotikit.json", join(output, "spotikit", "spotikit.json"));
 const notices = readFileSync("THIRD_PARTY_NOTICES.md", "utf8");
 const licenses = ["lucide-react/LICENSE", "@kawarp/core/LICENSE", "transliteration/LICENSE.txt"]
   .map((path) => readFileSync(join("node_modules", path), "utf8").trim());
+for (const path of ["src/fonts/Inter-OFL.txt", "src/fonts/Metropolis-Unlicense.txt"]) {
+  licenses.push(readFileSync(path, "utf8").trim());
+}
 // Use line comments so a third-party notice can contain a literal block-comment terminator.
 const header = [notices.trim(), ...licenses].join("\n\n").split(/\r?\n/).map((line) => `// ${line}`).join("\n");
 write(join(host, "builds", filename), `${header}\n${readFileSync(payload, "utf8")}`);

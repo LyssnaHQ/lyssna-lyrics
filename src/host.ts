@@ -4,7 +4,16 @@ import { hosts } from "./host-react";
 type Removal = () => void;
 type RepeatMode = "off" | "context" | "track";
 type ButtonOptions = { label: string; icon: string; onClick: () => void };
-type Button = { remove(): void };
+type Button = { active: boolean; remove(): void };
+type HistoryLocation = { pathname: string };
+type SpotifyHistory = {
+  location: HistoryLocation;
+  entries?: HistoryLocation[];
+  index?: number;
+  go?(offset: number): void;
+  replace(path: string): void;
+  listen(callback: () => void): Removal;
+};
 export type AudioSegment = { start: number; duration: number; pitches: number[]; loudness_max: number };
 type AudioAnalysis = { segments?: AudioSegment[] };
 type ImageSource = { url?: string; width?: number; maxWidth?: number };
@@ -55,7 +64,9 @@ export type Spicetify = {
     addEventListener(event: string, callback: (event: unknown) => void): void;
     removeEventListener(event: string, callback: (event: unknown) => void): void;
   };
-  Playbar: { Button: new (label: string, icon: string, click: () => void, disabled: boolean, active: boolean, registerOnCreate: boolean) => { register(): void; deregister(): void } };
+  Playbar: { Button: new (label: string, icon: string, click: () => void, disabled: boolean, active: boolean, registerOnCreate: boolean) => {
+    active: boolean; element: HTMLButtonElement; register(): void; deregister(): void;
+  } };
 };
 
 type SpotiKit = {
@@ -107,6 +118,9 @@ function artwork(url: string) {
 }
 
 const repeatModes = ["off", "context", "track"] as const;
+const nativeLyricsButton = 'button[data-testid="lyrics-button"]';
+const otherLyricsButtons = `${nativeLyricsButton}, #LyssnaLyrics_PageButton, #LyssnaLyrics_FullscreenButton`;
+const lyricsRoute = (location?: HistoryLocation) => /^\/(?:lyrics|spicylyrics|lyssnalyrics)(?:\/|$)/i.test(location?.pathname ?? "");
 
 function headerImage(result: ArtistHeaderResult) {
   const artist = result?.data?.artistUnion;
@@ -131,6 +145,7 @@ export function getHost() {
     unmountComponentAtNode?: (container: HTMLElement) => void;
   } | undefined;
   if ((!kit && !spice) || !dom) throw new Error("Spotify host is unavailable");
+  const history = () => (kit?.Platform.History ?? spice?.Platform?.History) as SpotifyHistory | undefined;
 
   const spiceGraph = spice?.GraphQL;
   const kitGraph = kit?.GraphQL;
@@ -209,6 +224,29 @@ export function getHost() {
     mainView() {
       return document.querySelector<HTMLElement>(".Root__main-view, .main-view-panel, #main-view");
     },
+    leaveOtherLyricsView() {
+      const routes = history();
+      if (routes && lyricsRoute(routes.location)) {
+        const index = routes.index ?? 0;
+        const previous = routes.entries?.slice(0, index).findLastIndex((location) => !lyricsRoute(location)) ?? -1;
+        if (routes.go && previous >= 0) routes.go(previous - index);
+        else routes.replace("/");
+        return;
+      }
+      // Some Spotify clients open lyrics as a Now Playing sidebar variant.
+      document.querySelector<HTMLButtonElement>(`${nativeLyricsButton}[aria-pressed="true"]`)?.click();
+    },
+    watchViewSwitch(listener: () => void): Removal {
+      const unlisten = history()?.listen?.(listener);
+      const selectLyrics = (event: MouseEvent) => {
+        if (event.target instanceof Element && event.target.closest(otherLyricsButtons)) listener();
+      };
+      document.addEventListener("click", selectLyrics, true);
+      return () => {
+        unlisten?.();
+        document.removeEventListener("click", selectLyrics, true);
+      };
+    },
     watch(listener: () => void, progress = false): Removal {
       if (kit) {
         const events = progress ? ["track", "playpause", "state"] : ["track", "playpause"];
@@ -219,14 +257,26 @@ export function getHost() {
       for (const event of events) spice?.Player.addEventListener(event, listener);
       return () => events.forEach((event) => spice?.Player.removeEventListener(event, listener));
     },
-    button(label: string, click: () => void): Removal {
+    button(label: string, click: () => void) {
       if (kit) {
         const button = (kit.Playbar ?? kit.Topbar).add({ label, icon, onClick: click });
-        return () => button.remove();
+        return {
+          setActive(active: boolean) { button.active = active; },
+          remove: () => button.remove(),
+        };
       }
       const button = new spice!.Playbar.Button(label, icon, click, false, false, false);
+      button.element.classList.add("lyssna-playbar-button");
+      button.element.setAttribute("aria-label", label);
+      button.element.setAttribute("aria-pressed", "false");
       button.register();
-      return () => button.deregister();
+      return {
+        setActive(active: boolean) {
+          button.active = active;
+          button.element.setAttribute("aria-pressed", String(active));
+        },
+        remove: () => button.deregister(),
+      };
     },
     mount(container: HTMLElement): Root {
       return dom.createRoot?.(container) ?? {

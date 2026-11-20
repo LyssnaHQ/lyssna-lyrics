@@ -20,6 +20,7 @@ import { LyricCredits } from "./credits";
 import { CanvasArtwork, nowPlayingSelector, SpotifyVisualiser, useCanvas } from "./spotify-artwork";
 import { clock, usePlayback, usePosition } from "./playback";
 import { LyricsPopout, pictureInPicture } from "./popout";
+import fontCss from "./fonts/fonts.css?inline";
 import desktopCss from "./lyssna/lyrics.css?inline";
 import settingsCss from "./lyssna/settings.css?inline";
 import viewCss from "./view.css?inline";
@@ -227,6 +228,7 @@ function LyricsView({ host, options, close, parent, openPopout }: {
     ${settings.lyrics_hide_artwork ? "no-artwork" : ""} ${settings.lyrics_artwork_right ? "artwork-right" : ""}
     ${background === "color" ? "colour-background" : ""} ${settings.lyrics_toolbar_bottom ? "toolbar-bottom" : ""} ${settings.reduce_motion ? "reduce-motion" : ""}`;
   const pageStyle = { "--lyric-size": `${Math.round(settings.lyric_size * 1.6)}px`, "--lyric-font": settings.lyric_font || undefined,
+    "--lyric-detail-font": settings.lyric_font || undefined,
     "--lyrics-cover-color": coverColour, "--hero": coverColour } as CSSProperties;
   return <>
     {hasAmbience && <Ambience image={track.cover} animate={playing && background === "animated"}
@@ -279,10 +281,12 @@ export default function start(options: BuildOptions) {
   const settings = readSettings();
   setFrameCap(settings.animation_fps_cap_enabled ? settings.animation_fps_cap : 0);
   const stylesheet = document.createElement("style");
-  stylesheet.textContent = `${desktopCss}\n${settingsCss}\n${viewCss}`;
+  stylesheet.textContent = `${fontCss}\n${desktopCss}\n${settingsCss}\n${viewCss}`;
   document.head.append(stylesheet);
   const stopProvider = startSpicyProvider();
   let close: (() => void) | undefined;
+  let mainContainer: HTMLElement | undefined;
+  let button: ReturnType<Host["button"]> | undefined;
   let removeCard: (() => void) | undefined;
   let card: HTMLElement | undefined;
   let closePopout: (() => void) | undefined;
@@ -323,27 +327,39 @@ export default function start(options: BuildOptions) {
 
   function open() {
     if (close) { close(); return; }
+    host.leaveOtherLyricsView();
     const parent = document.createElement("div");
     parent.className = "lyssna-lyrics-view";
     const main = host.mainView();
     (main ?? document.body).append(parent);
     if (!main) parent.classList.add("lyssna-full-window");
     const root = host.mount(parent);
-    const dismiss = () => { root.unmount(); parent.remove(); close = undefined; };
+    const dismiss = () => {
+      close = undefined;
+      mainContainer = undefined;
+      button?.setActive(false);
+      root.unmount();
+      parent.remove();
+    };
     close = dismiss;
+    mainContainer = parent;
+    button?.setActive(true);
     root.render(<LyricsView host={host} options={options} close={dismiss} parent={parent} openPopout={openPopout} />);
   }
 
-  let removeButton: () => void;
+  let stopViewSwitch: () => void;
   try {
-    removeButton = host.button(`Lyssna Lyrics (${channelLabels[options.channel]})`, open);
+    button = host.button(`Lyssna Lyrics (${channelLabels[options.channel]})`, open);
+    stopViewSwitch = host.watchViewSwitch(() => close?.());
   } catch (error) {
+    button?.remove();
     stopProvider();
     stylesheet.remove();
     throw error;
   }
 
   function attachCard() {
+    if (mainContainer && !mainContainer.isConnected) close?.();
     if (card?.isConnected) return;
     removeCard?.();
     removeCard = undefined;
@@ -364,10 +380,11 @@ export default function start(options: BuildOptions) {
     dispose() {
       disposed = true;
       observer.disconnect();
+      stopViewSwitch();
       removeCard?.();
       closePopout?.();
       close?.();
-      removeButton();
+      button?.remove();
       stopProvider();
       stylesheet.remove();
     },

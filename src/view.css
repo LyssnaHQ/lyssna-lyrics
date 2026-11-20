@@ -8,8 +8,60 @@
   color: #fff;
   color-scheme: dark;
   background: #181818;
+  font-family: "Lyssna Metropolis", "Segoe UI Variable Text", "Segoe UI", Arial, sans-serif;
+  font-synthesis: none;
+  --lyric-font: "Lyssna Inter", "Segoe UI", sans-serif;
   --lyric-size: 58px;
   --lead-top: 31vh;
+}
+
+.lyssna-playbar-button > .Wrapper-small-only {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+.lyssna-playbar-button > .Wrapper-small-only > svg {
+  display: block;
+  width: 20px !important;
+  height: 20px !important;
+  flex: none;
+}
+
+.lyssna-playbar-button[aria-pressed="true"] {
+  position: relative;
+  color: var(--spice-button, #1ed760);
+}
+
+.lyssna-playbar-button[aria-pressed="true"]::after {
+  content: "";
+  position: absolute;
+  display: block;
+  width: 4px;
+  height: 4px;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background-color: var(--spice-button, #1ed760);
+}
+
+.lyssna-lyrics-view :is(button, input, select) {
+  font-family: inherit;
+}
+
+.lyssna-lyrics-view button.lyric-line {
+  appearance: none;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  font-family: var(--lyric-font);
+}
+
+.lyssna-lyrics-view :is(.lyrics-title, .lyrics-artists, .lyrics-popout-title, .lyric-source, .lyric-end-credits, .writer-credits) {
+  font-family: var(--lyric-detail-font, inherit);
 }
 
 :is(.Root__main-view, .main-view-panel, #main-view):has(> .lyssna-lyrics-view) {
@@ -53,7 +105,6 @@
 }
 
 .lyssna-popout-view {
-  font-family: system-ui, sans-serif;
   --lead-top: 22vh;
 }
 

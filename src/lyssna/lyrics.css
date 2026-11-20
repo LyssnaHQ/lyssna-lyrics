@@ -1,4 +1,26 @@
 @scope (.lyssna-lyrics-view) {
+.lyric-end-credits {
+  /* Leave room below so credits can scroll clear of the bottom fade. */
+  padding: 24px 2px 48px;
+  color: light-dark(#262626a6, #d9d9d9a6);
+  font-size: 15px;
+  line-height: 1.6;
+}
+.lyric-end-credits p {
+  margin: 0 0 14px;
+  color: inherit;
+}
+.lyric-end-credits .lyric-source {
+  position: static;
+  text-align: left;
+  font-size: 14px;
+  padding: 0;
+}
+.lyric-source.expanded > span {
+  display: block;
+  margin-top: 8px;
+}
+
 .ambience {
   position: absolute;
   inset: 0;

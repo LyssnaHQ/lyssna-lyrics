@@ -30,6 +30,7 @@ const state = read("frontend/state.ts");
 const types = slice(read("frontend/types.ts"), "export interface Word {", "export interface PlayingDetails {")
   .replace("export interface Word {", "export interface Word {\n  romanization?: string;");
 const lyrics = [
+  slice(styles, "\n.lyric-end-credits {", "\n.credit-avatar {"),
   slice(styles, "\n.ambience {", "\n.lyrics-page {"),
   slice(styles, "\n.lyrics-page {", "/* Followed artists"),
   slice(styles, "\n.lyric-credits-row {", "/* Only carries the song menu"),
