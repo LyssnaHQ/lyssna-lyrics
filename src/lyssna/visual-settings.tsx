@@ -177,8 +177,8 @@ return { flag, range, Look: [
 ], Display: [
         flag(
           "lyrics_seek_compensation",
-          "Seek fade-in compensation",
-          "Clicking a lyric starts 300 ms before it, so a speaker that fades in after a seek is at full volume when the line begins.",
+          "Space Gravity seek fade-in compensation",
+          "Clicking a floating word during playback seeks 300 ms early to give speakers time to fade in.",
           "seek fade in compensation click lyric early volume",
         ),
         flag(

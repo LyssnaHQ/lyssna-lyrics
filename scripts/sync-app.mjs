@@ -89,7 +89,23 @@ import { LyricCredits } from "../credits";`,
   slice(state, "export function activeLines(", "export function progress("),
   slice(components, "function WriterCredits(", "/** The badge's E").replace("function WriterCredits(", "export function WriterCredits("),
   slice(components, "function creditsInView(", "/** Up next pops in"),
-  slice(components, "/** Seek Fade-in Compensation", "const LyricCredits =")
+  slice(components, "/** Spicy Lyrics resumes following", "const LyricCredits =")
+    .replace("  positionMs,\n  settings,\n  onSeek,", "  positionMs,\n  playing,\n  settings,\n  onSeek,")
+    .replace("  positionMs: number;\n  settings: Settings;\n  onSeek: (ms: number) => void;", "  positionMs: number;\n  playing: boolean;\n  settings: Settings;\n  onSeek: (ms: number) => number;")
+    .replace(/  const seek = useRef\(onSeek\);[\s\S]*?\n  }, \[onSeek, seekLead\]\);/, `  const [pausedLine, setPausedLine] = useState<{ line: Line; index: number; from: number; target: number }>();
+  const transport = useRef({ playing, positionMs, onSeek });
+  transport.current = { playing, positionMs, onSeek };
+  const selected = !playing && pausedLine && lyrics.lines[pausedLine.index] === pausedLine.line &&
+    (positionMs === pausedLine.from || Math.abs(positionMs - pausedLine.target) <= 25) ? pausedLine.index : undefined;
+  useEffect(() => {
+    if (pausedLine && selected === undefined) setPausedLine(undefined);
+  }, [pausedLine, selected]);`)
+    .replace("seek.current(line.words[0]?.start_ms ?? line.start_ms);", `const { playing, positionMs, onSeek } = transport.current;
+            const target = onSeek(line.start_ms);
+            if (!playing) setPausedLine({ line, index, from: positionMs, target });`)
+    .replace("const gap = lyrics.synced ?", "const gap = lyrics.synced && selected === undefined ?")
+    .replace("(settings.lyrics_early_scroll\n", "(playing && settings.lyrics_early_scroll\n")
+    .replace("    active.find((index)", "    selected ?? active.find((index)")
     .replace('compact ? "off" : (settings.lyrics_pinned_footer ?? "off")', 'settings.lyrics_pinned_footer ?? "off"')
     .replace("      data-following={following}", "      data-following={following}\n      data-animator={presetOf(settings.lyrics_animator)}")
     .replace("      !!settings.lyrics_simple,\n", "      !!settings.lyrics_simple,\n      scroll.current?.ownerDocument.defaultView ?? window,\n")
@@ -123,7 +139,10 @@ export function visualRows(settings: Settings, onSettings: (patch: Partial<Setti
   slice(rows, '        <SettingRow\n          key="size"', "        <FontSettings"),
   slice(rows, '        <SettingRow\n          key="background"', '      ],\n    ],\n    [\n      "Lyrics",\n      "Display"'),
   "], Display: [",
-  slice(rows, '        flag(\n          "lyrics_seek_compensation"', '        flag(\n          "romaji_as_written"'),
+  slice(rows, '        flag(\n          "lyrics_seek_compensation"', '        flag(\n          "romaji_as_written"')
+    .replace('"Seek fade-in compensation"', '"Space Gravity seek fade-in compensation"')
+    .replace('"Clicking a lyric starts 300 ms before it, so a speaker that fades in after a seek is at full volume when the line begins."',
+      '"Clicking a floating word during playback seeks 300 ms early to give speakers time to fade in."'),
   slice(rows, '        flag(\n          "lyrics_translations"', '        flag(\n          "lyrics_visualiser"'),
   slice(rows, '        flag(\n          "lyrics_visualiser"', '        flag(\n          "lyrics_keep_overlaps"')
     .replace(" && !soloistPlays", "").replace("          soloistPlays,\n", ""),

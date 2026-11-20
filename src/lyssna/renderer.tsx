@@ -59,9 +59,6 @@ function creditsInView(container: HTMLElement, above: HTMLElement) {
   );
 }
 
-/** Seek Fade-in Compensation from Spicy Lyrics: a clicked lyric starts
- *  this far early, so a device's fade-in after a seek ends as it begins. */
-const SEEK_FADE_LEAD_MS = 300;
 /** Spicy Lyrics resumes following this long after the last scroll. */
 const BROWSE_COOLDOWN_MS = 750;
 export function LyricsDisplay({
@@ -106,8 +103,8 @@ export function LyricsDisplay({
   };
   const lines = useRef<(HTMLButtonElement | null)[]>([]);
   const [pausedLine, setPausedLine] = useState<{ line: Line; index: number; from: number; target: number }>();
-  const transport = useRef({ playing, positionMs, onSeek, compensate: settings.lyrics_seek_compensation !== false });
-  transport.current = { playing, positionMs, onSeek, compensate: settings.lyrics_seek_compensation !== false };
+  const transport = useRef({ playing, positionMs, onSeek });
+  transport.current = { playing, positionMs, onSeek };
   const selected = !playing && pausedLine && lyrics.lines[pausedLine.index] === pausedLine.line &&
     (positionMs === pausedLine.from || Math.abs(positionMs - pausedLine.target) <= 25) ? pausedLine.index : undefined;
   useEffect(() => {
@@ -122,9 +119,8 @@ export function LyricsDisplay({
         },
         click: () => {
           if (lyrics.synced) {
-            const { playing, positionMs, onSeek, compensate } = transport.current;
-            const start = line.words[0]?.start_ms ?? line.start_ms;
-            const target = onSeek(start - (playing && compensate ? SEEK_FADE_LEAD_MS : 0));
+            const { playing, positionMs, onSeek } = transport.current;
+            const target = onSeek(line.start_ms);
             if (!playing) setPausedLine({ line, index, from: positionMs, target });
             setFollowing(true);
           }
