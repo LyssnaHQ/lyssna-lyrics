@@ -1,17 +1,23 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, ChevronUp, Gauge, Pause, Play } from "lucide-react";
+import { ChevronDown, ChevronUp, Gauge, Headphones, Pause, Play } from "lucide-react";
 import { useCreatorEnvironment } from "./environment";
 import { formatTime } from "./ttml-creator-model";
 
-export function CreatorSpeed({ speed, min, max, disabled, onChange }: {
-  speed: number; min: number; max: number; disabled: boolean; onChange(value: number): void;
+export function CreatorSpeed({ speed, min, max, disabled, onChange, openAudio }: {
+  speed: number; min: number; max: number; disabled: boolean; onChange(value: number): void; openAudio?: () => void;
 }) {
-  return <label className="lyssna-editor-speed" title={disabled ? "Share Spotify audio or open a local file to change speed" : "Playback speed"}>
-    <Gauge size={15} aria-hidden="true" />
-    <input type="range" aria-label="Playback speed" min={min} max={max} step={0.05}
-      value={speed} disabled={disabled} onChange={(event) => onChange(event.currentTarget.valueAsNumber)} />
-    <output>{speed.toFixed(2)}×</output>
-  </label>;
+  return <div className="lyssna-editor-audio-controls">
+    <label className="lyssna-editor-speed" title={disabled ? "Share Spotify audio or open a local file to change speed" : "Playback speed"}>
+      <Gauge size={15} aria-hidden="true" />
+      <input type="range" aria-label="Playback speed" min={min} max={max} step={0.05}
+        value={speed} disabled={disabled} onChange={(event) => onChange(event.currentTarget.valueAsNumber)} />
+      <output>{speed.toFixed(2)}×</output>
+    </label>
+    <button type="button" className="lyssna-playbar-view-button" aria-label="Open local audio"
+      title="Open local audio for speed and spectrogram" disabled={!openAudio} onClick={openAudio}>
+      <Headphones size={17} />
+    </button>
+  </div>;
 }
 
 export function CreatorPlay({ playing, onToggle }: { playing: boolean; onToggle(): void }) {

@@ -278,7 +278,7 @@ export function TtmlCreator({
   playbar?: CreatorPlaybarSlots;
   onClose?: () => void;
 }) {
-  const { root, view: window, waveform, playClip, replayAvailable, replayCaptured } = useCreatorEnvironment();
+  const { root, view: window, waveform, playClip, replayAvailable, replayCaptured, openAudio } = useCreatorEnvironment();
   const document = window.document;
   const focused = () => (root.getRootNode() as Document | ShadowRoot).activeElement;
   const playing = state.playback.item;
@@ -2954,7 +2954,7 @@ export function TtmlCreator({
           onLines={setLines}
           onCursor={setCursor}
           onPlayUnit={playUnit}
-          canOpenAudio={here}
+          canCapture={here}
         />
       )}
       {barSlot && createPortal(
@@ -2963,6 +2963,7 @@ export function TtmlCreator({
       {barSlot && createPortal(
         <CreatorSpeed speed={shownSpeed} min={MIN_SPEED} max={MAX_SPEED}
           disabled={!here || (!state.speedEnabled && !replayAvailable)}
+          openAudio={here ? openAudio : undefined}
           onChange={(value) => slideSpeed(clampSpeed(value))} />, playbar?.speed ?? barSlot)}
       {playbar?.play && here && state.speedEnabled && createPortal(
         <CreatorPlay playing={isPlaying} onToggle={onToggle} />, playbar.play)}

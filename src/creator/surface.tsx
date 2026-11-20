@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Headphones, X } from "lucide-react";
+import { X } from "lucide-react";
 import type { Host, Track as SpotifyTrack } from "../host";
 import type { Settings } from "../settings";
 import { usePlayback } from "../playback";
@@ -349,8 +349,6 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
   return <div className={`lyssna-creator-surface${settings.reduce_motion ? " reduce-motion" : ""}`} ref={setRoot}>
     <style>{css}</style>
     <div className="lyssna-creator-tools">
-      <button type="button" className="icon-button" title="Open local audio for speed and spectrogram" aria-label="Open local audio"
-        disabled={!current} onClick={openAudio}><Headphones size={17} /></button>
       <input type="file" ref={picker} hidden accept="audio/*,.wav,.flac,.mp3,.m4a,.ogg,.opus" onChange={(event) => {
         const file = event.currentTarget.files?.[0];
         event.currentTarget.value = "";

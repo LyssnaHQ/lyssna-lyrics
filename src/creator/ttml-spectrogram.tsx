@@ -1,5 +1,5 @@
 import { memo, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ArrowRightToLine, AudioLines, Eye, EyeOff, FileAudio, Settings2, Square } from "lucide-react";
+import { ArrowRightToLine, AudioLines, Eye, EyeOff, Settings2, Square } from "lucide-react";
 import { useCreatorEnvironment } from "./environment";
 import { pitchBands, spectrumFrequency, spectrumFrequencyPosition } from "./audio";
 import { useLiveSpectrum } from "./live-spectrum";
@@ -252,7 +252,7 @@ export function TtmlSpectrogram({
   onLines,
   onCursor,
   onPlayUnit,
-  canOpenAudio,
+  canCapture,
 }: {
   id: string;
   uri: string;
@@ -266,11 +266,11 @@ export function TtmlSpectrogram({
   onLines: (lines: CreatorLine[]) => void;
   onCursor: (at: Cursor) => void;
   onPlayUnit: (at: Cursor) => void;
-  canOpenAudio: boolean;
+  canCapture: boolean;
 }) {
-  const { view: window, spectrogram, spectrumKey: audioKey, spectrumAudioUri, openAudio } = useCreatorEnvironment();
+  const { view: window, spectrogram, spectrumKey: audioKey, spectrumAudioUri } = useCreatorEnvironment();
   const localAudio = spectrumAudioUri === uri;
-  const canShare = canOpenAudio && !localAudio && duration > 0;
+  const canShare = canCapture && !localAudio && duration > 0;
   const liveSpectrum = useLiveSpectrum(uri, duration, canShare);
   const [introSeen, setIntroSeen] = useStored("lyssna.ttml-recording-intro", false, isBoolean);
   const showIntro = canShare && !introSeen && liveSpectrum.status === "idle";
@@ -888,10 +888,6 @@ export function TtmlSpectrogram({
             shareButton.current?.focus({ preventScroll: true });
           }}>Got it</button>
         </div>}
-        {canOpenAudio && <button className="ttml-spectrum-tool" type="button" onClick={openAudio}
-          aria-label="Open local audio" title={localAudio ? "Change the local audio file" : "Open a local audio file for the full spectrogram"}>
-          <FileAudio size={15} />
-        </button>}
         <button
           className={`ttml-spectrum-tool${everyLine ? " on" : ""}`}
           aria-pressed={everyLine}
