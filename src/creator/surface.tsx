@@ -514,8 +514,13 @@ export function CreatorSurface({ host, view: owner, settings, close, previewing,
                 <img src={cover} alt="" /><strong>{song.name}</strong><span>{song.artists.map(({ name }) => name).join(", ")}</span>
               </div>}
               <div className="lyssna-creator-preview-lines">
-                <LyricsDisplay lyrics={lyrics} positionMs={position} settings={settings}
-                  onSeek={(positionMs) => player({ command: "seek", positionMs: Math.max(0, positionMs - state.settings.lyric_offset_ms) })} />
+                <LyricsDisplay lyrics={lyrics} positionMs={position} playing={isPlaying} settings={settings}
+                  onSeek={(positionMs) => {
+                    const offset = state.settings.lyric_offset_ms;
+                    const target = Math.max(0, positionMs - offset);
+                    player({ command: "seek", positionMs: target });
+                    return target + offset;
+                  }} />
               </div>
             </div>;
           }} />

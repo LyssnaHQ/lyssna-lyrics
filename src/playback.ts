@@ -26,7 +26,9 @@ export function usePosition(host: Host, playing: boolean, view: Window = window,
   const [position, setPosition] = useState(read);
   useEffect(() => {
     const update = () => setPosition(read());
-    const unwatch = host.watch(update, true);
+    // Spicetify's progress event only ticks during playback. A paused seek
+    // still changes the underlying player state.
+    const unwatch = playing ? host.watch(update, true) : host.watchControls(update);
     update();
     if (!playing) {
       if (read === host.position) return unwatch;

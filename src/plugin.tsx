@@ -142,8 +142,13 @@ function TrackLyrics({ track, host, playing, settings, compact = false, view = w
 }) {
   const playMarker = useLyssnaPlay(host, track.id, lyrics?.lyssna?.songId, playing, view);
   const position = usePosition(host, playing, view, localPlayback?.read);
-  const seek = localPlayback?.seek ?? host.seek;
-  const time = position + settings.lyric_offset_ms + (settings.lyric_song_offsets[track.id] ?? 0);
+  const offset = settings.lyric_offset_ms + (settings.lyric_song_offsets[track.id] ?? 0);
+  const time = position + offset;
+  function seek(ms: number) {
+    const target = Math.max(0, Math.min(duration || Infinity, Math.round(ms - offset)));
+    (localPlayback?.seek ?? host.seek)(target);
+    return target + offset;
+  }
   const gravity = fullView && settings.space_gravity && !!lyrics &&
     !lyrics.instrumental && (lyrics.synced || duration > 0);
   const estimateTiming = settings.experimental_word_sync || gravity || (!lyrics?.synced && settings.lyrics_highlighter);
@@ -174,7 +179,7 @@ function TrackLyrics({ track, host, playing, settings, compact = false, view = w
 
   if (gravity && rendered?.synced && rendered.lines.some((line) => line.words.length)) {
     return <div className={fontClass} style={{ display: "contents" }}><span ref={playMarker} hidden /><SpaceGravityLyrics lyrics={rendered} time={time} reduceMotion={settings.reduce_motion}
-      tuning={settings.lyrics_animator} onSeek={(ms) => seek(Math.max(0, ms - (settings.lyrics_seek_compensation ? 300 : 0)))}
+      tuning={settings.lyrics_animator} onSeek={(ms) => seek(ms - (playing && settings.lyrics_seek_compensation ? 300 : 0))}
       highlighter={settings.lyrics_highlighter ? markerColour(settings.lyrics_highlighter_color) : undefined}
       linkWidth={settings.gravity_links ? settings.gravity_link_width / 100 : 0}
       credits={<div className={upNext ? "lyric-credits-row" : undefined}>
@@ -185,7 +190,7 @@ function TrackLyrics({ track, host, playing, settings, compact = false, view = w
         {upNext}
       </div>} /></div>;
   }
-  if (rendered) return <div className={fontClass} style={{ display: "contents" }}><span ref={playMarker} hidden /><LyricsDisplay lyrics={rendered} positionMs={time} settings={settings}
+  if (rendered) return <div className={fontClass} style={{ display: "contents" }}><span ref={playMarker} hidden /><LyricsDisplay lyrics={rendered} positionMs={time} playing={playing} settings={settings}
     onSeek={seek} compact={compact} upNext={upNext} /></div>;
   if (waiting && settings.lyrics_skeleton) return <LyricsSkeleton />;
   if (!waiting && !settings.lyrics_no_lyrics_notice) return null;

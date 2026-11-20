@@ -62,12 +62,12 @@ function creditsInView(container: HTMLElement, above: HTMLElement) {
 /** Seek Fade-in Compensation from Spicy Lyrics: a clicked lyric starts
  *  this far early, so a device's fade-in after a seek ends as it begins. */
 const SEEK_FADE_LEAD_MS = 300;
-const lyricSeekTarget = (ms: number) => Math.max(0, ms - SEEK_FADE_LEAD_MS);
 /** Spicy Lyrics resumes following this long after the last scroll. */
 const BROWSE_COOLDOWN_MS = 750;
 export function LyricsDisplay({
   lyrics,
   positionMs,
+  playing,
   settings,
   onSeek,
   compact = false,
@@ -76,8 +76,9 @@ export function LyricsDisplay({
 }: {
   lyrics: Lyrics;
   positionMs: number;
+  playing: boolean;
   settings: Settings;
-  onSeek: (ms: number) => void;
+  onSeek: (ms: number) => number;
   compact?: boolean;
   writers?: string[];
   /** Sits beside the credits at the end of the lyrics. */
@@ -104,11 +105,14 @@ export function LyricsDisplay({
     setFollowing(false);
   };
   const lines = useRef<(HTMLButtonElement | null)[]>([]);
-  const seek = useRef(onSeek);
-  const seekLead = settings.lyrics_seek_compensation !== false;
-  useLayoutEffect(() => {
-    seek.current = (ms) => onSeek(seekLead ? lyricSeekTarget(ms) : ms);
-  }, [onSeek, seekLead]);
+  const [pausedLine, setPausedLine] = useState<{ line: Line; index: number; from: number; target: number }>();
+  const transport = useRef({ playing, positionMs, onSeek, compensate: settings.lyrics_seek_compensation !== false });
+  transport.current = { playing, positionMs, onSeek, compensate: settings.lyrics_seek_compensation !== false };
+  const selected = !playing && pausedLine && lyrics.lines[pausedLine.index] === pausedLine.line &&
+    (positionMs === pausedLine.from || Math.abs(positionMs - pausedLine.target) <= 25) ? pausedLine.index : undefined;
+  useEffect(() => {
+    if (pausedLine && selected === undefined) setPausedLine(undefined);
+  }, [pausedLine, selected]);
   // Clock frames must not replace each button's native click listener or ref.
   const lineActions = useMemo(
     () =>
@@ -118,7 +122,10 @@ export function LyricsDisplay({
         },
         click: () => {
           if (lyrics.synced) {
-            seek.current(line.words[0]?.start_ms ?? line.start_ms);
+            const { playing, positionMs, onSeek, compensate } = transport.current;
+            const start = line.words[0]?.start_ms ?? line.start_ms;
+            const target = onSeek(start - (playing && compensate ? SEEK_FADE_LEAD_MS : 0));
+            if (!playing) setPausedLine({ line, index, from: positionMs, target });
             setFollowing(true);
           }
         },
@@ -162,7 +169,7 @@ export function LyricsDisplay({
     };
   };
   const waiting = useRef<HTMLDivElement>(null);
-  const gap = lyrics.synced ? vocalGap(lyrics.lines, positionMs) : undefined;
+  const gap = lyrics.synced && selected === undefined ? vocalGap(lyrics.lines, positionMs) : undefined;
   const gaps = useMemo(
     () => new Map(vocalGaps(lyrics.lines).map((item) => [item.after, item])),
     [lyrics],
@@ -189,12 +196,12 @@ export function LyricsDisplay({
   // follows the real song time.
   const scrollTime =
     positionMs +
-    (settings.lyrics_early_scroll
+    (playing && settings.lyrics_early_scroll
       ? (settings.lyrics_early_scroll_ms ?? 200)
       : 0);
   const active = activeLines(lyrics.lines, scrollTime);
   const primary =
-    active.find((index) => !lyrics.lines[index].background) ??
+    selected ?? active.find((index) => !lyrics.lines[index].background) ??
     lyrics.lines.reduce(
       (last, line, index) =>
         line.start_ms <= scrollTime && !line.background ? index : last,
