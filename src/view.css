@@ -1457,10 +1457,11 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
 
 .lyssna-lyrics-view .lyssna-font-control > button {
   position: absolute;
-  inset-block: 1px;
+  inset-block-start: 1px;
   inset-inline-end: 1px;
   display: grid;
   width: 32px;
+  height: 30px;
   place-items: center;
   padding: 0;
   border: 0;
@@ -1477,6 +1478,13 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
 .lyssna-lyrics-view .lyssna-font-control > :disabled {
   opacity: 0.45;
   cursor: default;
+}
+
+.lyssna-lyrics-view .lyssna-font-error {
+  margin: 4px 0 0;
+  color: light-dark(#a3212a, #ffadad);
+  font-size: 12px;
+  overflow-wrap: anywhere;
 }
 
 .lyssna-lyrics-view .lyssna-font-options {

@@ -1,37 +1,8 @@
 import { useEffect, useState } from "react";
-import { GLYPH_PROBE_FONT } from "./fonts/glyph-probe";
+import { getGlyphProbe, glyphProbeFamily } from "./fonts/glyph-probe-context";
 import { fontFamily } from "./font-settings";
 import type { Lyrics } from "./lyssna/types";
 import { spotifyMix } from "./settings";
-
-const PROBE_FAMILY = "LyssnaLyricsGlyphProbe";
-const probes = new WeakMap<Document, Promise<CanvasRenderingContext2D | null>>();
-
-function getGlyphProbe(targetDocument: Document): Promise<CanvasRenderingContext2D | null> {
-  const existing = probes.get(targetDocument);
-  if (existing) return existing;
-
-  const probe = (async () => {
-    if (typeof FontFace === "undefined" || !targetDocument.fonts) return null;
-    try {
-      const font = new FontFace(PROBE_FAMILY, `url("${GLYPH_PROBE_FONT}")`);
-      await font.load();
-      targetDocument.fonts.add(font);
-      const context = targetDocument.createElement("canvas").getContext("2d");
-      if (!context) return null;
-      context.font = `700 48px ${PROBE_FAMILY}`;
-      if (context.measureText("A中ا𐐀").width !== 0) {
-        targetDocument.fonts.delete(font);
-        return null;
-      }
-      return context;
-    } catch {
-      return null;
-    }
-  })();
-  probes.set(targetDocument, probe);
-  return probe;
-}
 
 export async function needsDefaultLyricsFont(
   selectedFont: string,
@@ -58,8 +29,8 @@ export async function needsDefaultLyricsFont(
     // An unavailable face falls through to the blank probe, just like missing glyphs.
   }
 
-  context.font = `700 48px ${PROBE_FAMILY}`;
-  context.font = `${font}, ${PROBE_FAMILY}`;
+  context.font = `700 48px ${glyphProbeFamily}`;
+  context.font = `${font}, ${glyphProbeFamily}`;
   let unsupported = 0;
   for (const [character, count] of characters) {
     if (context.measureText(character).width === 0) unsupported += count;

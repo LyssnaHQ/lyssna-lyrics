@@ -202,7 +202,7 @@ export function SettingsPanel({ settings, change, close, options, track, notice,
   const visualRowsByKey = new Map([...visuals.Look, ...visuals.Effects].map((row) => [visualRowKey(row), row]));
   const sections: Section[] = [
     ["Appearance", "Fonts", [
-      flag("custom_fonts_enabled", "Use custom fonts", "Use Spotify Mix or installed fonts. Turn off to use Lyssna’s fonts.", "font typeface"),
+      flag("custom_fonts_enabled", "Use custom fonts", "Choose a font for Lyssna or keep Default to use its built-in fonts.", "font typeface"),
       <FontSettings key="lyric-font" field="lyric_font" settings={settings} change={change} view={view} />,
       <FontSettings key="app-font" field="ui_font" settings={settings} change={change} view={view} />,
     ]],

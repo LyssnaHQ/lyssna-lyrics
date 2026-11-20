@@ -35,6 +35,7 @@ export type CanvasInfo = { fileId?: string; type?: string; url?: string };
 type SpotifyImage = { url?: string; width?: number; height?: number };
 type SpotifyTrack = {
   uri?: string;
+  uid?: string;
   name?: string;
   provider?: string;
   type?: string;
@@ -47,8 +48,8 @@ type PlayerState = {
   item?: SpotifyTrack;
   playbackId?: string;
   isPaused?: boolean;
-  context?: { uri?: string; metadata?: Record<string, string> };
-  restrictions?: { disallowSeekingReasons?: string[] };
+  context?: { uri?: string; url?: string; metadata?: Record<string, string> };
+  restrictions?: { disallowSeekingReasons?: string[]; canToggleRepeatTrack?: boolean; disallowTogglingRepeatTrackReasons?: string[] };
   signals?: string[];
   nextItems?: SpotifyTrack[];
 };
@@ -56,12 +57,17 @@ type PlayerAPI = {
   _state?: PlayerState | null;
   sendSignal?(signal: string): unknown;
   setRepeat?(mode: number): unknown;
+  play?(source: { uri: string; url?: string }, context: Record<string, unknown>, options: {
+    skipTo: { uri: string; uid?: string }; seekTo: number; initiallyPaused: boolean; alwaysPlaySomething: boolean;
+  }): unknown;
   skipTo?(item: SpotifyTrack): unknown;
   _events?: {
     addListener(event: "update", listener: () => void): void;
     removeListener?(event: "update", listener: () => void): void;
   };
 };
+
+type CreatorPlaybackContext = { source: { uri: string; url?: string }; track: { uri: string; uid?: string } };
 
 export type Spicetify = {
   Config?: HostConfig;
@@ -293,6 +299,21 @@ export function getHost() {
       queue?.find((item) => item.metadata?.["narration.intro.ssml"] || item.metadata?.["narration.jump.ssml"]);
     if (jump) return () => player.skipTo?.(jump);
   }
+
+  function creatorPlaybackContext(trackUri: string): CreatorPlaybackContext | undefined {
+    const player = playerAPI();
+    const state = playerState(player);
+    const context = state?.context;
+    const item = state?.item;
+    if (!player?.play || item?.uri !== trackUri || !context?.uri) return;
+    const track = { uri: trackUri, uid: item.uid };
+    if (item.uid && /^hm:\/\/lexicon-session-provider\/context-resolve\/v2\/session\?/.test(context.url ?? "")) {
+      return { source: { uri: context.uri, url: context.url }, track };
+    }
+    if (item.provider === "context" && !isDJContext(context) && /^spotify:(?:album|playlist):[A-Za-z0-9]{22}$/.test(context.uri)) {
+      return { source: { uri: context.uri }, track };
+    }
+  }
   function graph() {
     const spiceGraph = spice?.GraphQL;
     const kitGraph = kit?.GraphQL;
@@ -451,6 +472,10 @@ export function getHost() {
     volume: () => kit ? kit.Player.volume : spice?.Player.getVolume?.() ?? 0,
     setVolume: (level: number) => kit ? kit.Player.setVolume(level) : spice?.Player.setVolume?.(level),
     repeat: () => kit ? kit.Player.repeat : repeatModes[spice?.Player.getRepeat?.() ?? 0] ?? "off",
+    repeatTrackBlocked() {
+      const restrictions = playerState()?.restrictions;
+      return restrictions?.canToggleRepeatTrack === false || !!restrictions?.disallowTogglingRepeatTrackReasons?.length;
+    },
     setRepeat(mode: RepeatMode) {
       if (kit) return kit.Player.setRepeat?.(mode);
       const player = spice?.Player.origin;
@@ -465,6 +490,13 @@ export function getHost() {
     jumpDJ: () => djAction()?.(),
     djNarrating: () => isDJNarration(playerState()),
     playbackId: () => playerState()?.playbackId,
+    playbackContextUri: () => playerState()?.context?.uri,
+    creatorPlaybackContext,
+    async restoreCreatorPlaybackContext(snapshot: CreatorPlaybackContext, position: number, playing: boolean) {
+      await playerAPI()?.play?.(snapshot.source, {}, {
+        skipTo: snapshot.track, seekTo: Math.max(0, Math.round(position)), initiallyPaused: !playing, alwaysPlaySomething: false,
+      });
+    },
     artistHeader,
     releaseYear,
     trackCanvas,

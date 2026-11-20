@@ -18,6 +18,7 @@ import { couldBeComplete, createCapturedReplay, recordedCoverage, type Recording
 import { downloadRecording, recordingExportEnabled, type RecordingFormat } from "./recording-export";
 import { readRecordingMetadata } from "./recording-metadata";
 import { useCreatorPlaybar } from "./playbar";
+import { useCreatorRepeat } from "./repeat";
 import { creatorPitchSpectrum, creatorSpectrum, creatorWaveform } from "./audio";
 import { TtmlCreator } from "./ttml-creator";
 import { currentCreatorLyrics, within } from "./current-lyrics";
@@ -78,7 +79,6 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
   const transportRevision = useRef(0);
   const clip = useRef<{ uri: string; end: number; from: number; expires: number; started: boolean }>(undefined);
   const audioForSong = audio?.uri === current?.uri ? audio : undefined;
-  const hasTrack = !!current;
   const isPlaying = audioForSong ? localPlaying : playing;
   const readCapturePosition = useCallback((uri: string) => {
     if (!replaying.current && host.playing() && !host.djNarrating() && uri === `spotify:track:${host.track()?.id}`) {
@@ -132,19 +132,7 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
     if (recording) recordingError.current = false;
     setRecordingAudio(recording);
   }, []);
-  useEffect(() => {
-    if (!hasTrack) return;
-    const before = host.repeat();
-    if (before === "track") return;
-    let live = true;
-    const restore = () => {
-      if (host.repeat() === "track") void Promise.resolve(host.setRepeat(before)).catch(() => {});
-    };
-    void Promise.resolve().then(() => live && host.setRepeat("track")).then(() => {
-      if (!live) restore();
-    }).catch(() => {});
-    return () => { live = false; restore(); };
-  }, [hasTrack, host]);
+  useCreatorRepeat(host, notify);
 
   const sourceKey = enabledSources(settings).join(",");
   useEffect(() => {

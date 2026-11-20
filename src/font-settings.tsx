@@ -1,27 +1,51 @@
 import { useId, useRef, useState, type CSSProperties } from "react";
 import { ChevronDown, Check } from "lucide-react";
 import { useAnchoredPopover } from "./anchored-popover";
+import { getGlyphProbe, glyphProbeFamily } from "./fonts/glyph-probe-context";
 import { SettingRow } from "./lyssna/setting-row";
-import { spotifyMix, type Settings } from "./settings";
+import { readSettings, spotifyMix, type Settings } from "./settings";
 
 type FontField = "ui_font" | "lyric_font";
-const suggestedFonts = [spotifyMix, "Segoe UI", "Arial", "Georgia", "Verdana", "Trebuchet MS", "Consolas"];
+const defaultLabel = "Default";
+const systemSuggestions = ["Segoe UI", "Arial", "Georgia", "Verdana", "Trebuchet MS", "Consolas"];
 const appFallback = '"Lyssna Metropolis", "Segoe UI Variable Text", "Segoe UI", Arial, sans-serif';
 const lyricFallback = '"Lyssna Inter", "Segoe UI", sans-serif';
 
 function fontChoice(value?: string) {
   const family = typeof value === "string" ? value.trim() : "";
-  if (!family || family.length > 100 || /[\x00-\x1f\x7f]/.test(family) || /^(Lyssna|SpotiFlex)Font_/i.test(family)) return spotifyMix;
+  if (!family || family.length > 100 || /[\x00-\x1f\x7f]/.test(family) || /^(Lyssna|SpotiFlex)Font_/i.test(family) || /^(?:app )?default$/i.test(family)) return "";
   if (/^spotify\s*mix(?:\s*ui)?$/i.test(family)) return spotifyMix;
   return family;
 }
 
 export function selectedFont(settings: Settings, field: FontField) {
-  return settings.custom_fonts_enabled ? fontChoice(settings[field]) : undefined;
+  return settings.custom_fonts_enabled ? fontChoice(settings[field]) || undefined : undefined;
 }
 
 export function fontFamily(family: string) {
   return `"${family.replace(/["\\]/g, "\\$&")}"`;
+}
+
+async function installedFontAvailable(family: string, page: Document) {
+  const sample = "AWzm90中あ한عאअกЖΩሀ★♫\uE000\uF000";
+  const font = `28px ${fontFamily(family)}`;
+  const probe = await getGlyphProbe(page);
+  if (!probe) return false;
+  try { await page.fonts.load(font, sample); } catch { return false; }
+  probe.font = `28px ${glyphProbeFamily}`;
+  const characters = Array.from(sample).filter((character) => probe.measureText(character).width === 0);
+  probe.font = `${font}, ${glyphProbeFamily}`;
+  return characters.some((character) => probe.measureText(character).width > 0);
+}
+
+function uniqueFamilies(families: readonly string[]) {
+  const seen = new Set<string>();
+  return families.filter((family) => {
+    const key = family.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function stack(family: string | undefined, fallback: string) {
@@ -71,19 +95,37 @@ export function FontSettings({ field, settings, change, view }: {
   const control = useRef<HTMLDivElement>(null);
   const list = useRef<HTMLUListElement>(null);
   const input = useRef<HTMLInputElement>(null);
+  const attempt = useRef(0);
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<string>();
   const [active, setActive] = useState(-1);
+  const [error, setError] = useState("");
   const filter = draft?.trim().toLowerCase() ?? "";
-  const options = suggestedFonts.filter((family) => family.toLowerCase().includes(filter));
+  const history = (Array.isArray(settings.font_history) ? settings.font_history : []).map(fontChoice).filter(Boolean);
+  const options = uniqueFamilies([defaultLabel, spotifyMix, ...history, ...systemSuggestions])
+    .filter((family) => family.toLowerCase().includes(filter));
   const expanded = enabled && open && options.length > 0;
   useAnchoredPopover(view, expanded, control, list, true);
 
   function finish(family?: string) {
-    if (family !== undefined && enabled && fontChoice(family) !== value) change({ [field]: fontChoice(family) });
     setDraft(undefined);
     setOpen(false);
     setActive(-1);
+    if (family === undefined || !enabled) return;
+    const request = ++attempt.current;
+    const chosen = fontChoice(family);
+    setError("");
+    if (!chosen || chosen === spotifyMix) {
+      if (chosen !== value) change({ [field]: chosen });
+      return;
+    }
+    void installedFontAvailable(chosen, view.document).then((available) => {
+      if (request !== attempt.current) return;
+      if (!available) { setError(`Couldn’t load ${chosen}.`); return; }
+      const recent = readSettings().font_history;
+      const remembered = (Array.isArray(recent) ? recent : []).map(fontChoice).filter(Boolean);
+      change({ [field]: chosen, font_history: uniqueFamilies([chosen, ...remembered]) });
+    });
   }
 
   return <SettingRow label={label} help={field === "lyric_font"
@@ -93,9 +135,10 @@ export function FontSettings({ field, settings, change, view }: {
       <input ref={input} className="settings-select" type="text" role="combobox" aria-label={label}
         aria-autocomplete="list" aria-expanded={expanded} aria-controls={expanded ? id : undefined}
         aria-activedescendant={expanded && active >= 0 ? `${id}-${active}` : undefined}
-        value={draft ?? value} disabled={!enabled} placeholder={spotifyMix} autoComplete="off" spellCheck={false} maxLength={100}
+        value={draft ?? (value || defaultLabel)} disabled={!enabled} placeholder={defaultLabel} autoComplete="off" spellCheck={false} maxLength={100}
+        aria-invalid={!!error || undefined} aria-describedby={error ? `${id}-error` : undefined}
         onFocus={(event) => event.currentTarget.select()} onBlur={() => finish(draft)}
-        onChange={(event) => { setDraft(event.currentTarget.value); setActive(-1); setOpen(true); }}
+        onChange={(event) => { ++attempt.current; setError(""); setDraft(event.currentTarget.value); setActive(-1); setOpen(true); }}
         onKeyDown={(event) => {
           if (event.key === "Escape" && (open || draft !== undefined)) {
             event.preventDefault();
@@ -119,11 +162,12 @@ export function FontSettings({ field, settings, change, view }: {
       </button>
       <ul className="lyssna-font-options" ref={list} id={id} popover="auto" role="listbox" aria-label={`${label} suggestions`}
         onToggle={(event) => { if (event.newState === "closed" && !list.current?.matches(":popover-open")) setOpen(false); }}>
-        {options.map((family, index) => <li key={family} id={`${id}-${index}`} role="option" aria-selected={family === value}
+        {options.map((family, index) => <li key={family} id={`${id}-${index}`} role="option" aria-selected={family === (value || defaultLabel)}
           data-active={index === active || undefined} onPointerDown={(event) => event.preventDefault()} onClick={() => finish(family)}>
-          <span>{family}</span>{family === value && <Check size={14} aria-hidden="true" />}
+          <span>{family}</span>{family === (value || defaultLabel) && <Check size={14} aria-hidden="true" />}
         </li>)}
       </ul>
+      {error && <p className="lyssna-font-error" id={`${id}-error`} role="status">{error}</p>}
     </div>
   </SettingRow>;
 }
