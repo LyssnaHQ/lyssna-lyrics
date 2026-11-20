@@ -38,7 +38,7 @@ export function endsOnRight(
   return !!last && last.opposite !== mirrored;
 }
 
-function WriterCredits({ names }: { names: string[] }) {
+export function WriterCredits({ names }: { names: string[] }) {
   if (!names.length) return null;
   return (
     <p className="writer-credits">

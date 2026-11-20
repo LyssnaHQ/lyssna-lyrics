@@ -44,6 +44,7 @@ import { windowPosition } from "./window-activity";
 import type { Line, Lyrics } from "./types";
 import { HighlighterWords } from "./highlighter";
 import { frameDue } from "./frame-cap";
+import { trackGravityStage } from "../gravity-frame";
 
 interface Entity {
   key: string;
@@ -661,6 +662,7 @@ export function SpaceGravityLyrics({
   ];
 
   const elements = useRef(new Map<string, HTMLElement>());
+  const stageView = useRef<ReturnType<typeof trackGravityStage>>(undefined);
   // Words keep their places when the view remounts for the same lyrics,
   // as when a song briefly loses and regains its lyrics.
   const [restored] = useState(() => {
@@ -714,8 +716,13 @@ export function SpaceGravityLyrics({
     let callback = refs.current.get(key);
     if (!callback) {
       callback = (element) => {
-        if (element) elements.current.set(key, element);
-        else elements.current.delete(key);
+        const previous = elements.current.get(key);
+        if (previous === element) return;
+        if (previous) stageView.current?.remove(previous);
+        if (element) {
+          elements.current.set(key, element);
+          stageView.current?.add(element);
+        } else elements.current.delete(key);
       };
       refs.current.set(key, callback);
     }
@@ -725,12 +732,16 @@ export function SpaceGravityLyrics({
   useEffect(() => {
     const element = stage.current;
     if (!element) return;
+    const view = stageView.current = trackGravityStage(element);
+    for (const node of elements.current.values()) view.add(node);
     let frame = 0,
       renderFrame = 0,
       last = performance.now(),
       fieldAt = 0,
       field: Field | undefined,
-      staticKey = "";
+      staticKey = "",
+      indexed: typeof prepared | undefined,
+      byKey = new Map<string, Entity>();
     const motion: WindowMotion = { vx: 0, vy: 0 };
     const tick = (now: number) => {
       frame = requestAnimationFrame(tick);
@@ -738,20 +749,26 @@ export function SpaceGravityLyrics({
       renderFrame += 1;
       const dt = Math.min(0.1, Math.max(0, (now - last) / 1000));
       last = now;
-      if (element.clientWidth < 1 || element.clientHeight < 1) return;
       let measured = false;
-      if (!field || now - fieldAt > 250) {
+      if (view.takeStageResize() || !field || now - fieldAt > 250) {
         fieldAt = now;
         measured = true;
         field = measureField(element);
         const next = visibleWordCount(field);
         setCount((current) => (current === next ? current : next));
       }
+      if (field.bounds.width < 1 || field.bounds.height < 1) return;
       const { visible, prepared, reduceMotion, waitKey } = live.current;
-      const byKey = new Map(prepared.entities.map((item) => [item.key, item]));
+      if (indexed !== prepared) {
+        indexed = prepared;
+        byKey = new Map(prepared.entities.map((item) => [item.key, item]));
+      }
       const shownKeys = new Set(visible.map((entity) => entity.key));
       if (waitKey) shownKeys.add(waitKey);
+      let wordResized = false;
       for (const [key, node] of elements.current) {
+        const size = view.size(node);
+        if (!size?.width || !size.height) continue;
         const entity = byKey.get(key);
         let body = bodies.current.get(key);
         if (!body) {
@@ -766,8 +783,10 @@ export function SpaceGravityLyrics({
           };
           bodies.current.set(key, body);
         }
-        if (node.offsetWidth)
-          measure(body, node.offsetWidth, node.offsetHeight);
+        if (body.width !== size.width || body.height !== size.height) {
+          measure(body, size.width, size.height);
+          wordResized = true;
+        }
       }
       // Each new word starts near its place in its line, laid out across
       // the play area and centred in it, then drifts from there.
@@ -777,7 +796,8 @@ export function SpaceGravityLyrics({
       const area = spread ? field.area! : (field.layout ?? field.area!);
       const lines = new Map<string, string[]>();
       for (const key of shownKeys) {
-        if (!elements.current.has(key)) continue;
+        const node = elements.current.get(key);
+        if (!node || !view.size(node)?.width || !bodies.current.has(key)) continue;
         const line = key === waitKey ? key : String(byKey.get(key)?.line);
         lines.set(line, [...(lines.get(line) ?? []), key]);
       }
@@ -836,7 +856,7 @@ export function SpaceGravityLyrics({
       }
       if (reduceMotion) {
         const key = [...lines.values()].flat().join("|");
-        if (key !== staticKey || measured) {
+        if (key !== staticKey || measured || wordResized) {
           staticKey = key;
           staticLayout(
             [...lines.values()].map((keys) =>
@@ -859,7 +879,7 @@ export function SpaceGravityLyrics({
       for (const [key, node] of elements.current) {
         const body = bodies.current.get(key);
         if (!body?.spawned) continue;
-        node.style.transform = `translate3d(${body.x - body.width / 2}px, ${body.y - body.height / 2}px, 0) rotate(${body.angle}deg) scale(${body.scale})`;
+        view.move(node, `translate3d(${body.x - body.width / 2}px, ${body.y - body.height / 2}px, 0) rotate(${body.angle}deg) scale(${body.scale})`);
       }
       if (links.current)
         drawLinks(
@@ -884,7 +904,11 @@ export function SpaceGravityLyrics({
       }
     };
     frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
+    return () => {
+      cancelAnimationFrame(frame);
+      view.dispose();
+      stageView.current = undefined;
+    };
   }, []);
 
   // The normal lyrics animator drives the syllables, exactly as in the

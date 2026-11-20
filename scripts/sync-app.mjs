@@ -69,7 +69,7 @@ import type { Line, Lyrics, Word } from "./types";
 import type { Settings } from "../settings";
 import { LyricCredits } from "../credits";`,
   slice(state, "export function activeLines(", "export function progress("),
-  slice(components, "function WriterCredits(", "/** The badge's E"),
+  slice(components, "function WriterCredits(", "/** The badge's E").replace("function WriterCredits(", "export function WriterCredits("),
   slice(components, "function creditsInView(", "/** Up next pops in"),
   slice(components, "/** Seek Fade-in Compensation", "const LyricCredits =")
     .replace("      data-following={following}", "      data-following={following}\n      data-animator={presetOf(settings.lyrics_animator)}")
@@ -141,6 +141,49 @@ for (const [file, content] of snapshot) {
     .replaceAll("requestAnimationFrame(this.run)", "this.view.requestAnimationFrame(this.run)");
   if (file === "space-gravity-lyrics.tsx") source = source
     .replace('import { LyricAnimator } from "./lyric-animator";', 'import { LyricAnimator } from "./lyric-animator";\nimport { presetOf } from "./animator-tuning";')
+    .replace('import { frameDue } from "./frame-cap";', 'import { frameDue } from "./frame-cap";\nimport { trackGravityStage } from "../gravity-frame";')
+    .replace("  const elements = useRef(new Map<string, HTMLElement>());", `  const elements = useRef(new Map<string, HTMLElement>());
+  const stageView = useRef<ReturnType<typeof trackGravityStage>>(undefined);`)
+    .replace(/        if \(element\) elements\.current\.set\(key, element\);\n        else elements\.current\.delete\(key\);/, `        const previous = elements.current.get(key);
+        if (previous === element) return;
+        if (previous) stageView.current?.remove(previous);
+        if (element) {
+          elements.current.set(key, element);
+          stageView.current?.add(element);
+        } else elements.current.delete(key);`)
+    .replace("    if (!element) return;\n    let frame = 0,", `    if (!element) return;
+    const view = stageView.current = trackGravityStage(element);
+    for (const node of elements.current.values()) view.add(node);
+    let frame = 0,`)
+    .replace('      staticKey = "";', `      staticKey = "",
+      indexed: typeof prepared | undefined,
+      byKey = new Map<string, Entity>();`)
+    .replace("      if (element.clientWidth < 1 || element.clientHeight < 1) return;\n", "")
+    .replace("      if (!field || now - fieldAt > 250)", "      if (view.takeStageResize() || !field || now - fieldAt > 250)")
+    .replace("      const { visible, prepared, reduceMotion, waitKey } = live.current;", `      if (field.bounds.width < 1 || field.bounds.height < 1) return;
+      const { visible, prepared, reduceMotion, waitKey } = live.current;`)
+    .replace("      const byKey = new Map(prepared.entities.map((item) => [item.key, item]));", `      if (indexed !== prepared) {
+        indexed = prepared;
+        byKey = new Map(prepared.entities.map((item) => [item.key, item]));
+      }`)
+    .replace("      if (waitKey) shownKeys.add(waitKey);\n      for (const [key, node] of elements.current) {", `      if (waitKey) shownKeys.add(waitKey);
+      let wordResized = false;
+      for (const [key, node] of elements.current) {
+        const size = view.size(node);
+        if (!size?.width || !size.height) continue;`)
+    .replace("        if (node.offsetWidth)\n          measure(body, node.offsetWidth, node.offsetHeight);", `        if (body.width !== size.width || body.height !== size.height) {
+          measure(body, size.width, size.height);
+          wordResized = true;
+        }`)
+    .replace("        if (!elements.current.has(key)) continue;", `        const node = elements.current.get(key);
+        if (!node || !view.size(node)?.width || !bodies.current.has(key)) continue;`)
+    .replace("if (key !== staticKey || measured)", "if (key !== staticKey || measured || wordResized)")
+    .replace(/node\.style\.transform = ([^\n]+);/, "view.move(node, $1);")
+    .replace("    return () => cancelAnimationFrame(frame);", `    return () => {
+      cancelAnimationFrame(frame);
+      view.dispose();
+      stageView.current = undefined;
+    };`)
     .replace("}, [time, lyrics]);", "}, [time, lyrics, reduceMotion, tuningKey]);")
     .replace('      className={`gravity-lyrics ', '      data-animator={presetOf(tuning)}\n      className={`gravity-lyrics space-gravity ');
   if (file === "setting-row.tsx") source = source.replace("inert={!!unavailable}", "ref={(element) => { if (element) element.inert = !!unavailable; }}");

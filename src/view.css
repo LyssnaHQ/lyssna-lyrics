@@ -450,6 +450,11 @@
   margin: 0 0 0.3em;
 }
 
+.lyssna-lyrics-view .writer-credits .credit-names {
+  color: light-dark(#000, #fff);
+  opacity: 0.8;
+}
+
 .lyssna-lyrics-view .lyric-credits-row {
   align-items: start;
 }
@@ -541,6 +546,14 @@
   margin: -0.2em -0.3em;
   text-decoration: underline;
   text-underline-offset: 0.18em;
+}
+
+.lyssna-lyrics-view a.lyssna-credit-profile .lyssna-credit-name {
+  transition: opacity 150ms ease;
+}
+
+.lyssna-lyrics-view a.lyssna-credit-profile:hover .lyssna-credit-name {
+  opacity: 0.6;
 }
 
 .lyssna-lyrics-view .credits-right .lyssna-community-credits {

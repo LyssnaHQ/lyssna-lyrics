@@ -5,7 +5,7 @@ import { useArtworkColor } from "./lyssna/artwork-color";
 import { Ambience } from "./lyssna/ambience";
 import { setFrameCap } from "./lyssna/frame-cap";
 import { FullscreenPauseIcon, FullscreenPlayIcon, SkipNextIcon, SkipPreviousIcon } from "./lyssna/fullscreen-icons";
-import { LyricsDisplay, LyricsSkeleton } from "./lyssna/renderer";
+import { LyricsDisplay, LyricsSkeleton, WriterCredits } from "./lyssna/renderer";
 import { markerColour } from "./lyssna/highlighter";
 import { SpaceGravityLyrics } from "./lyssna/space-gravity-lyrics";
 import { CompactIcon, FullScreenIcon, HideArtworkIcon, PopoutIcon, RetryIcon, SwapSidesIcon, TranslateIcon, UploadIcon, WordSyncIcon } from "./lyssna/toolbar-icons";
@@ -128,7 +128,7 @@ function LyricsForTrack({ track, host, playing, settings, compact = false, view 
       linkWidth={settings.gravity_links ? settings.gravity_link_width / 100 : 0}
       credits={<div className={upNext ? "lyric-credits-row" : undefined}>
         <div className="gravity-credit-details">
-          {rendered.songwriters?.length ? <p className="writer-credits">Written by {rendered.songwriters.join(", ")}</p> : null}
+          <WriterCredits names={rendered.songwriters ?? []} />
           <LyricCredits lyrics={rendered} expanded discord={settings.lyrics_discord_usernames} />
         </div>
         {upNext}
