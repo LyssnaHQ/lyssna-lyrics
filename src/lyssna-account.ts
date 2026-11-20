@@ -1,7 +1,7 @@
 import { lyssnaRequest, prepareLyssnaInstall } from "./lyssna-api";
 
 const clientId = "01a1f5b3-37b0-7d27-9434-efb756ccd7dd";
-const redirect = "https://lyssna.org/spicetify/account";
+const redirect = "https://lyssna.org/connect/code";
 const key = "lyssna-lyrics.api.account";
 export const accountChanged = "lyssna-lyrics:account";
 
@@ -69,18 +69,11 @@ export async function beginLyssnaSignIn(): Promise<SignIn> {
 }
 
 export async function finishLyssnaSignIn(pending: SignIn, pasted: string) {
-  const input = pasted.trim();
-  let value = input;
-  if (input.startsWith("https://")) {
-    const url = new URL(input);
-    if (`${url.origin}${url.pathname}` !== redirect || url.username || url.password) {
-      throw new Error("Paste the sign-in result from Lyssna.");
-    }
-    value = url.search;
-  }
-  const query = new URLSearchParams(value);
+  const query = new URLSearchParams(pasted.trim().replace(/^.*\?/, ""));
   const code = query.get("code");
-  if (query.get("state") !== pending.state) throw new Error("This code belongs to a different sign-in. Start again.");
+  if (query.getAll("state").length !== 1 || query.get("state") !== pending.state) {
+    throw new Error("This code belongs to a different sign-in. Start again.");
+  }
   if (query.has("error")) throw new Error("Sign-in was cancelled on Lyssna.");
   if (!code || query.getAll("code").length !== 1 || !/^[A-Za-z0-9_-]{16,256}$/.test(code)) {
     throw new Error("Paste the full sign-in result from Lyssna.");

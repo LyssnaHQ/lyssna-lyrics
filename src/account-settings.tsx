@@ -50,7 +50,7 @@ export function AccountSettings({ ready }: { ready: boolean }) {
   ].filter(Boolean).join(" · ");
   const help = signedIn ? (account ? details || "Signed in to Lyssna."
     : profile === null ? "Signed in. Couldn’t load account details." : "Checking…")
-    : pending ? "Open Lyssna in your browser, then paste the sign-in result here."
+    : pending ? "Approve on Lyssna, then paste the sign-in result here within one minute."
     : ready ? "Connect your Lyssna account to Spotify." : "Sign-in is awaiting setup on Lyssna.org.";
   return <SettingRow label={account?.username ?? "Lyssna account"} help={help}
     keywords="lyssna account profile login sign in sign out reputation tier email" stacked={!!pending}>

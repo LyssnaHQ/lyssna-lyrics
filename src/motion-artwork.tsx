@@ -8,8 +8,17 @@ const upcs = new Map<string, Promise<string | null | undefined>>();
 const covers = new Map<string, { expires: number; value: Promise<string | undefined> }>();
 const convertedCovers = new Map<string, Blob>();
 const convertedCoverBudget = 64 * 1024 * 1024;
-type CoverConversion = { result: Promise<Blob | undefined>; cancel(): void; users: number };
+type MotionCover =
+  | { state: "idle" }
+  | { state: "loading"; progress?: number }
+  | { state: "ready"; url: string; progress?: number };
+type CoverConversion = {
+  result: Promise<Blob | undefined>; cancel(): void; users: number;
+  progress?: number; listeners: Set<(progress?: number) => void>;
+};
 const conversions = new Map<string, CoverConversion>();
+const noMotion: MotionCover = { state: "idle" };
+const loadingMotion: MotionCover = { state: "loading" };
 
 function rememberConvertedCover(source: string, cover: Blob) {
   if (cover.size > convertedCoverBudget) return;
@@ -47,12 +56,18 @@ function startConversion(input: string): CoverConversion {
       resolve(blob);
     }
     abort.signal.addEventListener("abort", cancel, { once: true });
-    worker.onmessage = ({ data }: MessageEvent<Uint8Array<ArrayBuffer> | null>) =>
-      finish(data?.length ? new Blob([data], { type: "video/webm" }) : undefined);
+    worker.onmessage = ({ data }: MessageEvent<{ progress: number } | Uint8Array<ArrayBuffer> | null>) => {
+      if (data && "progress" in data) {
+        conversion.progress = data.progress;
+        conversion.listeners.forEach((listener) => listener(data.progress));
+      } else {
+        finish(data?.length ? new Blob([data], { type: "video/webm" }) : undefined);
+      }
+    };
     worker.onerror = () => finish();
     worker.postMessage(input);
   });
-  const conversion = { result, cancel: () => abort.abort(), users: 0 };
+  const conversion: CoverConversion = { result, cancel: () => abort.abort(), users: 0, listeners: new Set() };
   conversions.set(input, conversion);
   void result.then((blob) => {
     if (conversions.get(input) !== conversion) return;
@@ -63,19 +78,18 @@ function startConversion(input: string): CoverConversion {
 }
 
 function usePlayableMotionArtwork(source: string | undefined, format: ReturnType<typeof motionArtworkFormat>) {
-  const [converted, setConverted] = useState<{ source: string; url: string }>();
+  const [converted, setConverted] = useState<{ source: string; cover: MotionCover }>();
   useEffect(() => {
     if (!source || format !== "webm") return;
     const input = source;
     let url: string | undefined;
     function show(blob: Blob) {
       url = URL.createObjectURL(blob);
-      setConverted({ source: input, url });
+      setConverted({ source: input, cover: { state: "ready", url, progress: 100 } });
     }
     function release() {
-      if (!url) return;
-      URL.revokeObjectURL(url);
-      setConverted((current) => current?.url === url ? undefined : current);
+      if (url) URL.revokeObjectURL(url);
+      setConverted((current) => current?.source === input ? undefined : current);
     }
     const cached = convertedCovers.get(input);
     if (cached) {
@@ -85,9 +99,17 @@ function usePlayableMotionArtwork(source: string | undefined, format: ReturnType
     const conversion = conversions.get(input) ?? startConversion(input);
     conversion.users++;
     let live = true;
-    void conversion.result.then((blob) => { if (live && blob) show(blob); });
+    const update = (progress?: number) => setConverted({ source: input, cover: { state: "loading", progress } });
+    update(conversion.progress);
+    conversion.listeners.add(update);
+    void conversion.result.then((blob) => {
+      if (!live) return;
+      if (blob) show(blob);
+      else setConverted({ source: input, cover: noMotion });
+    });
     return () => {
       live = false;
+      conversion.listeners.delete(update);
       if (--conversion.users === 0 && conversions.get(input) === conversion) {
         conversions.delete(input);
         conversion.cancel();
@@ -95,8 +117,9 @@ function usePlayableMotionArtwork(source: string | undefined, format: ReturnType
       release();
     };
   }, [source, format]);
-  if (format === "mp4") return source;
-  if (format === "webm" && converted?.source === source) return converted?.url;
+  if (!source) return noMotion;
+  if (format === "mp4") return { state: "ready", url: source } satisfies MotionCover;
+  return converted?.source === source ? converted.cover : convertedCovers.has(source) ? noMotion : loadingMotion;
 }
 
 export function useAlbumMotionArtwork(albumUri: string | undefined, upc: string | undefined, enabled: boolean, view: Window = window) {
@@ -200,26 +223,41 @@ function useMotionArtwork(albumUri: string | undefined, suppliedUpc: string | un
   return enabled && art?.album === albumUri ? art?.url : undefined;
 }
 
-export function MotionArtwork({ url, playing, onUnavailable }: {
-  url: string; playing: boolean; onUnavailable(url: string): void;
-}) {
+function CoverProgress({ value }: { value?: number }) {
+  return <div className="lyssna-cover-progress" role="progressbar" aria-label="Loading animated cover"
+    aria-valuemin={0} aria-valuemax={100} aria-valuenow={value}>
+    <span style={value === undefined ? undefined : { width: `${value}%` }} />
+  </div>;
+}
+
+export function MotionArtwork({ cover, playing }: { cover: MotionCover; playing: boolean }) {
+  if (cover.state === "loading") return <CoverProgress value={cover.progress} />;
+  if (cover.state === "ready") return <MotionVideo key={cover.url} url={cover.url} playing={playing} progress={cover.progress} />;
+  return null;
+}
+
+function MotionVideo({ url, playing, progress }: { url: string; playing: boolean; progress?: number }) {
   const ref = useRef<HTMLVideoElement>(null);
   const [ready, setReady] = useState(false);
+  const [failed, setFailed] = useState(false);
   useEffect(() => {
     const video = ref.current;
     if (!video) return;
     const page = video.ownerDocument;
     function sync() {
       if (playing && !page.hidden) void video!.play().catch((error: DOMException) => {
-        if (error.name === "NotSupportedError") onUnavailable(url);
+        if (error.name === "NotSupportedError") setFailed(true);
       });
       else video!.pause();
     }
     page.addEventListener("visibilitychange", sync);
     sync();
     return () => page.removeEventListener("visibilitychange", sync);
-  }, [playing, url, onUnavailable]);
-  return <video ref={ref} className="cover" style={ready ? undefined : { visibility: "hidden" }} src={url} preload="auto"
-    onLoadedData={() => setReady(true)}
-    muted loop playsInline onError={() => onUnavailable(url)} aria-label="Apple Music animated cover" />;
+  }, [playing, url, failed]);
+  return failed ? null : <>
+    <video ref={ref} className="cover" style={ready ? undefined : { visibility: "hidden" }} src={url} preload="auto"
+      onLoadedData={() => setReady(true)}
+      muted loop playsInline onError={() => setFailed(true)} aria-label="Apple Music animated cover" />
+    {!ready && <CoverProgress value={progress} />}
+  </>;
 }

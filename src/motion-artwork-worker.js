@@ -2,9 +2,10 @@
 const coreUrl = "https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/esm/ffmpeg-core.js";
 const maxInput = 24 * 1024 * 1024;
 
-async function download(url) {
+async function download(url, reportProgress) {
   const response = await fetch(url, { credentials: "omit", redirect: "error", referrerPolicy: "no-referrer" });
-  if (!response.ok || !response.body || Number(response.headers.get("Content-Length")) > maxInput) {
+  const total = Number(response.headers.get("Content-Length"));
+  if (!response.ok || !response.body || total > maxInput) {
     throw new Error("Apple Music cover is unavailable");
   }
   const reader = response.body.getReader();
@@ -20,6 +21,7 @@ async function download(url) {
         throw new Error("Apple Music cover is too large");
       }
       chunks.push(value);
+      if (total > 0) reportProgress(Math.min(25, 25 * size / total));
     }
   } finally {
     reader.releaseLock();
@@ -34,12 +36,22 @@ async function download(url) {
 }
 
 self.onmessage = async ({ data: input }) => {
+  let lastProgress = -1;
+  function reportProgress(value) {
+    const progress = Math.floor(value);
+    if (!Number.isFinite(progress) || progress <= lastProgress) return;
+    lastProgress = progress;
+    self.postMessage({ progress });
+  }
+
   try {
     const wasmURL = coreUrl.replace(/\.js$/, ".wasm");
-    const [{ default: createFFmpegCore }, mp4] = await Promise.all([import(coreUrl), download(input)]);
+    const [{ default: createFFmpegCore }, mp4] = await Promise.all([import(coreUrl), download(input, reportProgress)]);
+    reportProgress(25);
     const ffmpeg = await createFFmpegCore({
       mainScriptUrlOrBlob: `${coreUrl}#${btoa(JSON.stringify({ wasmURL }))}`,
     });
+    ffmpeg.setProgress(({ progress }) => reportProgress(25 + 74 * Math.max(0, Math.min(1, progress))));
     ffmpeg.FS.writeFile("cover.mp4", mp4);
     ffmpeg.exec(
       "-loglevel", "error", "-protocol_whitelist", "file", "-threads", "1",

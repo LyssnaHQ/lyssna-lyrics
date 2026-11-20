@@ -264,11 +264,8 @@ function NowPlayingBackdrop({ host, panel }: { host: Host; panel: HTMLElement })
 function SpotifyMotionCover({ host }: { host: Host }) {
   const { track, playing } = usePlayback(host, true);
   const settings = useReviewerSettings(useLiveSettings(), track?.id);
-  const url = useAlbumMotionArtwork(track?.albumUri, track?.albumUpc, settings.animated_covers && !settings.reduce_motion);
-  const [unavailable, setUnavailable] = useState<string>();
-  return url && url !== unavailable
-    ? <MotionArtwork key={url} url={url} playing={playing} onUnavailable={setUnavailable} />
-    : null;
+  const cover = useAlbumMotionArtwork(track?.albumUri, track?.albumUpc, settings.animated_covers && !settings.reduce_motion);
+  return <MotionArtwork cover={cover} playing={playing} />;
 }
 
 function spotifyMotionCover(host: Host) {
@@ -421,10 +418,8 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
   const artistUri = track?.artistUri;
   const trackId = track?.id;
   const albumUri = track?.albumUri;
-  const motionUrl = useAlbumMotionArtwork(albumUri, track?.albumUpc,
+  const motion = useAlbumMotionArtwork(albumUri, track?.albumUpc,
     !showCreator && settings.animated_covers && !settings.reduce_motion && !settings.lyrics_hide_artwork && !canvas, view);
-  const [unavailableMotion, setUnavailableMotion] = useState<string>();
-  const motion = motionUrl !== unavailableMotion ? motionUrl : undefined;
   const year = track?.year ?? (albumYear?.uri === albumUri ? albumYear?.year : undefined);
   useEffect(() => {
     if (settings.lyrics_year_position === "off" || track?.year || !albumUri || !/^spotify:album:[A-Za-z0-9]{22}$/.test(albumUri)) return;
@@ -597,10 +592,10 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
         <div className="lyrics-album">
           {canvas ? <CanvasArtwork key={`${track.id}:${canvas.fileId ?? canvas.url}`} info={canvas} cover={track.cover}
             playing={playing && !settings.reduce_motion} onUnavailable={setUnavailableCanvas} />
-            : (motion || track.cover) && <div className="lyrics-media lyrics-motion-stage">
+            : (motion.state !== "idle" || track.cover) && <div className="lyrics-media lyrics-motion-stage">
               {track.cover && <img className={`cover${settings.cover_animation && !settings.reduce_motion ? " crossfade" : ""}`}
                 key={track.cover} src={track.cover} alt="" />}
-              {motion && <MotionArtwork key={motion} url={motion} playing={playing} onUnavailable={setUnavailableMotion} />}
+              <MotionArtwork cover={motion} playing={playing} />
             </div>}
           <TrackMetadata host={host} track={track} year={year} yearPosition={settings.lyrics_year_position}
             reduceMotion={settings.reduce_motion} orderByWidth={!!canvas} />
