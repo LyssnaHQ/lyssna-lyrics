@@ -411,7 +411,16 @@
   cursor: pointer;
 }
 
-.lyssna-lyrics-view .lyrics-details a:is(:hover, :focus-visible),
+.lyssna-lyrics-view .lyrics-details a {
+  text-decoration: none;
+  transition: opacity 150ms ease;
+}
+
+.lyssna-lyrics-view .lyrics-details a:is(:hover, :focus-visible) {
+  text-decoration: none;
+  opacity: 0.75;
+}
+
 .lyssna-lyrics-view .lyssna-provider-credits a:is(:hover, :focus-visible) {
   text-decoration: underline;
   text-underline-offset: 0.18em;
