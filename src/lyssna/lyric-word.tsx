@@ -13,13 +13,15 @@ export const LyricWord = memo(function LyricWord({
   total?: number;
 }) {
   const whitespace = words[0]?.text.match(/^\s+/u)?.[0] ?? "";
+  const trailing = /\s$/u.test(words.at(-1)?.text ?? "");
   return (
     <span className="lyric-word-group">
       {whitespace}
       <span className="lyric-word">
         {words.map((word, part) => {
-          const text =
+          const content =
             part === 0 ? word.text.slice(whitespace.length) : word.text;
+          const text = part === words.length - 1 ? content.trimEnd() : content;
           const emphasis = isEmphasis(word, text);
           // Split syllables scale away from their joints so no seam opens.
           const at = offset + part;
@@ -53,6 +55,7 @@ export const LyricWord = memo(function LyricWord({
           );
         })}
       </span>
+      {trailing ? " " : null}
     </span>
   );
 });

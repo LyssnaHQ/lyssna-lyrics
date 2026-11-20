@@ -188,18 +188,21 @@ export function startShareMenuController(host: Host) {
     if (!id) return;
     const current = host.track();
     const playing = current?.id === id ? current : undefined;
-    const local = kind === "song" ? playing?.title && playing.artists && `${playing.title} - ${playing.artists}` : playing?.isrc;
-    let value = local;
+    if (kind === "isrc") {
+      const isrc = await host.lookupIsrc(id, playing?.isrc).catch(() => undefined);
+      if (isrc) await copyText(isrc, "ISRC copied");
+      else Spicetify.showNotification?.("No ISRC available for this track", true);
+      return;
+    }
+    let value = playing?.title && playing.artists && `${playing.title} - ${playing.artists}`;
     if (!value) {
       const track = await host.lookupTrack(id).catch(() => undefined);
-      if (kind === "song" && track?.name && track.artists.length) {
+      if (track?.name && track.artists.length) {
         value = `${track.name} - ${track.artists.map(({ name }) => name).join(", ")}`;
-      } else if (kind === "isrc") {
-        value = track?.external_ids?.isrc;
       }
     }
-    if (value) await copyText(value, kind === "song" ? "Song name and artist copied" : "ISRC copied");
-    else Spicetify.showNotification?.(kind === "song" ? "Song details unavailable" : "No ISRC available for this track", true);
+    if (value) await copyText(value, "Song name and artist copied");
+    else Spicetify.showNotification?.("Song details unavailable", true);
   }
 
   const copyItems = [

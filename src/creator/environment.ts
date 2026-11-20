@@ -1,12 +1,14 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import type { ReplayPacket } from "./captured-replay";
+import type { RecordingFormat } from "./recording-export";
 
 export type RecordingStatus = {
   percent: number;
   sharing: boolean;
   deleting: boolean;
+  returnToSpotify?(): void;
   remove(): Promise<void>;
-  exportAudio(format: "wav" | "flac"): Promise<void>;
+  exportAudio(format: RecordingFormat): Promise<void>;
 };
 
 export type CreatorEnvironmentValue = {

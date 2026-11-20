@@ -1,7 +1,8 @@
-import type { Track } from "./host";
+import type { Host, Track } from "./host";
 import { parseLocalTtml } from "./local-lyrics";
 import { lyssnaRequest } from "./lyssna-api";
 import type { Line, Lyrics, LyssnaContributor } from "./lyssna/types";
+import { normalizeIsrc } from "./spotify-track-metadata";
 
 type LyricsView = {
   song: { id: string };
@@ -27,6 +28,7 @@ const pending = new Map<string, Promise<LyricsView | null | undefined>>();
 const cooling = new Map<string, number>();
 const refreshes = new Set<string>();
 const approvals = new Map<string, RecentApproval>();
+const trackIsrc = new Map<string, string>();
 const parsed = new WeakMap<LyricsView, Lyrics>();
 let disk: Promise<Cache | undefined> | undefined;
 let writes = Promise.resolve();
@@ -87,14 +89,9 @@ export function clearLyssnaCache() {
   }).catch(() => {});
 }
 
-function normalizeIsrc(value?: string) {
-  const isrc = value?.replaceAll("-", "").toUpperCase();
-  return isrc && /^[A-Z]{2}[A-Z0-9]{3}\d{7}$/.test(isrc) ? isrc : undefined;
-}
-
 export function revalidateLyssnaSong(trackId: string, isrc?: string, approved?: ApprovedUpload) {
   const paths = [`/v1/lyrics/spotify/${trackId}`];
-  const normalizedIsrc = normalizeIsrc(isrc);
+  const normalizedIsrc = normalizeIsrc(isrc) ?? trackIsrc.get(trackId);
   if (normalizedIsrc) paths.push(`/v1/lyrics/isrc/${normalizedIsrc}`);
   for (const path of paths) {
     pending.delete(path);
@@ -207,11 +204,16 @@ function read(platform: "spotify" | "isrc", id: string) {
   return request;
 }
 
-export async function readLyssnaLyrics(track: Track): Promise<Lyrics | undefined> {
+export async function readLyssnaLyrics(track: Track, lookupIsrc: Host["lookupIsrc"]): Promise<Lyrics | undefined> {
   if (!/^[A-Za-z0-9]{22}$/.test(track.id)) return;
   let value = await read("spotify", track.id);
-  const isrc = normalizeIsrc(track.isrc);
-  if (value === null && isrc) value = await read("isrc", isrc);
+  if (value === null) {
+    const isrc = normalizeIsrc(track.isrc) ?? trackIsrc.get(track.id) ?? await lookupIsrc(track.id);
+    if (!isrc) return;
+    trackIsrc.set(track.id, isrc);
+    if (trackIsrc.size > cacheLimit) trackIsrc.delete(trackIsrc.keys().next().value!);
+    value = await read("isrc", isrc);
+  }
   if (!value) return;
   const previous = parsed.get(value);
   if (previous) return previous;

@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { hosts } from "./host-react";
+import { normalizeIsrc, spotifyTrackMetadata } from "./spotify-track-metadata";
 
 type Removal = () => void;
 type RepeatMode = "off" | "context" | "track";
@@ -67,6 +68,9 @@ export type Spicetify = {
   Platform?: Record<string, unknown>;
   _platform?: { isDeveloperMode?: boolean };
   showNotification?(message: string, error?: boolean): void;
+  Menu?: { Item: new (label: string, enabled: boolean, onClick: () => void, icon?: string) => {
+    register(): void; deregister(): void;
+  } };
   CosmosAsync?: SpotifyHttp;
   GraphQL?: {
     Definitions: Record<string, unknown>;
@@ -134,14 +138,36 @@ type SpotiKit = {
     on(event: string, listener: (event: unknown) => void): Removal;
   };
   Playbar?: { add(options: ButtonOptions): Button };
+  ProfileMenu?: { add(options: { label: string; icon: string; onSelect(): void }): { remove(): void } };
   Topbar: { add(options: ButtonOptions): Button };
 };
 
 export type Root = { render(node: ReactNode): void; unmount(): void };
 export type Track = { id: string; title: string; artists: string; artist?: string; artistUri?: string; cover: string;
   artistLinks?: { name: string; uri?: string }[]; album?: string; albumUri?: string; albumUpc?: string; year?: string; isrc?: string };
-export type TtmlTrack = { uri: string; name: string; artists: { name: string }[]; album?: { name?: string; images?: { url: string }[] };
-  external_ids?: { isrc?: string } };
+type CatalogueAlbum = {
+  uri?: string;
+  name?: string;
+  artists?: { name: string }[];
+  images?: { url: string; width?: number; height?: number }[];
+  release_date?: string;
+  album_type?: string;
+  total_tracks?: number;
+  genres?: string[];
+  label?: string;
+  copyrights?: { type: string; text: string }[];
+  external_ids?: { upc?: string; ean?: string };
+};
+export type TtmlTrack = {
+  uri: string;
+  name: string;
+  artists: { name: string }[];
+  album?: CatalogueAlbum;
+  disc_number?: number;
+  track_number?: number;
+  explicit?: boolean;
+  external_ids?: { isrc?: string };
+};
 
 function isTtmlTrack(value: unknown): value is TtmlTrack {
   const track = value as Partial<TtmlTrack> | null;
@@ -243,6 +269,17 @@ export function getHost() {
   const canvases = new Map<string, Promise<CanvasInfo | null | undefined>>();
   const analyses = new Map<string, Promise<AudioAnalysis | null>>();
   const currentTrack = () => kit?.Player.state?.item ?? kit?.Player.track ?? spice?.Player.data?.item;
+  async function lookupWebTrack(id: string) {
+    if (!/^[A-Za-z0-9]{22}$/.test(id)) return;
+    const track = await spotifyWeb?.get(`https://api.spotify.com/v1/tracks/${id}`).catch(() => undefined);
+    return isTtmlTrack(track) ? track : undefined;
+  }
+  async function lookupTrack(id: string) {
+    const track = await lookupWebTrack(id);
+    if (track) return track;
+    const native = await spotifyTrackMetadata(id);
+    return isTtmlTrack(native) ? native : undefined;
+  }
   const playerAPI = () => (kit?.Platform.PlayerAPI as PlayerAPI | undefined) ?? spice?.Player.origin;
   const playerState = (player = playerAPI()) => player?._state ?? kit?.Player.state ?? spice?.Player.data;
   function djAction() {
@@ -331,6 +368,20 @@ export function getHost() {
   }
 
   return {
+    profileSettings(onSelect: () => void): Removal {
+      const label = "Lyssna Lyrics settings";
+      const menuIcon = icon.replace('width="20" height="20"', 'width="16" height="16"');
+      if (kit?.ProfileMenu) {
+        const item = kit.ProfileMenu.add({ label, icon: menuIcon, onSelect });
+        return () => item.remove();
+      }
+      if (spice?.Menu) {
+        const item = new spice.Menu.Item(label, false, onSelect, menuIcon);
+        item.register();
+        return () => item.deregister();
+      }
+      return () => {};
+    },
     get developerMode() {
       const flag = kit?.Platform.isDeveloperMode ?? spice?.Platform?.isDeveloperMode ?? spice?._platform?.isDeveloperMode;
       return typeof flag === "boolean" ? flag : undefined;
@@ -359,7 +410,7 @@ export function getHost() {
         album: track.album?.name ?? track.metadata?.album_title,
         albumUri: track.album?.uri || track.metadata?.album_uri,
         albumUpc: track.album?.upc ?? track.metadata?.album_upc,
-        isrc: track.metadata?.isrc?.toUpperCase(),
+        isrc: normalizeIsrc(track.metadata?.isrc),
         year: /^(\d{4})(?:-|$)/.exec(track.album?.release_date ?? track.album?.releaseDate ?? track.metadata?.album_release_date ?? "")?.[1],
         cover: albumArtwork(track),
       };
@@ -377,10 +428,15 @@ export function getHost() {
       if (!Array.isArray(result?.tracks?.items)) throw new Error("Spotify search is unavailable.");
       return [...new Map(result.tracks.items.filter(isTtmlTrack).map((track) => [track.uri, track])).values()];
     },
-    async lookupTrack(id: string) {
-      if (!spotifyWeb || !/^[A-Za-z0-9]{22}$/.test(id)) return;
-      const track = await spotifyWeb.get(`https://api.spotify.com/v1/tracks/${id}`);
-      return isTtmlTrack(track) ? track : undefined;
+    lookupTrack,
+    async lookupIsrc(id: string, known?: string) {
+      return normalizeIsrc(known) ?? (await spotifyTrackMetadata(id))?.external_ids?.isrc
+        ?? normalizeIsrc((await lookupWebTrack(id))?.external_ids?.isrc);
+    },
+    async lookupAlbum(uri?: string) {
+      const id = /^spotify:album:([A-Za-z0-9]{22})$/.exec(uri ?? "")?.[1];
+      if (!spotifyWeb || !id) return;
+      return await spotifyWeb.get(`https://api.spotify.com/v1/albums/${id}`) as CatalogueAlbum | undefined;
     },
     spotifyLyrics(id: string) {
       if (!spotifyWeb || !/^[A-Za-z0-9]{22}$/.test(id)) return;

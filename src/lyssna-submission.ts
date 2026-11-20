@@ -24,9 +24,7 @@ export async function submitLyssnaTtml(file: File, track: Track, host: Host) {
 
   const ttml = await file.text();
   if (!ttml.trim()) throw new Error("The TTML file is empty.");
-  const found = track.isrc ? undefined : await host.lookupTrack(track.id).catch(() => undefined);
-  const isrc = (track.isrc ?? found?.external_ids?.isrc)?.replaceAll("-", "").toUpperCase();
-  const validIsrc = isrc && /^[A-Z]{2}[A-Z0-9]{3}\d{7}$/.test(isrc) ? isrc : undefined;
+  const validIsrc = await host.lookupIsrc(track.id, track.isrc).catch(() => undefined);
   const links = validIsrc ? [{ platform: "isrc", external_id: validIsrc }] : [];
   links.push({ platform: "spotify", external_id: track.id });
   const artists = track.artistLinks?.map(({ name }) => name).filter(Boolean);

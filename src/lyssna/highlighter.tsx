@@ -1,4 +1,5 @@
 import {
+  Fragment,
   memo,
   useLayoutEffect,
   useMemo,
@@ -50,8 +51,7 @@ export interface Piece {
 /** The stretches of a line the marker covers one after another. */
 export function highlighterPieces(line: Line): Piece[] {
   if (line.words.length) {
-    // A space before a word belongs to the word before it, so a row never
-    // starts with a blank inside the ink.
+    // Store spaces after words so they mark where a word group can wrap.
     const pieces = line.words.map(({ text, start_ms, end_ms }) => ({
       text,
       start_ms,
@@ -242,8 +242,7 @@ function pathAt(
   const span = layout.spans[current],
     text = span?.firstChild;
   if (!span || !text) return 0;
-  // Ink is paced over the letters; the space after a word is crossed as
-  // the word ends, so a word never looks finished early.
+  // Ink is paced over the measured letters.
   const ink = inkAt(pieces[current], time),
     all = text.textContent?.length ?? 0;
   const letters =
@@ -571,19 +570,26 @@ export const HighlighterWords = memo(function HighlighterWords({
   return (
     <span className="highlighter-words" ref={root}>
       <span className="highlighter-ink" aria-hidden="true" ref={ink} />
-      {words.map((word) => (
-        <span key={word[0]} className="highlighter-word">
-          {word.map((index) => (
-            <span
-              key={index}
-              className="highlighter-piece"
-              style={{ "--ink": inkAt(pieces[index], time) } as CSSProperties}
-            >
-              {pieces[index].text}
+      {words.map((word) => {
+        const last = word.at(-1)!;
+        const trailing = /\s$/u.test(pieces[last].text);
+        return (
+          <Fragment key={word[0]}>
+            <span className="highlighter-word">
+              {word.map((index) => (
+                <span
+                  key={index}
+                  className="highlighter-piece"
+                  style={{ "--ink": inkAt(pieces[index], time) } as CSSProperties}
+                >
+                  {index === last ? pieces[index].text.trimEnd() : pieces[index].text}
+                </span>
+              ))}
             </span>
-          ))}
-        </span>
-      ))}
+            {trailing ? " " : null}
+          </Fragment>
+        );
+      })}
     </span>
   );
 });

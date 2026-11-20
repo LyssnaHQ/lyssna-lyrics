@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { spectrumFrequency } from "./audio";
 import { useCreatorEnvironment } from "./environment";
 import { spotifyWindowMarker } from "./spotify-window";
-import { replaySampleRate, type ReplayPacket } from "./captured-replay";
+import { recordedCoverage, type ReplayPacket } from "./captured-replay";
 import processorSource from "./live-spectrum-processor.js?raw";
 import {
   hasLiveSpectrum, INTERPOLATED_COLUMN, LIVE_COLUMNS, LIVE_ROWS, LIVE_SAMPLE_MS, MEASURED_COLUMN, mergeLiveTile,
@@ -25,7 +25,7 @@ type DisplayOptions = DisplayMediaStreamOptions & {
 type BufferedTile = { tile: LiveTile; revision: number; savedRevision: number };
 type CaptureStatus = "idle" | "selecting" | "live";
 type FrameBatch = { first: number; decibels: Float32Array };
-type ReplayBatch = { firstFrame: number; samples: Int16Array };
+type ReplayBatch = { firstFrame: number; samples: Int32Array };
 const signalFloor = -120;
 
 function captureError(error: unknown) {
@@ -164,7 +164,7 @@ export function useLiveSpectrum(uri: string, duration: number, canCapture: boole
         devices.setCaptureHandleConfig?.({ handle, exposeOrigin: true, permittedOrigins: [origin] });
         configured = true;
       }
-      context = new view.AudioContext({ sampleRate: replaySampleRate });
+      context = new view.AudioContext();
       void context.resume().catch(() => {});
       const options: DisplayOptions = {
         video: { displaySurface: desktop ? "window" : "browser", frameRate: { ideal: 1 } },
@@ -213,6 +213,21 @@ export function useLiveSpectrum(uri: string, duration: number, canCapture: boole
       };
       if (!isSpotify()) throw new Error("Choose the current Spotify tab. Other tabs, windows and system audio are rejected.");
       if (audio.readyState !== "live") throw new Error("Spotify audio sharing ended before capture started.");
+
+      // Keep a partial recording on one sample grid. New recordings prefer the shared stream's rate.
+      await flushReplay();
+      const prior = await recordedCoverage(uri).catch(() => undefined);
+      if (session.current !== active) return;
+      const sampleRate = prior?.sampleRate ?? audio.getSettings().sampleRate;
+      if (sampleRate && sampleRate !== context.sampleRate) {
+        const previous = context;
+        try { context = new view.AudioContext({ sampleRate }); }
+        catch (error) { if (prior) throw error; }
+        if (context !== previous) {
+          void previous.close().catch(() => {});
+          void context.resume().catch(() => {});
+        }
+      }
 
       const stopped = () => stop("Spotify audio sharing ended.");
       video.addEventListener("ended", stopped, { once: true });
@@ -381,15 +396,15 @@ export function useLiveSpectrum(uri: string, duration: number, canCapture: boole
           if (audio.muted) { acceptSignal(false, clock.now); return; }
           if ("samples" in data) {
             const sampleRate = audioContext.sampleRate;
-            if (clock.volume !== 0 && sampleRate === replaySampleRate && data.firstFrame * 1000 / sampleRate >= replayFrom) {
+            if (clock.volume !== 0 && data.firstFrame * 1000 / sampleRate >= replayFrom) {
               replayOrigin ??= Math.round((clock.ms - clock.audioMs) * sampleRate / 1000);
               const startFrame = data.firstFrame + replayOrigin;
               const remaining = Math.round(duration * sampleRate / 1000) - startFrame;
               if (remaining <= 0) return;
               const samples = data.samples.subarray(0, remaining * 2);
-              const packet = { uri, startFrame, samples };
+              const packet = { uri, startFrame, sampleRate, samples };
               if (!replayHeard) {
-                replayHeard = samples.some((sample) => Math.abs(sample) > 1);
+                replayHeard = samples.some((sample) => Math.abs(sample) >= 512);
                 if (!replayHeard) {
                   leadingAudio.push(packet);
                   if (leadingAudio.length > 50) leadingAudio.shift();

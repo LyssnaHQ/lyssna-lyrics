@@ -1,24 +1,23 @@
-export const replaySampleRate = 48_000;
+const legacySampleRate = 48_000;
 const channels = 2;
-const bytesPerFrame = channels * Int16Array.BYTES_PER_ELEMENT;
-const framesPerTile = replaySampleRate;
-const edgeTolerance = Math.round(replaySampleRate * 0.25);
-const gapTolerance = Math.round(replaySampleRate * 0.06);
+const pcm24Bytes = 3;
 
 export type ReplayPacket = {
   uri: string;
   startFrame: number;
-  samples: Int16Array;
+  sampleRate: number;
+  samples: Int32Array;
 };
 export type SavedRecording = { blob: Blob; startMs: number; endMs: number; full: boolean };
 
 type Range = { start: number; end: number };
-type Tile = { uri: string; index: number; samples: Int16Array; ranges: Range[] };
-type TrackRecording = { uri: string; frames: number };
+type Tile = { uri: string; index: number; samples: Int16Array | Uint8Array; ranges: Range[] };
+type TrackRecording = { uri: string; frames: number; sampleRate?: number };
+export type RecordingCoverage = { uri: string; frames: number; sampleRate: number };
 
-export function couldBeComplete(frames: number, duration: number) {
-  const total = Math.round(duration * replaySampleRate / 1000);
-  return total > 0 && frames >= Math.max(total * 0.95, total - 2 * edgeTolerance - gapTolerance);
+export function couldBeComplete(frames: number, duration: number, sampleRate: number) {
+  const total = Math.round(duration * sampleRate / 1000);
+  return total > 0 && frames >= Math.max(total * 0.95, total - Math.round(sampleRate * 0.56));
 }
 
 let database: Promise<IDBDatabase> | undefined;
@@ -65,9 +64,22 @@ function mergeRanges(ranges: Range[], tolerance = 0) {
   return merged;
 }
 
-type TileWrite = { offset: number; samples: Int16Array };
+function packPcm24(samples: Int32Array | Int16Array) {
+  const packed = new Uint8Array(samples.length * pcm24Bytes);
+  // Preserve older 16-bit samples exactly by putting their bits in the upper two bytes.
+  const shift = samples instanceof Int16Array ? 8 : 0;
+  for (let i = 0, offset = 0; i < samples.length; i++, offset += pcm24Bytes) {
+    const value = samples[i] << shift;
+    packed[offset] = value;
+    packed[offset + 1] = value >> 8;
+    packed[offset + 2] = value >> 16;
+  }
+  return packed;
+}
 
-function writeTiles(packets: ReplayPacket[]) {
+type TileWrite = { offset: number; samples: Int32Array };
+
+function writeTiles(packets: ReplayPacket[], framesPerTile: number) {
   const changes = new Map<number, TileWrite[]>();
   for (const { startFrame, samples } of packets) {
     const end = startFrame + samples.length / channels;
@@ -87,42 +99,52 @@ function writeTiles(packets: ReplayPacket[]) {
 }
 
 async function savePackets(uri: string, packets: ReplayPacket[]) {
-  const changes = writeTiles(packets);
+  const { sampleRate } = packets[0];
+  const framesPerTile = sampleRate;
+  const changes = writeTiles(packets, framesPerTile);
+  if (!changes.size) return;
   const db = await openRecording();
   const transaction = db.transaction(["tiles", "tracks"], "readwrite");
   const done = complete(transaction);
   const tiles = transaction.objectStore("tiles");
   const tracks = transaction.objectStore("tracks");
   const trackRequest = tracks.get(uri);
-  let frames = 0;
   let remaining = changes.size;
-  // Queue the track summary after the tile reads, in the same transaction.
-  for (const [index, writes] of changes) {
-    const request = tiles.get([uri, index]);
-    request.onsuccess = () => {
-      const tile: Tile = request.result ?? { uri, index, samples: new Int16Array(framesPerTile * channels), ranges: [] };
-      const before = coverage(tile.ranges);
-      for (const { offset, samples } of writes) {
-        tile.samples.set(samples, offset * channels);
-        tile.ranges.push({ start: offset, end: offset + samples.length / channels });
-      }
-      tile.ranges = mergeRanges(tile.ranges);
-      frames += coverage(tile.ranges) - before;
-      tiles.put(tile);
-      if (--remaining === 0) {
-        frames += (trackRequest.result as TrackRecording | undefined)?.frames ?? 0;
-        tracks.put({ uri, frames } satisfies TrackRecording);
-      }
-    };
-  }
+  const summary = { uri, sampleRate, frames: 0 };
+  trackRequest.onsuccess = () => {
+    const previous: TrackRecording | undefined = trackRequest.result;
+    // Every tile for a song uses the same sample rate, including legacy captures.
+    if (previous?.frames && (previous.sampleRate ?? legacySampleRate) !== sampleRate) {
+      transaction.abort();
+      return;
+    }
+    summary.frames = previous?.frames ?? 0;
+    for (const [index, writes] of changes) {
+      const request = tiles.get([uri, index]);
+      request.onsuccess = () => {
+        const tile: Tile = request.result ?? { uri, index, samples: new Uint8Array(framesPerTile * channels * pcm24Bytes), ranges: [] };
+        const packed = tile.samples instanceof Int16Array ? packPcm24(tile.samples) : tile.samples;
+        const before = coverage(tile.ranges);
+        for (const { offset, samples } of writes) {
+          packed.set(packPcm24(samples), offset * channels * pcm24Bytes);
+          tile.ranges.push({ start: offset, end: offset + samples.length / channels });
+        }
+        tile.samples = packed;
+        tile.ranges = mergeRanges(tile.ranges);
+        summary.frames += coverage(tile.ranges) - before;
+        tiles.put(tile);
+        if (--remaining === 0) tracks.put(summary);
+      };
+    }
+  };
   await done;
-  return changes.size ? frames : undefined;
+  return summary;
 }
 
-export async function recordedFrames(uri: string) {
+export async function recordedCoverage(uri: string): Promise<RecordingCoverage | undefined> {
   const db = await openRecording();
   const track: TrackRecording | undefined = await result(db.transaction("tracks").objectStore("tracks").get(uri));
-  return track?.frames ?? 0;
+  if (track) return { ...track, sampleRate: track.sampleRate ?? legacySampleRate };
 }
 
 async function deleteRecording(uri: string) {
@@ -134,7 +156,7 @@ async function deleteRecording(uri: string) {
   await done;
 }
 
-export function createCapturedReplay(onSaved: (uri: string, frames: number) => void, onError: () => void) {
+export function createCapturedReplay(onSaved: (summary: RecordingCoverage) => void, onError: () => void) {
   let pending: ReplayPacket[] = [];
   let saving = Promise.resolve();
   let queued = 0;
@@ -152,8 +174,8 @@ export function createCapturedReplay(onSaved: (uri: string, frames: number) => v
         else byTrack.set(packet.uri, [packet]);
       }
       for (const [uri, packets] of byTrack) {
-        const frames = await savePackets(uri, packets);
-        if (frames !== undefined) onSaved(uri, frames);
+        const summary = await savePackets(uri, packets);
+        if (summary) onSaved(summary);
       }
     }).catch(onError).finally(() => { queued--; });
     return saving;
@@ -180,7 +202,8 @@ export function createCapturedReplay(onSaved: (uri: string, frames: number) => v
   };
 }
 
-function wavHeader(frames: number) {
+function wavHeader(frames: number, sampleRate: number, bytesPerSample: number) {
+  const bytesPerFrame = channels * bytesPerSample;
   const byteLength = frames * bytesPerFrame;
   const header = new DataView(new ArrayBuffer(44));
   header.setUint32(0, 0x52494646); // RIFF
@@ -190,10 +213,10 @@ function wavHeader(frames: number) {
   header.setUint32(16, 16, true);
   header.setUint16(20, 1, true); // PCM
   header.setUint16(22, channels, true);
-  header.setUint32(24, replaySampleRate, true);
-  header.setUint32(28, replaySampleRate * bytesPerFrame, true);
+  header.setUint32(24, sampleRate, true);
+  header.setUint32(28, sampleRate * bytesPerFrame, true);
   header.setUint16(32, bytesPerFrame, true);
-  header.setUint16(34, 16, true);
+  header.setUint16(34, bytesPerSample * 8, true);
   header.setUint32(36, 0x64617461); // data
   header.setUint32(40, byteLength, true);
   return header.buffer;
@@ -201,34 +224,52 @@ function wavHeader(frames: number) {
 
 async function readRecording(uri: string, positionMs: number, duration: number, completeOnly: boolean): Promise<SavedRecording | undefined> {
   const db = await openRecording();
-  const tiles: Tile[] = await result(db.transaction("tiles").objectStore("tiles").getAll(tileRange(uri)));
-  const total = Math.min(Math.ceil(duration * replaySampleRate / 1000), Math.floor((0xffffffff - 36) / bytesPerFrame));
+  const transaction = db.transaction(["tiles", "tracks"]);
+  const [tiles, track]: [Tile[], TrackRecording | undefined] = await Promise.all([
+    result(transaction.objectStore("tiles").getAll(tileRange(uri))),
+    result(transaction.objectStore("tracks").get(uri)),
+  ]);
+  if (!tiles.length) return;
+  const sampleRate = track?.sampleRate ?? legacySampleRate;
+  const framesPerTile = sampleRate;
+  const edgeTolerance = Math.round(sampleRate * 0.25);
+  const gapTolerance = Math.round(sampleRate * 0.06);
+  const bytesPerSample = tiles.some(({ samples }) => samples instanceof Uint8Array) ? pcm24Bytes : 2;
+  const bytesPerFrame = channels * bytesPerSample;
+  const total = Math.min(Math.ceil(duration * sampleRate / 1000), Math.floor((0xffffffff - 36) / bytesPerFrame));
   const timeline = tiles.flatMap(({ index, ranges }) => ranges.map(({ start, end }) => ({
     start: index * framesPerTile + start, end: Math.min(total, index * framesPerTile + end),
   })).filter(({ start, end }) => end > start));
-  const position = Math.round(positionMs * replaySampleRate / 1000);
+  const position = Math.round(positionMs * sampleRate / 1000);
   const distance = (range: Range) => Math.max(range.start - position, position - range.end, 0);
   const ranges = mergeRanges(timeline, gapTolerance);
   const full = ranges.length === 1 && ranges[0].start <= edgeTolerance && ranges[0].end >= total - edgeTolerance &&
-    couldBeComplete(coverage(timeline), duration);
+    couldBeComplete(coverage(timeline), duration, sampleRate);
   if (completeOnly && !full) return;
-  const selected = full ? { start: 0, end: total } : ranges.filter(({ start, end }) => end - start >= replaySampleRate / 2)
+  const selected = full ? { start: 0, end: total } : ranges.filter(({ start, end }) => end - start >= sampleRate / 2)
     .sort((a, b) => distance(a) - distance(b) || (b.end - b.start) - (a.end - a.start))[0];
   if (!selected) return;
 
   const { start, end } = selected;
-  const parts: BlobPart[] = [wavHeader(end - start)];
+  const parts: BlobPart[] = [wavHeader(end - start, sampleRate, bytesPerSample)];
   const byIndex = new Map(tiles.map((tile) => [tile.index, tile]));
   for (let index = Math.floor(start / framesPerTile); index * framesPerTile < end; index++) {
     const first = Math.max(0, start - index * framesPerTile);
     const last = Math.min(framesPerTile, end - index * framesPerTile);
-    const tile = byIndex.get(index);
-    parts.push(tile ? tile.samples.slice(first * channels, last * channels) : new Int16Array((last - first) * channels));
+    const samples = byIndex.get(index)?.samples;
+    if (samples instanceof Uint8Array) {
+      parts.push(samples.slice(first * bytesPerFrame, last * bytesPerFrame));
+    } else if (samples) {
+      const old = samples.slice(first * channels, last * channels);
+      parts.push(bytesPerSample === pcm24Bytes ? packPcm24(old) : old);
+    } else {
+      parts.push(new Uint8Array((last - first) * bytesPerFrame));
+    }
   }
   return {
     blob: new Blob(parts, { type: "audio/wav" }),
-    startMs: start * 1000 / replaySampleRate,
-    endMs: end * 1000 / replaySampleRate,
+    startMs: start * 1000 / sampleRate,
+    endMs: end * 1000 / sampleRate,
     full,
   };
 }

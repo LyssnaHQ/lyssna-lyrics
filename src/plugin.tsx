@@ -60,7 +60,7 @@ function useLiveSettings() {
   return settings;
 }
 
-function useTrackLyrics(track: Track, duration: number, view: Window, settings: Settings) {
+function useTrackLyrics(track: Track, duration: number, view: Window, settings: Settings, host: Host) {
   const [lyrics, setLyrics] = useState<Lyrics>();
   const [waiting, setWaiting] = useState(true);
   const sourceKey = enabledSources(settings).join(",");
@@ -74,7 +74,7 @@ function useTrackLyrics(track: Track, duration: number, view: Window, settings: 
       view.clearTimeout(timer);
       const current = ++generation;
       if (enabled.length === 0) return;
-      const lyrics = await readLyrics(track, duration, enabled);
+      const lyrics = await readLyrics(track, duration, enabled, host);
       if (generation !== current) return;
       setLyrics(lyrics);
       const pendingSpicy = enabled.includes("spicy") || enabled.includes("apple");
@@ -118,7 +118,7 @@ function LyricsForTrack({ track, host, playing, settings, view = window, fullVie
   openCreator?(): void;
 }) {
   const duration = host.duration();
-  const data = useTrackLyrics(track, duration, view, settings);
+  const data = useTrackLyrics(track, duration, view, settings, host);
   const uri = `spotify:track:${track.id}`;
   const [draft, setDraft] = useState(() => fullView ? draftPreview(uri) : null);
   const reviewing = settings.ttml_reviewer !== "off" && hasTemporaryTtml(track.id) &&
@@ -209,7 +209,7 @@ function NowPlayingLyrics({ track, playing, settings, host, open, expand }: {
 }) {
   const fonts = useAppFonts(settings);
   const duration = host.duration();
-  const data = useTrackLyrics(track, duration, window, settings);
+  const data = useTrackLyrics(track, duration, window, settings, host);
   const hasLyrics = !!data.lyrics?.lines.length;
   const [mode, setMode] = useState<NowPlayingMode>(() => {
     const saved = localStorage.getItem(nowPlayingModeKey);
@@ -385,9 +385,10 @@ function requestDisplayFullscreen(parent: HTMLElement) {
   void parent.requestFullscreen().then(() => parent.focus({ preventScroll: true })).catch(() => {});
 }
 
-function LyricsView({ host, options, close, parent, view = window, fullscreenRequest = 0, openCreator, closeCreator, onSidebarCover }: {
+function LyricsView({ host, options, close, parent, view = window, fullscreenRequest = 0, settingsRequest = 0, openCreator, closeCreator, onSidebarCover }: {
   host: Host; options: BuildOptions; close: () => void; parent: HTMLElement; view?: Window;
   fullscreenRequest?: number;
+  settingsRequest?: number;
   openCreator?(): void;
   closeCreator?(): void;
   onSidebarCover?(cover?: string): void;
@@ -411,6 +412,12 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
   const lyricsPage = useRef<HTMLElement>(null);
   const ttmlButton = useRef<HTMLButtonElement>(null);
   useLayoutEffect(() => { if (lyricsPage.current) lyricsPage.current.inert = showTtml; }, [showTtml, showCreator]);
+  useLayoutEffect(() => {
+    if (!settingsRequest) return;
+    setNotice("");
+    setShowTtml(false);
+    setShowSettings(true);
+  }, [settingsRequest]);
   useEffect(() => {
     if (!showCreator) return;
     setShowSettings(false);
@@ -675,13 +682,21 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
         closeTtml();
         setNotice("Imported lyrics cleared for this song.");
       }}
-      onGuide={() => view.open("https://lyrprep.spicylyrics.org/guide", "_blank", "noopener,noreferrer")}
+      onGuide={() => view.open("https://lyssna.org/guides", "_blank", "noopener,noreferrer")}
       listSaved={listLocalLyrics} deleteSaved={removeLocalLyrics} onPlay={host.playTrack} onDownload={downloadTtml}
       onBulk={(files, signal) => loadBulkLyrics(files, host, signal)} searchSongs={host.searchTracks}
       attachSong={attachBulkLyrics} onClose={closeTtml} />}
     {!showCreator && showSettings && <SettingsPanel settings={preferences} change={change} close={() => { setNotice(""); setShowSettings(false); }}
       options={options} track={track ?? undefined} notice={notice} setNotice={setNotice} view={view} developerMode={host.developerMode} />}
   </>;
+}
+
+function ProfileSettings({ host, options, close }: { host: Host; options: BuildOptions; close(): void }) {
+  const settings = useLiveSettings();
+  const { track } = usePlayback(host);
+  const [notice, setNotice] = useState("");
+  return <SettingsPanel settings={settings} change={(patch) => saveSettings({ ...readSettings(), ...patch })}
+    close={close} options={options} track={track ?? undefined} notice={notice} setNotice={setNotice} developerMode={host.developerMode} />;
 }
 
 export default function start(options: BuildOptions) {
@@ -737,6 +752,8 @@ export default function start(options: BuildOptions) {
   }
   let close: ((forget?: boolean) => void) | undefined;
   let enterFullscreen: ((mode: FullscreenMode) => void) | undefined;
+  let showMainSettings: (() => void) | undefined;
+  let closeProfileSettings: (() => void) | undefined;
   let mainContainer: HTMLElement | undefined;
   let button: ReturnType<Host["button"]> | undefined;
   let removeCard: (() => void) | undefined;
@@ -755,6 +772,25 @@ export default function start(options: BuildOptions) {
   let restoringRoute = false;
   let unloading = false;
   const sidebarArtwork = nowPlayingArtwork(host.playing);
+
+  function openProfileSettings() {
+    if (disposed || closeProfileSettings) return;
+    if (showMainSettings && !creatorOpen) {
+      showMainSettings();
+      return;
+    }
+    const parent = document.createElement("div");
+    parent.className = "lyssna-lyrics-view lyssna-profile-settings";
+    document.body.append(parent);
+    const root = host.mount(parent);
+    const dismiss = () => {
+      closeProfileSettings = undefined;
+      root.unmount();
+      parent.remove();
+    };
+    closeProfileSettings = dismiss;
+    root.render(<ProfileSettings host={host} options={options} close={dismiss} />);
+  }
 
   function rememberView(lyrics: boolean) {
     const route = host.viewLocation() ?? rememberedView?.route;
@@ -886,6 +922,7 @@ export default function start(options: BuildOptions) {
       if (forget && !unloading) rememberView(false);
       close = undefined;
       enterFullscreen = undefined;
+      showMainSettings = undefined;
       renderMainView = undefined;
       setCreator(false);
       mainContainer = undefined;
@@ -901,14 +938,19 @@ export default function start(options: BuildOptions) {
     button?.setActive(true);
     rememberView(true);
     let fullscreenRequest = 0;
+    let settingsRequest = 0;
     const closeView = () => dismiss();
     const closeCreator = () => {
       setCreator(false);
       window.requestAnimationFrame(() => playbarButtons?.focusCreator());
     };
     renderMainView = () => root.render(<LyricsView host={host} options={options} close={closeView} parent={parent}
-      fullscreenRequest={fullscreenRequest} openCreator={() => setCreator(true)}
+      fullscreenRequest={fullscreenRequest} settingsRequest={settingsRequest} openCreator={() => setCreator(true)}
       closeCreator={creatorOpen ? closeCreator : undefined} onSidebarCover={setSidebarCover} />);
+    showMainSettings = () => {
+      settingsRequest++;
+      renderMainView?.();
+    };
     enterFullscreen = (next) => {
       fullscreenRequest++;
       renderMainView?.();
@@ -949,6 +991,7 @@ export default function start(options: BuildOptions) {
     }),
     () => void open("creator"),
   );
+  const stopProfileSettings = host.profileSettings(openProfileSettings);
   const stopEnhancementStartup = startEnhancements(host);
   keepTemporaryLyricsFor(host.track()?.id);
   const stopTemporaryTrack = host.watch(() => keepTemporaryLyricsFor(host.track()?.id));
@@ -1066,6 +1109,8 @@ export default function start(options: BuildOptions) {
       mutedPreviewPanel?.classList.remove("lyssna-npv-hide-lyrics");
       detached?.dismiss();
       close?.(false);
+      closeProfileSettings?.();
+      stopProfileSettings();
       button?.remove();
       viewButtons.dispose();
       playbarArtwork.dispose();

@@ -1,4 +1,4 @@
-import type { Track } from "./host";
+import type { Host, Track } from "./host";
 import { clearTemporaryLyrics, readLocalLyrics, lyricsChanged } from "./local-lyrics";
 import type { Lyrics } from "./lyssna/types";
 import { readLrcLib, readLrcRed, readNetease } from "./remote-lyrics";
@@ -8,7 +8,7 @@ import { clearLyssnaCache, readLyssnaLyrics, revalidateLyssnaSong } from "./lyss
 
 export const lyricSources = {
   local: { name: "Imported TTML", help: "Lyrics you loaded for the playing song." },
-  lyssna: { name: "Lyssna Lyrics API", help: "Approved community lyrics from Lyssna. Receives the Spotify track ID and may check its ISRC." },
+  lyssna: { name: "Lyssna Lyrics", help: "Approved community lyrics from Lyssna. Receives the Spotify track ID and may check its ISRC." },
   spicy: { name: "Spicy Lyrics", help: "Community lyrics supplied by the Spicy Lyrics plugin." },
   apple: { name: "Apple Music", help: "Apple Music lyrics when supplied by Spicy Lyrics." },
   lrcred: { name: "lrc.red", help: "Word-timed lyrics. Receives the song's ISRC." },
@@ -72,13 +72,13 @@ function readCached(trackId: string, id: string, reader: () => Promise<Lyrics | 
   return entry.value;
 }
 
-export async function readLyrics(track: Track, duration: number, sources: LyricSource[]) {
+export async function readLyrics(track: Track, duration: number, sources: LyricSource[], host: Host) {
   for (const id of sources) {
     if (id === "local") {
       const lyrics = await readLocalLyrics(track.id, duration).catch(() => undefined);
       if (lyrics) return lyrics;
     } else if (id === "lyssna") {
-      const lyrics = await readLyssnaLyrics(track).catch(() => undefined);
+      const lyrics = await readLyssnaLyrics(track, host.lookupIsrc).catch(() => undefined);
       if (lyrics) return lyrics;
     } else if (id === "spicy" || id === "apple") {
       const lyrics = await readCached(track.id, "spicy", () => readSpicyLyrics(track.id), 350);

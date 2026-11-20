@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState, type CSSProperties } from "react";
 import { ChevronDown, ChevronUp, Gauge, Headphones, Pause, Play } from "lucide-react";
 import { useCreatorEnvironment, type RecordingStatus } from "./environment";
 import { usePlaybarPopover } from "./playbar-popover";
-import { recordingExportEnabled } from "./recording-export";
+import { recordingExportEnabled, recordingFormats, type RecordingFormat } from "./recording-export";
 import { formatTime } from "./ttml-creator-model";
 
 export function CreatorSpeed({ speed, min, max, disabled, onChange, openAudio }: {
@@ -41,10 +41,10 @@ export interface BarSpan {
   current: boolean;
 }
 
-function RecordingDetails({ percent, sharing, deleting, remove, exportAudio }: RecordingStatus) {
+function RecordingDetails({ percent, sharing, deleting, returnToSpotify, remove, exportAudio }: RecordingStatus) {
   const { view } = useCreatorEnvironment();
   const [open, setOpen] = useState(false);
-  const [format, setFormat] = useState<"wav" | "flac">("flac");
+  const [format, setFormat] = useState<RecordingFormat>("flac");
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState("");
   const trigger = useRef<HTMLButtonElement>(null);
@@ -69,16 +69,19 @@ function RecordingDetails({ percent, sharing, deleting, remove, exportAudio }: R
     <div className="ttml-recording-popover" ref={panel} id={id} popover="auto" role="dialog" aria-label="Saved audio"
       onToggle={(event) => { if (event.newState === "closed") setOpen(false); }}>
       <strong>Saved audio</strong>
-      <p>{percent === 100 ? "The full song is saved on this device. Creator uses saved audio for playback."
+      <p>{percent === 100 ? "The full song is saved on this device."
         : `${percent}% of this song is recorded on this device. Use the speed slider to sync with the recording.`}</p>
+      {returnToSpotify && <button type="button" onClick={() => { returnToSpotify(); trigger.current?.focus(); setOpen(false); }}>
+        Return to Spotify playback
+      </button>}
       {sharing && <p>Stop sharing Spotify audio to delete this recording.</p>}
       <button type="button" disabled={sharing || deleting || exporting || percent === 0} onClick={() => void remove()}>
         {deleting ? "Deleting…" : "Delete recording"}
       </button>
       {open && percent > 0 && recordingExportEnabled() && <div className="ttml-recording-export">
         <select aria-label="Audio export format" value={format} disabled={exporting || deleting}
-          onChange={(event) => setFormat(event.currentTarget.value === "wav" ? "wav" : "flac")}>
-          <option value="flac">FLAC</option><option value="wav">WAV</option>
+          onChange={(event) => setFormat(event.currentTarget.value as RecordingFormat)}>
+          {Object.entries(recordingFormats).map(([id, label]) => <option key={id} value={id}>{label}</option>)}
         </select>
         <button type="button" disabled={exporting || deleting} onClick={() => void exportRecording()}>
           {exporting ? "Exporting…" : percent === 100 ? "Export audio" : "Export section"}

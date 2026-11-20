@@ -1,5 +1,3 @@
-import { spicetify, spotikit } from "./host";
-
 type Token = { accessToken?: string };
 type TokenProvider = { getToken(options?: { forceRefresh?: boolean }): Promise<Token | null> };
 type Platform = {
@@ -11,7 +9,8 @@ type Platform = {
 };
 
 export async function fetchSpotifyMedia(path: string | ((authenticated: boolean) => string), signal: AbortSignal) {
-  const platform = (spicetify()?.Platform ?? spotikit()?.Platform) as Platform | undefined;
+  const { Spicetify, SpotiKit } = globalThis as { Spicetify?: { Platform?: Platform }; SpotiKit?: { Platform?: Platform } };
+  const platform = Spicetify?.Platform ?? SpotiKit?.Platform;
   const authorization = platform?.AuthorizationAPI;
   const currentToken = authorization?.getState?.()?.token?.accessToken ?? platform?.Session?.accessToken;
   let provider = authorization?._tokenProvider;

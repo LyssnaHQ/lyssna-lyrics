@@ -301,6 +301,10 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   box-sizing: border-box;
 }
 
+.lyssna-lyrics-view .highlighter-words {
+  white-space: normal;
+}
+
 .lyssna-lyrics-view .lyrics-page:has(.gravity-lyrics) .lyrics-body {
   position: static;
 }
@@ -1321,6 +1325,16 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   color-scheme: dark;
   color: light-dark(#080808, #f7f7f7);
   background: light-dark(#fff9, #0009);
+}
+
+.lyssna-lyrics-view.lyssna-profile-settings {
+  position: fixed;
+  background: transparent;
+  pointer-events: none;
+}
+
+.lyssna-profile-settings > .lyrics-settings-backdrop:not(.lyssna-animator-backdrop) {
+  pointer-events: auto;
 }
 
 .lyssna-lyrics-view .lyrics-settings-backdrop[data-theme="light"] {

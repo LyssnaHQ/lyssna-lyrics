@@ -1,6 +1,8 @@
 const fftSize = 4096;
 const mask = fftSize - 1;
 const batchSize = 2;
+const pcm24Scale = 0x800000;
+const toPcm24 = (sample) => Math.max(-pcm24Scale, Math.min(pcm24Scale - 1, Math.round(sample * pcm24Scale)));
 const taper = Float32Array.from({ length: fftSize }, (_, i) => {
   const phase = 2 * Math.PI * i / fftSize;
   return 0.42 - 0.5 * Math.cos(phase) + 0.08 * Math.cos(2 * phase);
@@ -29,7 +31,7 @@ class LiveSpectrumProcessor extends AudioWorkletProcessor {
     this.imaginary = new Float32Array(fftSize);
     this.decibels = new Float32Array(this.rows * batchSize);
     this.count = 0;
-    this.replay = new Int16Array(Math.round(sampleRate / 10) * 2);
+    this.replay = new Int32Array(Math.round(sampleRate / 10) * 2);
     this.replayOffset = 0;
   }
 
@@ -80,11 +82,11 @@ class LiveSpectrumProcessor extends AudioWorkletProcessor {
     let nextFrame = Math.round(this.nextSequence * this.hop);
     for (let i = 0; i < left.length; i++) {
       if (this.replayOffset === 0) this.replayStart = currentFrame + i;
-      this.replay[this.replayOffset++] = Math.min(1, Math.max(-1, left[i])) * 32767;
-      this.replay[this.replayOffset++] = Math.min(1, Math.max(-1, right[i])) * 32767;
+      this.replay[this.replayOffset++] = toPcm24(left[i]);
+      this.replay[this.replayOffset++] = toPcm24(right[i]);
       if (this.replayOffset === this.replay.length) {
         this.port.postMessage({ firstFrame: this.replayStart, samples: this.replay }, [this.replay.buffer]);
-        this.replay = new Int16Array(this.replayOffset);
+        this.replay = new Int32Array(this.replayOffset);
         this.replayOffset = 0;
       }
       this.ring[this.position] = (left[i] + right[i]) / 2;
