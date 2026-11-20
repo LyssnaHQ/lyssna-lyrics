@@ -262,7 +262,7 @@ export function startReleaseNotices(host: Host, options: BuildOptions) {
   function presentUpdate(to: string, apply: () => void) {
     const warn = () => {
       render(<ReleaseToast key={++noticeId} title={`Staying on ${version}`} warning
-        description="Some lyrics sources and features need the latest version. Updating reloads Spotify."
+        description="Updating allows us to provide you with features and bug fixes that have never been seen before 👀"
         action={{ label: "Update", run: () => { close(); apply(); } }} dismiss={close} />);
       toastTimer = setTimeout(close, 9000);
     };
