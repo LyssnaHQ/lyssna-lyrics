@@ -345,22 +345,26 @@ function FullscreenControls({ host, playing, settings, view, trackId, narrating 
       <time>{total}</time>
     </div>
     <div className="lyssna-transport">
-      <button type="button" className={`icon-button lyrics-fullscreen-like${liked ? " is-saved" : ""}`}
-        title={likeLabel} aria-label={likeLabel} aria-pressed={liked} disabled={!trackId}
-        onClick={activate(host.toggleLiked)}><FullscreenHeartIcon /></button>
-      {settings.fullscreen_volume === "left" && volumeSlider}
-      <button type="button" className="icon-button" title="Shuffle" aria-label="Shuffle" aria-pressed={shuffle}
-        onClick={activate(host.toggleShuffle)}><FullscreenShuffleIcon /></button>
-      <button type="button" className="icon-button" aria-label="Previous" onClick={host.previous}><SkipPreviousIcon /></button>
+      <div className="lyssna-transport-side">
+        <button type="button" className={`icon-button lyrics-fullscreen-like${liked ? " is-saved" : ""}`}
+          title={likeLabel} aria-label={likeLabel} aria-pressed={liked} disabled={!trackId}
+          onClick={activate(host.toggleLiked)}><FullscreenHeartIcon /></button>
+        {settings.fullscreen_volume === "left" && volumeSlider}
+        <button type="button" className="icon-button" title="Shuffle" aria-label="Shuffle" aria-pressed={shuffle}
+          onClick={activate(host.toggleShuffle)}><FullscreenShuffleIcon /></button>
+        <button type="button" className="icon-button" aria-label="Previous" onClick={host.previous}><SkipPreviousIcon /></button>
+      </div>
       <button type="button" className="icon-button" aria-label={playing ? "Pause" : "Play"} onClick={host.toggle}>
         {playing ? <FullscreenPauseIcon /> : <FullscreenPlayIcon />}
       </button>
-      <button type="button" className="icon-button" aria-label="Next" onClick={host.next}><SkipNextIcon /></button>
-      <button type="button" className="icon-button" title={`Repeat (${repeat})`} aria-label={`Repeat (${repeat})`}
-        aria-pressed={repeat !== "off"} onClick={activate(cycleRepeat)}><FullscreenRepeatIcon one={repeat === "track"} /></button>
-      {canJumpDJ && <button type="button" className="icon-button lyssna-dj" title="Change the DJ mix"
-        aria-label="Change the DJ mix" onClick={activate(host.jumpDJ)}><Disc3 /></button>}
-      {settings.fullscreen_volume === "right" && volumeSlider}
+      <div className="lyssna-transport-side">
+        <button type="button" className="icon-button" aria-label="Next" onClick={host.next}><SkipNextIcon /></button>
+        <button type="button" className="icon-button" title={`Repeat (${repeat})`} aria-label={`Repeat (${repeat})`}
+          aria-pressed={repeat !== "off"} onClick={activate(cycleRepeat)}><FullscreenRepeatIcon one={repeat === "track"} /></button>
+        {canJumpDJ && <button type="button" className="icon-button lyssna-dj" title="Change the DJ mix"
+          aria-label="Change the DJ mix" onClick={activate(host.jumpDJ)}><Disc3 /></button>}
+        {settings.fullscreen_volume === "right" && volumeSlider}
+      </div>
     </div>
     {settings.fullscreen_volume === "below" && volumeSlider}
   </div>;

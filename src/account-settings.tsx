@@ -52,7 +52,7 @@ export function AccountSettings({ ready }: { ready: boolean }) {
     : profile === null ? "Signed in. Couldn’t load account details." : "Checking…")
     : pending ? "Approve on Lyssna, then paste the sign-in result here within one minute."
     : ready ? "Connect your Lyssna account to Spotify." : "Sign-in is awaiting setup on Lyssna.org.";
-  return <SettingRow label={account?.username ?? "Lyssna account"} help={help}
+  return <SettingRow label={account ? `Lyssna Account · ${account.username}` : "Lyssna account"} help={help}
     keywords="lyssna account profile login sign in sign out reputation tier email" stacked={!!pending}>
     {signedIn ? <div className="settings-actions lyssna-account-actions">
       {account && <a className="pill outline" href={`https://lyssna.org/u/${encodeURIComponent(account.username)}`}

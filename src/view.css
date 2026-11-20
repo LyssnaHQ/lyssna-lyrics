@@ -19,6 +19,10 @@
   display: contents;
 }
 
+:host(.lyssna-lyrics-host) > .lyssna-lyrics-view:not(.immersive, .lyssna-full-window) {
+  z-index: 2;
+}
+
 :is(.main-nowPlayingBar-extraControls, .now-playing-bar-extra-controls) {
   reading-flow: flex-visual;
 }
@@ -1681,29 +1685,49 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   text-align: center;
 }
 
-.lyssna-lyrics-view .lyssna-transport > .icon-button svg {
+.lyssna-lyrics-view .lyssna-transport .icon-button svg {
   width: clamp(20px, 5cqw, 26px);
   height: clamp(20px, 5cqw, 26px);
 }
 
 .lyssna-lyrics-view .lyssna-transport {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   gap: clamp(3px, 1.6cqw, 10px);
 }
 
-.lyssna-lyrics-view .lyssna-transport > .icon-button {
+.lyssna-lyrics-view .lyssna-transport-side {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: inherit;
+}
+
+.lyssna-lyrics-view .lyssna-transport-side:first-child {
+  justify-content: flex-end;
+}
+
+.lyssna-lyrics-view .lyssna-transport-side > .icon-button {
   flex: 0 1 48px;
+}
+
+.lyssna-lyrics-view .lyssna-transport > .icon-button {
+  width: clamp(36px, 9.2cqw, 48px);
+}
+
+.lyssna-lyrics-view .lyssna-transport .icon-button {
   min-width: 22px;
   height: clamp(36px, 9.2cqw, 48px);
 }
 
-.lyssna-lyrics-view .lyssna-transport > .icon-button[aria-pressed="true"],
-.lyssna-lyrics-view .lyssna-transport > .lyssna-dj {
+.lyssna-lyrics-view .lyssna-transport .icon-button[aria-pressed="true"],
+.lyssna-lyrics-view .lyssna-transport .lyssna-dj {
   color: var(--spice-button, #1ed760);
 }
 
 .lyssna-lyrics-view .lyssna-playback .lyrics-volume-pill.lyssna-volume {
   --pill: 30px;
-  width: min(146px, 35%);
+  width: min(146px, 35cqw);
   min-width: 42px;
   height: var(--pill);
   position: relative;
@@ -1712,6 +1736,18 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   background: #0000001a;
   backdrop-filter: blur(12px) saturate(1.6) brightness(1.05);
   box-shadow: 0 8px 20px -8px #080a126b, inset 0 1px 0 #ffffff5c, inset 0 0 0 1px #ffffff29;
+}
+
+@container (width < 320px) {
+  .lyssna-lyrics-view .lyssna-transport {
+    align-items: start;
+  }
+  .lyssna-lyrics-view .lyssna-transport-side {
+    flex-wrap: wrap;
+  }
+  .lyssna-lyrics-view .lyssna-transport-side > .icon-button {
+    flex: 0 1 26px;
+  }
 }
 
 .lyssna-lyrics-view .lyssna-playback .lyrics-volume-pill.lyssna-volume.below {
