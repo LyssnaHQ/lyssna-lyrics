@@ -368,6 +368,10 @@ export function getHost() {
       const track = await spotifyWeb.get(`https://api.spotify.com/v1/tracks/${id}`);
       return isTtmlTrack(track) ? track : undefined;
     },
+    spotifyLyrics(id: string) {
+      if (!spotifyWeb || !/^[A-Za-z0-9]{22}$/.test(id)) return;
+      return spotifyWeb.get(`https://spclient.wg.spotify.com/color-lyrics/v2/track/${id}?format=json&vocalRemoval=false&market=from_token`);
+    },
     position: () => kit ? kit.Player.position : spice?.Player.getProgress() ?? 0,
     duration: () => kit ? kit.Player.duration : spice?.Player.getDuration?.() ?? 0,
     playing: () => kit ? kit.Player.isPlaying : spice?.Player.isPlaying() ?? false,

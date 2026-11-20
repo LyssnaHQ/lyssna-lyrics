@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Headphones, X } from "lucide-react";
 import type { Host, Track as SpotifyTrack } from "../host";
 import type { Settings } from "../settings";
 import { usePlayback } from "../playback";
-import { enabledSources, readLyrics } from "../lyric-sources";
+import { enabledSources, type LyricSource } from "../lyric-sources";
 import { lyricsChanged, parseLocalTtml, saveLocalLyrics } from "../local-lyrics";
 import { displayLyrics, needsWordSync } from "../word-sync";
 import type { Lyrics } from "../lyssna/types";
@@ -12,10 +12,11 @@ import { Ambience } from "../lyssna/ambience";
 import { fromLrc } from "../lrc";
 import { submitLyssnaTtml } from "../lyssna-submission";
 import { revalidateLyssnaSong } from "../lyssna-provider";
+import { lyssnaInstallReady } from "../lyssna-api";
 import { CreatorEnvironment } from "./environment";
 import { creatorSpectrum, creatorWaveform } from "./audio";
 import { TtmlCreator } from "./ttml-creator";
-import { canSeed } from "./ttml-creator-model";
+import { currentCreatorLyrics, within } from "./current-lyrics";
 import { dismissDraft } from "./ttml-working";
 import type { CreatorState, PlayerRequest, Track } from "./types";
 import css from "./ttml-creator.css?inline";
@@ -30,7 +31,7 @@ function creatorTrack(track: SpotifyTrack, duration: number): Track {
 
 async function seedTimings(host: Host, lyrics: Lyrics, duration: number, trackId?: string) {
   if (!lyrics.synced || !needsWordSync(lyrics, duration)) return lyrics;
-  const analysis = trackId ? await Promise.resolve().then(() => host.analysis(trackId)).catch(() => undefined) : undefined;
+  const analysis = trackId ? await within(Promise.resolve().then(() => host.analysis(trackId)), 1500) : undefined;
   return displayLyrics(lyrics, true, false, duration, analysis ? {
     track: analysis.track, segments: analysis.segments ?? [], beats: analysis.beats ?? [],
   } : undefined) ?? lyrics;
@@ -45,7 +46,7 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
   const [portal, setPortal] = useState<HTMLDivElement | null>(null);
   const [bar, setBar] = useState<HTMLDivElement | null>(null);
   const [showBar, setShowBar] = useState(true);
-  const [seed, setSeed] = useState<{ uri: string; lyrics: Lyrics }>();
+  const [seed, setSeed] = useState<{ uri: string; lyrics?: Lyrics }>();
   const [notice, setNotice] = useState<{ message: string; error: boolean }>();
   const [audio, setAudio] = useState<LocalAudio>();
   const [localPlaying, setLocalPlaying] = useState(false);
@@ -59,25 +60,30 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
   const isPlaying = audioForSong ? localPlaying : playing;
   const notify = useCallback((message: string, error = false) => setNotice({ message, error }), []);
 
-  const sourceKey = enabledSources(settings).filter((source) => source !== "spicy" && source !== "apple").join(",");
+  const sourceKey = enabledSources(settings).join(",");
   useEffect(() => {
     if (!track) return;
     let generation = 0;
     async function load(event?: Event) {
       if (!track || (event instanceof CustomEvent && Array.isArray(event.detail) && !event.detail.includes(track.id))) return;
       const request = ++generation;
-      const sources = sourceKey ? sourceKey.split(",") as ReturnType<typeof enabledSources> : [];
-      const lyrics = await readLyrics(track, duration, sources).catch(() => undefined);
-      if (request !== generation || !lyrics || !canSeed(lyrics)) return;
-      const skeleton = await seedTimings(host, lyrics, duration, track.id);
+      const sources = sourceKey ? sourceKey.split(",") as LyricSource[] : [];
+      const lyrics = await currentCreatorLyrics(host, track, duration, sources).catch(() => undefined);
+      if (request !== generation) return;
+      const skeleton = lyrics && await seedTimings(host, lyrics, duration, track.id).catch(() => lyrics);
       if (request !== generation) return;
       setSeed({ uri: `spotify:track:${track.id}`, lyrics: skeleton });
     }
     setSeed(undefined);
     const reload = (event: Event) => { void load(event); };
     window.addEventListener(lyricsChanged, reload);
+    window.addEventListener(lyssnaInstallReady, reload);
     void load();
-    return () => { generation++; window.removeEventListener(lyricsChanged, reload); };
+    return () => {
+      generation++;
+      window.removeEventListener(lyricsChanged, reload);
+      window.removeEventListener(lyssnaInstallReady, reload);
+    };
   }, [track, duration, sourceKey, host]);
 
   useEffect(() => host.watchControls(() => setVolume(host.volume())), [host]);
@@ -90,7 +96,6 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
     if (!audio) return;
     return () => URL.revokeObjectURL(audio.url);
   }, [audio]);
-  useEffect(() => () => { audioLoad.current++; }, []);
   useEffect(() => {
     if (!audioForSong || !audioElement.current) return;
     const element = audioElement.current;
@@ -162,9 +167,21 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
     }, 20);
     return () => view.clearInterval(timer);
   }, [current?.uri, player, read, view]);
-  useEffect(() => () => {
-    if (clip.current && `spotify:track:${host.track()?.id}` === clip.current.uri && host.playing()) host.toggle();
+  const returnToSpotify = useCallback(() => {
+    const element = audioElement.current;
+    const uri = `spotify:track:${host.track()?.id}`;
+    if (element?.dataset.trackUri === uri) {
+      const resume = !clip.current && !element.paused;
+      element.pause();
+      host.seek(Math.round(element.currentTime * 1000));
+      if (resume && !host.playing()) host.toggle();
+    } else if (clip.current?.uri === uri && host.playing()) {
+      host.toggle();
+    }
+    audioLoad.current++;
+    clip.current = undefined;
   }, [host]);
+  useLayoutEffect(() => returnToSpotify, [returnToSpotify]);
 
   const setSpeed = useCallback(async (speed: number) => {
     if (!audioElement.current || !audioForSong) return;
@@ -194,17 +211,7 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
   }
 
   function releaseAudio() {
-    const element = audioElement.current;
-    if (element && audioForSong && `spotify:track:${host.track()?.id}` === audioForSong.uri) {
-      const resume = !clip.current && !element.paused;
-      element.pause();
-      host.seek(Math.round(element.currentTime * 1000));
-      if (resume && !host.playing()) host.toggle();
-    } else if (clip.current && `spotify:track:${host.track()?.id}` === clip.current.uri && host.playing()) {
-      host.toggle();
-    }
-    audioLoad.current++;
-    clip.current = undefined;
+    returnToSpotify();
     setAudio(undefined);
   }
 
@@ -213,6 +220,7 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
     playback: { item: current, is_playing: isPlaying, repeat_state: host.repeat(), volume: volume * 100 },
     playback_rate: audioForSong ? rate : 1, speedEnabled: !!audioForSong,
     lyrics: seed?.uri === current?.uri ? seed?.lyrics : undefined, lyrics_uri: seed?.uri,
+    lyrics_pending: !!current && seed?.uri !== current.uri,
   };
 
   return <div className={`lyssna-creator-surface${settings.reduce_motion ? " reduce-motion" : ""}`} ref={setRoot}>
@@ -228,14 +236,14 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
       {audioForSong && <button type="button" onClick={releaseAudio} title="Return to Spotify playback">{audioForSong.name} <X size={13} /></button>}
       {!showBar && <button type="button" onClick={() => setShowBar(true)}>Show Creator controls</button>}
     </div>
-    {audioForSong && <audio key={audioForSong.url} ref={audioElement} src={audioForSong.url}
+    {audioForSong && <audio key={audioForSong.url} ref={audioElement} src={audioForSong.url} data-track-uri={audioForSong.uri}
       onPlay={() => setLocalPlaying(true)} onPause={() => setLocalPlaying(false)} onEnded={() => setLocalPlaying(false)} />}
     <div className="lyssna-creator-body">
       {root && portal && <CreatorEnvironment.Provider value={{ root, portal, view, read, waveform, spectrogram,
         spectrumKey: audio?.url ?? "spotify", playClip }}>
         <TtmlCreator state={state} onPlayer={player} onToggle={() => player({ command: isPlaying ? "pause" : "play" })}
           onSpeed={setSpeed} notify={notify} barSlot={showBar ? bar : null} onShowPlayer={() => { releaseAudio(); setShowBar(false); }}
-          onClose={() => { releaseAudio(); close(); }}
+          onClose={close}
           onParse={async (filename, text, song) => {
             const ms = song?.duration_ms ?? 0;
             const lyrics = /\.lrc$/i.test(filename)

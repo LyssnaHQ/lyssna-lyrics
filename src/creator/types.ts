@@ -27,4 +27,5 @@ export type CreatorState = {
   speedEnabled: boolean;
   lyrics?: import("../lyssna/types").Lyrics;
   lyrics_uri?: string;
+  lyrics_pending: boolean;
 };

@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { ChevronUp, Disc3, FoldVertical, MicVocal, Music2, PanelLeftOpen, Settings as GearIcon, UnfoldVertical, Wand2, X } from "lucide-react";
+import { ChevronUp, Disc3, FoldVertical, MicVocal, Music2, PanelLeftOpen, Settings as GearIcon, UnfoldVertical, X } from "lucide-react";
 import { getHost, type CanvasInfo, type Host, type Track } from "./host";
 import { useArtworkColor } from "./lyssna/artwork-color";
 import { Ambience } from "./lyssna/ambience";
@@ -346,9 +346,10 @@ function requestDisplayFullscreen(parent: HTMLElement) {
   void parent.requestFullscreen().then(() => parent.focus({ preventScroll: true })).catch(() => {});
 }
 
-function LyricsView({ host, options, close, parent, view = window, fullscreenRequest = 0, onSidebarCover }: {
+function LyricsView({ host, options, close, parent, view = window, fullscreenRequest = 0, closeCreator, onSidebarCover }: {
   host: Host; options: BuildOptions; close: () => void; parent: HTMLElement; view?: Window;
   fullscreenRequest?: number;
+  closeCreator?(): void;
   onSidebarCover?(cover?: string): void;
 }) {
   const externalCinema = view !== window;
@@ -356,7 +357,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
   const settings = useLiveSettings();
   const [showSettings, setShowSettings] = useState(false);
   const [showTtml, setShowTtml] = useState(false);
-  const [showCreator, setShowCreator] = useState(false);
+  const showCreator = !!closeCreator;
   const [fullscreen, setFullscreen] = useState(fullscreenRequest > 0);
   const [leaving, setLeaving] = useState(false);
   const [narrow, setNarrow] = useState(false);
@@ -368,8 +369,12 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
   const toolsTimer = useRef<number>(0);
   const lyricsPage = useRef<HTMLElement>(null);
   const ttmlButton = useRef<HTMLButtonElement>(null);
-  const creatorButton = useRef<HTMLButtonElement>(null);
-  useLayoutEffect(() => { if (lyricsPage.current) lyricsPage.current.inert = showTtml; }, [showTtml]);
+  useLayoutEffect(() => { if (lyricsPage.current) lyricsPage.current.inert = showTtml; }, [showTtml, showCreator]);
+  useEffect(() => {
+    if (!showCreator) return;
+    setShowSettings(false);
+    setShowTtml(false);
+  }, [showCreator]);
   const fonts = useAppFonts(settings, view.document);
   const artwork = narrating ? DJ_COVER : track?.cover;
   const coverColour = useArtworkColor(artwork);
@@ -550,11 +555,8 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
     {!showCreator && backgroundImage && <img className="lyrics-background" src={backgroundImage}
       style={{ "--artwork-blur": `${settings.lyrics_background_blur}px` } as CSSProperties}
       onError={banner ? () => setArtistHeader((current) => current?.url === banner && current.uri === artistUri ? undefined : current) : undefined} alt="" />}
-    {showCreator ? <div className="lyssna-creator-container" style={pageStyle}>
-      <CreatorSurface host={host} view={view} settings={settings} close={() => {
-        setShowCreator(false);
-        view.requestAnimationFrame(() => creatorButton.current?.focus({ preventScroll: true }));
-      }} />
+    {closeCreator ? <div className="lyssna-creator-container" style={pageStyle}>
+      <CreatorSurface host={host} view={view} settings={settings} close={closeCreator} />
     </div> : <section ref={lyricsPage} className={className} aria-label="Lyssna Lyrics" style={pageStyle}
       onPointerMove={wakeTools} onPointerLeave={sleepTools} onKeyDownCapture={wakeTools}>
       {narrating && <DJInterlude playing={playing} reduceMotion={settings.reduce_motion} />}
@@ -593,8 +595,6 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
         <span className="toolbar-divider" aria-hidden="true" />
         <button ref={ttmlButton} type="button" className="icon-button" data-icon="upload" title="Load TTML" aria-label="Load TTML"
           aria-haspopup="dialog" onClick={() => { setNotice(""); setShowTtml(true); }}><UploadIcon /></button>
-        <button ref={creatorButton} type="button" className="icon-button" title="TTML Creator" aria-label="TTML Creator"
-          onClick={() => setShowCreator(true)}><Wand2 size={17} /></button>
         {settings.lyrics_cache_button && <button type="button" className="icon-button" data-icon="retry" title="Refresh lyrics" aria-label="Refresh lyrics"
           disabled={!track} onClick={() => { refreshLyrics(track ?? undefined, settings.lyrics_cache_action); setNotice("Refreshing lyrics…"); }}><RetryIcon /></button>}
         <button type="button" className="icon-button" data-icon="fullscreen" title={fullscreen ? "Exit full screen" : externalCinema ? "Full screen" : "Full screen (Shift for cinema)"}
@@ -608,7 +608,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
       {!showSettings && notice && <div className="lyssna-popout-error" role="status">{notice}</div>}
       {!artworkDock && playback}
     </section>}
-    {showTtml && <LoadTtml song={track ? track.title || "Unknown song" : undefined} glass={settings.liquid_glass} theme={settings.theme} style={fonts}
+    {!showCreator && showTtml && <LoadTtml song={track ? track.title || "Unknown song" : undefined} glass={settings.liquid_glass} theme={settings.theme} style={fonts}
       onSubmit={async (file) => {
         if (!track) throw new Error("Play the song you want to submit lyrics for.");
         const result = await submitLyssnaTtml(file, track, host);
@@ -635,7 +635,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
       listSaved={listLocalLyrics} deleteSaved={removeLocalLyrics} onPlay={host.playTrack} onDownload={downloadTtml}
       onBulk={(files, signal) => loadBulkLyrics(files, host, signal)} searchSongs={host.searchTracks}
       attachSong={attachBulkLyrics} onClose={closeTtml} />}
-    {showSettings && <SettingsPanel settings={settings} change={change} close={() => { setNotice(""); setShowSettings(false); }}
+    {!showCreator && showSettings && <SettingsPanel settings={settings} change={change} close={() => { setNotice(""); setShowSettings(false); }}
       options={options} track={track ?? undefined} notice={notice} setNotice={setNotice} view={view} developerMode={host.developerMode} />}
   </>;
 }
@@ -650,13 +650,24 @@ export default function start(options: BuildOptions) {
   let playbarButtons: ReturnType<typeof playbarViewButtons> | undefined;
   let showPlaybarPopout = false;
   let showPlaybarCinema = false;
+  let creatorEnabled = false;
+  let creatorOpen = false;
+  let renderMainView: (() => void) | undefined;
   function syncPlaybar() {
-    playbarButtons?.sync(showPlaybarPopout, showPlaybarCinema && host.developerMode !== false);
+    playbarButtons?.sync(showPlaybarPopout, showPlaybarCinema && host.developerMode !== false, creatorEnabled, creatorOpen);
+  }
+  function setCreator(open: boolean) {
+    if (creatorOpen === open) return;
+    creatorOpen = open;
+    renderMainView?.();
+    syncPlaybar();
   }
   function applyRuntimeSettings() {
     const settings = readSettings();
     showPlaybarPopout = settings.cinema_lyrics;
     showPlaybarCinema = settings.cinema_window;
+    creatorEnabled = settings.ttml_creator;
+    if (!creatorEnabled) setCreator(false);
     syncPlaybar();
     setFrameCap(settings.animation_fps_cap_enabled ? settings.animation_fps_cap : 0);
     const disabled = settings.lyrics_sources_disabled;
@@ -784,10 +795,16 @@ export default function start(options: BuildOptions) {
     }
   }
 
-  async function open(mode?: FullscreenMode) {
+  async function open(mode?: FullscreenMode | "creator") {
+    if (mode === "creator" && !creatorEnabled) return;
     pendingView = undefined;
     if (close) {
-      if (mode) enterFullscreen?.(mode);
+      if (mode === "creator") setCreator(!creatorOpen);
+      else if (mode) {
+        setCreator(false);
+        enterFullscreen?.(mode);
+      }
+      else if (creatorOpen) setCreator(false);
       else close();
       return;
     }
@@ -814,6 +831,8 @@ export default function start(options: BuildOptions) {
       if (forget && !unloading) rememberView(false);
       close = undefined;
       enterFullscreen = undefined;
+      renderMainView = undefined;
+      setCreator(false);
       mainContainer = undefined;
       button?.setActive(false);
       root.unmount();
@@ -828,15 +847,20 @@ export default function start(options: BuildOptions) {
     rememberView(true);
     let fullscreenRequest = 0;
     const closeView = () => dismiss();
-    const render = () => root.render(<LyricsView host={host} options={options} close={closeView} parent={parent}
-      fullscreenRequest={fullscreenRequest} onSidebarCover={setSidebarCover} />);
+    const closeCreator = () => {
+      setCreator(false);
+      playbarButtons?.focusCreator();
+    };
+    renderMainView = () => root.render(<LyricsView host={host} options={options} close={closeView} parent={parent}
+      fullscreenRequest={fullscreenRequest} closeCreator={creatorOpen ? closeCreator : undefined} onSidebarCover={setSidebarCover} />);
     enterFullscreen = (next) => {
       fullscreenRequest++;
-      render();
+      renderMainView?.();
       if (next === "display") requestDisplayFullscreen(parent);
     };
-    if (mode) enterFullscreen(mode);
-    else render();
+    if (mode === "creator" && creatorEnabled) setCreator(true);
+    else if (mode && mode !== "creator") enterFullscreen(mode);
+    else renderMainView();
   }
 
   let stopViewSwitch: () => void;
@@ -867,6 +891,7 @@ export default function start(options: BuildOptions) {
       console.warn("[Lyssna Lyrics] Could not open Cinema Lyrics", error);
       host.notifyError("Spotify couldn’t open the Cinema Lyrics window. Check that Spotify DevTools is enabled.");
     }),
+    () => void open("creator"),
   );
   const stopEnhancementStartup = startEnhancements();
   keepTemporaryLyricsFor(host.track()?.id);

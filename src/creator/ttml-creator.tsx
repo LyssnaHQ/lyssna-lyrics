@@ -1111,11 +1111,11 @@ export function TtmlCreator({
         : splitUnit(lines, at, cutAt(unit.text, choice.offsets)),
     );
   };
-  const seedBlocked =
-    state.lyrics && !canSeed(state.lyrics)
-      ? "Spicy Lyrics and Apple Music lyrics can't be used as a starting point"
-      : undefined;
-  const seedable = here && !!state.lyrics?.lines.length && !seedBlocked;
+  const seedable = here && state.lyrics_uri === track?.uri && !!state.lyrics?.lines.length && canSeed(state.lyrics);
+  const seedHint = seedable
+    ? state.lyrics?.estimated_words ? "Estimated word timings you can edit" : `Use the lyrics from ${state.lyrics?.source}`
+    : !here ? "Play this song to look up its lyrics"
+      : state.lyrics_pending ? "Looking up lyrics…" : "No lyrics found from Creator sources";
   const startFromLyrics = () => {
     if (!state.lyrics || !seedable) return;
     const seeded = fromLyrics(state.lyrics);
@@ -2011,7 +2011,7 @@ export function TtmlCreator({
                 <Wand2 size={20} />
                 <strong>Current lyrics</strong>
                 <small>
-                  {seedBlocked ?? (state.lyrics?.estimated_words ? "Estimated word timings you can edit" : "The lyrics Lyssna found for this song")}
+                  {seedHint}
                 </small>
               </button>
               <button onClick={fromGenius} disabled={!track}>
@@ -2048,10 +2048,7 @@ export function TtmlCreator({
                 <button
                   onClick={startFromLyrics}
                   disabled={!seedable}
-                  title={
-                    seedBlocked ??
-                    "Use the lyrics Lyssna found for this song as a start"
-                  }
+                  title={seedHint}
                 >
                   <Wand2 size={15} />
                   Start from current lyrics
@@ -2178,10 +2175,7 @@ export function TtmlCreator({
                 <button
                   onClick={startFromLyrics}
                   disabled={!seedable}
-                  title={
-                    seedBlocked ??
-                    "Use the lyrics Lyssna found for this song as a start"
-                  }
+                  title={seedHint}
                 >
                   <Wand2 size={15} />
                   Start from current lyrics
@@ -2296,10 +2290,7 @@ export function TtmlCreator({
                 <button
                   onClick={startFromLyrics}
                   disabled={!seedable}
-                  title={
-                    seedBlocked ??
-                    "Use the lyrics Lyssna found for this song as a start"
-                  }
+                  title={seedHint}
                 >
                   <Wand2 size={15} />
                   Start from current lyrics

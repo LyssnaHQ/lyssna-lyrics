@@ -222,7 +222,7 @@ export function keepTimings(
 /** Spicy Lyrics and Apple Music lyrics never seed a draft, so the creator
  * is not a way to copy them out. */
 export function canSeed(lyrics: Lyrics) {
-  return ["Imported TTML", "Imported LRC", "Lyssna", "lrc.red", "LRCLIB", "Netease"].includes(lyrics.source);
+  return ["Imported TTML", "Imported LRC", "Lyssna", "lrc.red", "LRCLIB", "Netease", "Spotify"].includes(lyrics.source);
 }
 
 export function fromLyrics(lyrics: Lyrics): CreatorLine[] {

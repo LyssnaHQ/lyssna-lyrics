@@ -21,6 +21,7 @@ export const defaults = {
   romanized: false,
   romanization_below: true,
   lyrics_translations: false,
+  ttml_creator: false,
   experimental_word_sync: false,
   lyrics_animator: {} as AnimatorSettings,
   lyrics_background: "animated" as "animated" | "static" | "cover" | "artist" | "color" | "none",
