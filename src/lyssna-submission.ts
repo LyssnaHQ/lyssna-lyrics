@@ -49,11 +49,14 @@ export async function submitLyssnaTtml(file: File, track: Track, host: Host) {
     }
     throw new Error("Couldn’t upload to Lyssna. Try again later.");
   }
-  const result = await response.json().catch(() => null) as { status?: string; song_title?: string; kind?: string } | null;
+  const result = await response.json().catch(() => null) as {
+    status?: string; song_id?: string; song_title?: string; kind?: string; head_revision_id?: string;
+  } | null;
   const title = typeof result?.song_title === "string" && result.song_title ? result.song_title : track.title || "This song";
   const status = result?.status;
   const message = status === "approved" ? `${title} is live on Lyssna.`
     : status === "pending" ? `${result?.kind === "edit" ? "Your edit to " : ""}${title} is waiting for review on Lyssna.`
     : `${title} was submitted to Lyssna.`;
-  return { approved: status === "approved", isrc: validIsrc, message };
+  const published = result?.song_id && result.head_revision_id ? { songId: result.song_id, revision: result.head_revision_id } : undefined;
+  return { approved: status === "approved", published, isrc: validIsrc, message };
 }

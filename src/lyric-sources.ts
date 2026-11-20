@@ -4,7 +4,7 @@ import type { Lyrics } from "./lyssna/types";
 import { readLrcLib, readLrcRed, readNetease } from "./remote-lyrics";
 import type { Settings } from "./settings";
 import { readSpicyLyrics } from "./spicy";
-import { clearLyssnaCache, readLyssnaLyrics } from "./lyssna-provider";
+import { clearLyssnaCache, readLyssnaLyrics, revalidateLyssnaSong } from "./lyssna-provider";
 
 export const lyricSources = {
   local: { name: "Imported TTML", help: "Lyrics you loaded for the playing song." },
@@ -37,7 +37,8 @@ const remoteReaders = { lrcred: readLrcRed, lrclib: readLrcLib, netease: readNet
 type Cached = { expires: number; value: Promise<Lyrics | undefined> };
 const cache = new Map<string, Map<string, Cached>>();
 
-export function refreshLyrics(trackId?: string, action: Settings["lyrics_cache_action"] = "reload") {
+export function refreshLyrics(track?: Track, action: Settings["lyrics_cache_action"] = "reload") {
+  const trackId = track?.id;
   clearTemporaryLyrics(action === "all" ? undefined : trackId);
   if (action === "all") {
     cache.clear();
@@ -47,7 +48,8 @@ export function refreshLyrics(trackId?: string, action: Settings["lyrics_cache_a
     if (action === "song") cache.delete(trackId);
     else for (const entry of cache.get(trackId)?.values() ?? []) entry.expires = 0;
   }
-  window.dispatchEvent(new Event(lyricsChanged));
+  if (track) revalidateLyssnaSong(track.id, track.isrc);
+  window.dispatchEvent(trackId && action !== "all" ? new CustomEvent(lyricsChanged, { detail: [trackId] }) : new Event(lyricsChanged));
 }
 
 function readCached(trackId: string, id: string, reader: () => Promise<Lyrics | undefined>, missMs: number) {

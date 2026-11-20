@@ -36,7 +36,7 @@ import { quickEffects } from "./quick-effects";
 import { DJ_COVER, DJInterlude } from "./dj-interlude";
 import { readViewSession, saveViewSession } from "./view-session";
 import { lyssnaApiNotice, lyssnaInstallReady } from "./lyssna-api";
-import { invalidateLyssnaSong, resumeLyssnaRequests } from "./lyssna-provider";
+import { revalidateLyssnaSong, resumeLyssnaRequests } from "./lyssna-provider";
 import { submitLyssnaTtml } from "./lyssna-submission";
 import { trackLyssnaListens, useLyssnaPlay } from "./lyssna-plays";
 import { MotionArtwork, useMotionArtwork } from "./motion-artwork";
@@ -83,7 +83,7 @@ function useTrackLyrics(track: Track, duration: number, view: Window, settings: 
     }
     function restart(event?: Event) {
       if (event instanceof CustomEvent && Array.isArray(event.detail) && !event.detail.includes(track.id)) return;
-      setLyrics(undefined);
+      if (!event || !enabled.length) setLyrics(undefined);
       setWaiting(enabled.length > 0);
       deadline = Date.now() + 15_000;
       void read();
@@ -576,7 +576,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
         <button ref={ttmlButton} type="button" className="icon-button" data-icon="upload" title="Load TTML" aria-label="Load TTML"
           aria-haspopup="dialog" onClick={() => { setNotice(""); setShowTtml(true); }}><UploadIcon /></button>
         {settings.lyrics_cache_button && <button type="button" className="icon-button" data-icon="retry" title="Refresh lyrics" aria-label="Refresh lyrics"
-          disabled={!track} onClick={() => { refreshLyrics(track?.id, settings.lyrics_cache_action); setNotice("Refreshing lyrics…"); }}><RetryIcon /></button>}
+          disabled={!track} onClick={() => { refreshLyrics(track ?? undefined, settings.lyrics_cache_action); setNotice("Refreshing lyrics…"); }}><RetryIcon /></button>}
         <button type="button" className="icon-button" data-icon="fullscreen" title={fullscreen ? "Exit full screen" : externalCinema ? "Full screen" : "Full screen (Shift for cinema)"}
           aria-label={fullscreen ? "Exit full screen" : "Full screen"}
           aria-pressed={fullscreen} onClick={(event) => toggleFullscreen(event.shiftKey)}><FullScreenIcon /></button>
@@ -593,7 +593,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
         if (!track) throw new Error("Play the song you want to submit lyrics for.");
         const result = await submitLyssnaTtml(file, track, host);
         if (result.approved) {
-          invalidateLyssnaSong(track.id, result.isrc);
+          revalidateLyssnaSong(track.id, result.isrc, result.published);
           window.dispatchEvent(new CustomEvent(lyricsChanged, { detail: [track.id] }));
         }
         closeTtml();
@@ -616,7 +616,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
       onBulk={(files, signal) => loadBulkLyrics(files, host, signal)} searchSongs={host.searchTracks}
       attachSong={attachBulkLyrics} onClose={closeTtml} />}
     {showSettings && <SettingsPanel settings={settings} change={change} close={() => { setNotice(""); setShowSettings(false); }}
-      options={options} trackId={track?.id} notice={notice} setNotice={setNotice} view={view} developerMode={host.developerMode} />}
+      options={options} track={track ?? undefined} notice={notice} setNotice={setNotice} view={view} developerMode={host.developerMode} />}
   </>;
 }
 

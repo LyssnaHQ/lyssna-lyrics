@@ -23,9 +23,9 @@ function save(key: string, value: string) {
   catch { /* Keep using the in-memory install if storage is unavailable. */ }
 }
 
-type RequestOptions = { body?: object; etag?: string; accessToken?: string; waitForInstall?: boolean };
+type RequestOptions = { body?: object; etag?: string; accessToken?: string; waitForInstall?: boolean; revalidate?: boolean };
 
-async function send(path: string, { body, etag, installation, accessToken }: RequestOptions & {
+async function send(path: string, { body, etag, installation, accessToken, revalidate }: RequestOptions & {
   installation?: string;
 }) {
   const url = new URL(path, origin);
@@ -37,6 +37,7 @@ async function send(path: string, { body, etag, installation, accessToken }: Req
   if (body) headers.set("Content-Type", "application/json");
   const response = await fetch(url, {
     headers, method: body ? "POST" : "GET", body: body ? JSON.stringify(body) : undefined,
+    cache: revalidate ? "no-cache" : undefined,
     credentials: "omit", redirect: "error", referrerPolicy: "no-referrer", signal: AbortSignal.timeout(8_000),
   });
   if (response.status === 429 || (response.status === 503 && response.headers.has("Retry-After"))) {

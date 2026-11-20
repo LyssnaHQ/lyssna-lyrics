@@ -5,9 +5,10 @@ import type { Line, Lyrics, LyssnaContributor } from "./lyssna/types";
 
 type LyricsView = {
   song: { id: string };
+  revision_id?: string;
   ttml: string;
   offset_ms: number;
-  timing_kind: "word" | "line" | "static";
+  timing_kind?: "word" | "line" | "static";
   contributors: LyssnaContributor[];
 };
 type CacheEntry = {
@@ -16,12 +17,16 @@ type CacheEntry = {
   freshUntil: number;
   maxAge: number;
 };
+type ApprovedUpload = { songId: string; revision: string };
+type RecentApproval = ApprovedUpload & { expires: number; fallback?: { value: LyricsView; freshUntil: number } };
 
 const cacheName = "lyssna-lyrics.api-curated";
 const cacheLimit = 96;
 const memory = new Map<string, CacheEntry>();
 const pending = new Map<string, Promise<LyricsView | null | undefined>>();
 const cooling = new Map<string, number>();
+const refreshes = new Set<string>();
+const approvals = new Map<string, RecentApproval>();
 const parsed = new WeakMap<LyricsView, Lyrics>();
 let disk: Promise<Cache | undefined> | undefined;
 let writes = Promise.resolve();
@@ -74,24 +79,34 @@ export function clearLyssnaCache() {
   memory.clear();
   pending.clear();
   cooling.clear();
+  refreshes.clear();
+  for (const approval of approvals.values()) approval.fallback = undefined;
   writes = writes.then(async () => {
     await globalThis.caches?.delete(cacheName);
     disk = undefined;
   }).catch(() => {});
 }
 
-export function invalidateLyssnaSong(trackId: string, isrc?: string) {
+function normalizeIsrc(value?: string) {
+  const isrc = value?.replaceAll("-", "").toUpperCase();
+  return isrc && /^[A-Z]{2}[A-Z0-9]{3}\d{7}$/.test(isrc) ? isrc : undefined;
+}
+
+export function revalidateLyssnaSong(trackId: string, isrc?: string, approved?: ApprovedUpload) {
   const paths = [`/v1/lyrics/spotify/${trackId}`];
-  if (isrc) paths.push(`/v1/lyrics/isrc/${isrc}`);
+  const normalizedIsrc = normalizeIsrc(isrc);
+  if (normalizedIsrc) paths.push(`/v1/lyrics/isrc/${normalizedIsrc}`);
   for (const path of paths) {
-    memory.delete(path);
     pending.delete(path);
     cooling.delete(path);
+    // Keep the validator and offline result while requesting the latest revision.
+    refreshes.add(path);
   }
-  writes = writes.then(async () => {
-    const cache = await diskCache();
-    for (const path of paths) await cache?.delete(cacheUrl(path));
-  }).catch(() => {});
+  while (refreshes.size > cacheLimit) refreshes.delete(refreshes.keys().next().value!);
+  if (approved && uuid.test(approved.songId) && uuid.test(approved.revision)) {
+    approvals.set(paths[0], { ...approved, expires: Date.now() + 300_000 });
+    if (approvals.size > cacheLimit) approvals.delete(approvals.keys().next().value!);
+  }
 }
 
 function coolDown(path: string) {
@@ -101,13 +116,13 @@ function coolDown(path: string) {
 
 export function resumeLyssnaRequests() { cooling.clear(); }
 
-async function lookup(path: string, current: () => boolean): Promise<LyricsView | null | undefined> {
+async function lookup(path: string, current: () => boolean, revalidate: boolean): Promise<LyricsView | null | undefined> {
   const cached = await readCache(path, current);
   if (!current()) return;
-  if (cached && Date.now() < cached.freshUntil) return cached.value;
+  if (!revalidate && cached && Date.now() < cached.freshUntil) return cached.value;
   if (Date.now() < (cooling.get(path) ?? 0)) return cached?.value;
   try {
-    const response = await lyssnaRequest(path, { etag: cached?.etag });
+    const response = await lyssnaRequest(path, { etag: cached?.etag, revalidate: revalidate && !cached?.etag });
     if (!current()) return;
     if (!response || response.status === 429 || response.status >= 500) {
       coolDown(path);
@@ -139,13 +154,53 @@ async function lookup(path: string, current: () => boolean): Promise<LyricsView 
   }
 }
 
+async function lookupRefreshed(path: string, current: () => boolean, refresh: boolean) {
+  const value = await lookup(path, current, refresh);
+  const approval = approvals.get(path);
+  if (!approval || !current()) return value;
+  if (value?.revision_id === approval.revision || Date.now() >= approval.expires) {
+    approvals.delete(path);
+    return value;
+  }
+  if (!refresh && approval.fallback && approval.fallback.freshUntil > Date.now()) return approval.fallback.value;
+
+  // The track URL can still have an older response while approval purges the edge.
+  // Confirm the current revision and its timing offset before using the approved file.
+  const songPath = `/v1/songs/${approval.songId}`;
+  try {
+    const songReply = await lyssnaRequest(songPath);
+    if (!songReply?.ok || !current()) return approval.fallback?.value ?? value;
+    const song = await songReply.json() as { current_revision_id?: string; links?: { platform: string; external_id: string; offset_ms: number }[] };
+    if (song.current_revision_id !== approval.revision) {
+      if (current()) approvals.delete(path);
+      return value;
+    }
+    const link = song.links?.find(({ platform, external_id }) => platform === "spotify" && path === `/v1/lyrics/spotify/${external_id}`);
+    if (!link || !Number.isFinite(link.offset_ms) || !current()) return value;
+    const [file, credits] = await Promise.all([
+      lyssnaRequest(`/v1/revisions/${approval.revision}/ttml`),
+      lyssnaRequest(`${songPath}/contributors`),
+    ]);
+    if (!file?.ok || !credits?.ok || !current()) return approval.fallback?.value ?? value;
+    const [ttml, contributors] = await Promise.all([file.text(), credits.json()]);
+    if (!current() || !Array.isArray(contributors)) return value;
+    const confirmed: LyricsView = { song: { id: approval.songId }, revision_id: approval.revision,
+      ttml, contributors, offset_ms: link.offset_ms };
+    approval.fallback = { value: confirmed, freshUntil: Date.now() + 60_000 };
+    return confirmed;
+  } catch {
+    return approval.fallback?.value ?? value;
+  }
+}
+
 function read(platform: "spotify" | "isrc", id: string) {
   const path = `/v1/lyrics/${platform}/${id}`;
   const existing = pending.get(path);
   if (existing) return existing;
   const generation = cacheGeneration;
-  const request: Promise<LyricsView | null | undefined> = lookup(path,
-    () => cacheGeneration === generation && pending.get(path) === request).finally(() => {
+  const refresh = refreshes.delete(path);
+  const request: Promise<LyricsView | null | undefined> = lookupRefreshed(path,
+    () => cacheGeneration === generation && pending.get(path) === request, refresh).finally(() => {
     if (pending.get(path) === request) pending.delete(path);
   });
   pending.set(path, request);
@@ -155,8 +210,8 @@ function read(platform: "spotify" | "isrc", id: string) {
 export async function readLyssnaLyrics(track: Track): Promise<Lyrics | undefined> {
   if (!/^[A-Za-z0-9]{22}$/.test(track.id)) return;
   let value = await read("spotify", track.id);
-  const isrc = track.isrc?.replaceAll("-", "").toUpperCase();
-  if (value === null && isrc && /^[A-Z]{2}[A-Z0-9]{3}\d{7}$/.test(isrc)) value = await read("isrc", isrc);
+  const isrc = normalizeIsrc(track.isrc);
+  if (value === null && isrc) value = await read("isrc", isrc);
   if (!value) return;
   const previous = parsed.get(value);
   if (previous) return previous;

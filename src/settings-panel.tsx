@@ -12,6 +12,7 @@ import { exportSettings, importSettings } from "./settings-transfer";
 import { pictureInPicture } from "./popout";
 import { quickEffects } from "./quick-effects";
 import { AccountSettings } from "./account-settings";
+import type { Track } from "./host";
 
 export type Channel = "stable" | "beta" | "canary";
 export const channelLabels: Record<Channel, string> = { stable: "Stable", beta: "Beta", canary: "Canary" };
@@ -66,17 +67,18 @@ function visualRowKey(row: ReactNode) {
   return isValidElement(row) && row.key !== null ? String(row.key) : "";
 }
 
-export function SettingsPanel({ settings, change, close, options, trackId, notice, setNotice, view = window, developerMode }: {
+export function SettingsPanel({ settings, change, close, options, track, notice, setNotice, view = window, developerMode }: {
   settings: Settings;
   change: (patch: Partial<Settings>) => void;
   close: () => void;
   options: BuildOptions;
-  trackId?: string;
+  track?: Track;
   notice: string;
   setNotice: (message: string) => void;
   view?: Window;
   developerMode?: boolean;
 }) {
+  const trackId = track?.id;
   const [initial] = useState(() => readPlace(settings.settings_remember_place));
   const [tab, setTab] = useState(initial.tab);
   const [submenu, setSubmenu] = useState(initial.submenu);
@@ -271,11 +273,11 @@ export function SettingsPanel({ settings, change, close, options, trackId, notic
       <SettingRow key="lyrics-cache" label="Cache Actions" help="Clear lyrics cached by Lyssna. Imported lyrics are kept." keywords="storage cache clear refresh">
         <div className="settings-actions">
           <button type="button" className="pill outline" disabled={!trackId} onClick={() => {
-            refreshLyrics(trackId, "song");
+            refreshLyrics(track, "song");
             setNotice("Cleared the current song’s cache.");
           }}>Clear Current Song</button>
           <button type="button" className="pill outline" onClick={() => {
-            refreshLyrics(undefined, "all");
+            refreshLyrics(track, "all");
             setNotice("Lyssna lyric cache cleared.");
           }}>Clear Cache</button>
         </div>
