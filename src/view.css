@@ -28,10 +28,10 @@
   order: -3;
 }
 
-/* Spotify's current DJ jump button has a bundled class and no test ID. */
+/* Spotify's DJ tooltip can wrap the button in a separate flex item. */
 :is(.main-nowPlayingBar-extraControls, .now-playing-bar-extra-controls)
-  > :is(button.Gf9V3C4X_WPPfvjwXujC, button[data-testid="dj-jump-button"]) {
-  order: -2;
+  > :is(.Gf9V3C4X_WPPfvjwXujC, [data-testid="dj-jump-button"], :has(.Gf9V3C4X_WPPfvjwXujC, [data-testid="dj-jump-button"])) {
+  order: -4;
 }
 
 :is(.main-nowPlayingBar-extraControls, .now-playing-bar-extra-controls)
