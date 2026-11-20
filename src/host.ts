@@ -5,7 +5,10 @@ type Removal = () => void;
 type RepeatMode = "off" | "context" | "track";
 type ButtonOptions = { label: string; icon: string; onClick: () => void };
 type Button = { active: boolean; remove(): void };
-type HistoryLocation = { pathname: string };
+type HistoryLocation = { pathname: string; search?: string; hash?: string };
+const viewPath = (location?: HistoryLocation) => location?.pathname
+  ? `${location.pathname}${location.search ?? ""}${location.hash ?? ""}`
+  : undefined;
 type HostConfig = { extensions?: unknown; custom_apps?: unknown; customApps?: unknown };
 type SpotifyHistory = {
   location: HistoryLocation;
@@ -14,7 +17,7 @@ type SpotifyHistory = {
   go?(offset: number): void;
   push?(path: string): void;
   replace(path: string): void;
-  listen(callback: () => void): Removal;
+  listen(callback: (location?: HistoryLocation, action?: string) => void): Removal;
 };
 export type AudioSegment = { start: number; duration: number; pitches: number[]; loudness_max: number; loudness_start?: number; loudness_end?: number };
 type AudioAnalysis = { segments?: AudioSegment[]; beats?: { start: number; duration: number }[]; track?: { duration?: number } };
@@ -382,6 +385,10 @@ export function getHost() {
     mainView() {
       return document.querySelector<HTMLElement>(".Root__main-view, .main-view-panel, #main-view");
     },
+    viewLocation: () => viewPath(history()?.location),
+    restoreView(path: string) {
+      history()?.replace(path);
+    },
     async leaveOtherLyricsView() {
       const routes = history();
       if (routes && otherMainView(routes.location)) {
@@ -410,10 +417,17 @@ export function getHost() {
       // Some Spotify clients open lyrics as a Now Playing sidebar variant.
       document.querySelector<HTMLButtonElement>(`${nativeLyricsButton}[aria-pressed="true"]`)?.click();
     },
-    watchViewSwitch(listener: () => void): Removal {
-      const unlisten = history()?.listen?.(listener);
+    watchViewSwitch(listener: (source: "route" | "lyrics") => void): Removal {
+      const routes = history();
+      let previous = viewPath(routes?.location);
+      const unlisten = routes?.listen?.((_location, action) => {
+        const current = viewPath(routes.location);
+        if (current === previous && action !== "PUSH" && action !== "POP") return;
+        previous = current;
+        listener("route");
+      });
       const selectLyrics = (event: MouseEvent) => {
-        if (event.target instanceof Element && event.target.closest(otherLyricsButtons)) listener();
+        if (event.target instanceof Element && event.target.closest(otherLyricsButtons)) listener("lyrics");
       };
       document.addEventListener("click", selectLyrics, true);
       return () => {

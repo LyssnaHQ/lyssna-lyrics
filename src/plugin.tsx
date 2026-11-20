@@ -32,6 +32,7 @@ import { startPreferenceSync } from "./preference-sync";
 import { playbarViewButtons } from "./playbar-fullscreen";
 import { quickEffects } from "./quick-effects";
 import { DJ_COVER, DJInterlude } from "./dj-interlude";
+import { readViewSession, saveViewSession } from "./view-session";
 import fontCss from "./fonts/fonts.css?inline";
 import desktopCss from "./lyssna/lyrics.css?inline";
 import settingsCss from "./lyssna/settings.css?inline";
@@ -307,7 +308,6 @@ function FullscreenControls({ host, playing, settings, view, trackId, narrating 
 }
 
 type FullscreenMode = "display" | "cinema";
-const activeViewKey = "lyssna-lyrics.v1.active-view";
 
 function requestDisplayFullscreen(parent: HTMLElement) {
   if (!parent.ownerDocument.fullscreenEnabled || parent.matches(":fullscreen")) return;
@@ -440,6 +440,12 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
     } else finish();
   }
 
+  const returnToLyrics = fullscreen && !settings.lyrics_escape_exits;
+  function closeLyrics() {
+    if (returnToLyrics) toggleFullscreen();
+    else close();
+  }
+
   useLayoutEffect(() => {
     if (!fullscreenRequest) return;
     window.clearTimeout(timer.current);
@@ -492,8 +498,8 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
       event.preventDefault();
       event.stopImmediatePropagation();
       if (showSettings) setShowSettings(false);
-      else if (event.key === "F11" || (fullscreen && !settings.lyrics_escape_exits)) toggleFullscreen(event.shiftKey);
-      else close();
+      else if (event.key === "F11") toggleFullscreen(event.shiftKey);
+      else closeLyrics();
     };
     view.document.addEventListener("keydown", keyboard);
     return () => view.document.removeEventListener("keydown", keyboard);
@@ -528,7 +534,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
             : track.cover && <div className="lyrics-media"><img className={`cover${settings.cover_animation && !settings.reduce_motion ? " crossfade" : ""}`}
               key={track.cover} src={track.cover} alt="" /></div>}
           <TrackMetadata host={host} track={track} year={year} yearPosition={settings.lyrics_year_position}
-            reduceMotion={settings.reduce_motion} artistFirst={!!canvas} />
+            reduceMotion={settings.reduce_motion} orderByWidth={!!canvas} />
           {artworkDock && playback}
         </div>
         <div className="lyrics-body"><LyricsForTrack key={track.id} track={track} host={host} playing={playing} settings={settings} view={view} fullView /></div>
@@ -560,7 +566,8 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
           aria-pressed={fullscreen} onClick={(event) => toggleFullscreen(event.shiftKey)}><FullScreenIcon /></button>
         <button type="button" className="icon-button" data-icon="settings" title="Lyssna settings" aria-label="Lyssna settings"
           onClick={() => { setNotice(""); setShowSettings(true); }}><GearIcon size={18} /></button>
-        <button type="button" className="icon-button" title="Close lyrics" aria-label="Close lyrics" onClick={close}><X size={18} /></button>
+        <button type="button" className="icon-button" title={returnToLyrics ? "Leave full screen" : "Close lyrics"}
+          aria-label={returnToLyrics ? "Leave full screen" : "Close lyrics"} onClick={closeLyrics}><X size={18} /></button>
       </div>
       {!showSettings && notice && <div className="lyssna-popout-error" role="status">{notice}</div>}
       {!artworkDock && playback}
@@ -624,8 +631,41 @@ export default function start(options: BuildOptions) {
   let opening = false;
   let switchingLyricsView = false;
   let disposed = false;
-  let restorePending = sessionStorage.getItem(activeViewKey) === "open";
+  let rememberedView = readViewSession();
+  let pendingView = rememberedView;
+  let restoringRoute = false;
+  let unloading = false;
   const sidebarArtwork = nowPlayingArtwork(host.playing);
+
+  function rememberView(lyrics: boolean) {
+    const route = host.viewLocation() ?? rememberedView?.route;
+    if (rememberedView && route === rememberedView.route && lyrics === rememberedView.lyrics) return;
+    rememberedView = { route, lyrics };
+    saveViewSession(rememberedView);
+  }
+
+  function restoreView() {
+    const saved = pendingView;
+    const route = host.viewLocation();
+    if (!saved || !route || !host.mainView()) return;
+    pendingView = undefined;
+    if (saved.route && route !== saved.route) {
+      if (route !== "/") {
+        rememberView(false);
+        return;
+      }
+      restoringRoute = true;
+      try {
+        host.restoreView(saved.route);
+      } catch (error) {
+        console.warn("[Lyssna Lyrics] Could not restore the last Spotify page", error);
+      } finally {
+        restoringRoute = false;
+      }
+    }
+    if (saved.lyrics) void open();
+    else rememberView(false);
+  }
 
   function setSidebarCover(cover?: string) {
     if (sidebarCover === cover) return;
@@ -688,7 +728,7 @@ export default function start(options: BuildOptions) {
   }
 
   async function open(mode?: FullscreenMode) {
-    restorePending = false;
+    pendingView = undefined;
     if (close) {
       if (mode) enterFullscreen?.(mode);
       else close();
@@ -714,6 +754,7 @@ export default function start(options: BuildOptions) {
     (main ?? document.body).append(shadowHost);
     const root = host.mount(parent);
     const dismiss = (forget = true) => {
+      if (forget && !unloading) rememberView(false);
       close = undefined;
       enterFullscreen = undefined;
       mainContainer = undefined;
@@ -722,13 +763,12 @@ export default function start(options: BuildOptions) {
       shadowHost.remove();
       setSidebarCover();
       syncNowPlaying();
-      if (forget) sessionStorage.removeItem(activeViewKey);
     };
     close = dismiss;
     mainContainer = shadowHost;
     syncNowPlaying();
     button?.setActive(true);
-    sessionStorage.setItem(activeViewKey, "open");
+    rememberView(true);
     let fullscreenRequest = 0;
     const closeView = () => dismiss();
     const render = () => root.render(<LyricsView host={host} options={options} close={closeView} parent={parent}
@@ -745,7 +785,14 @@ export default function start(options: BuildOptions) {
   let stopViewSwitch: () => void;
   try {
     button = host.button(`Lyssna Lyrics (${channelLabels[options.channel]})`, () => void open());
-    stopViewSwitch = host.watchViewSwitch(() => close?.());
+    stopViewSwitch = host.watchViewSwitch((source) => {
+      if (unloading || restoringRoute || switchingLyricsView) return;
+      const route = host.viewLocation();
+      if (pendingView && source === "route" && (route === "/" || route === pendingView.route)) return;
+      pendingView = undefined;
+      if (close) close();
+      else rememberView(false);
+    });
   } catch (error) {
     button?.remove();
     disposeProvider();
@@ -765,6 +812,15 @@ export default function start(options: BuildOptions) {
     }),
   );
   const stopEnhancementStartup = startEnhancements();
+  const beginUnload = () => { unloading = true; };
+  const resumePage = (event: PageTransitionEvent) => {
+    if (event.persisted) {
+      unloading = false;
+      syncHost();
+    }
+  };
+  window.addEventListener("pagehide", beginUnload);
+  window.addEventListener("pageshow", resumePage);
   const updateActivity = () => setWindowActivity({ minimized: document.hidden, focused: document.hasFocus() });
   document.addEventListener("visibilitychange", updateActivity);
   window.addEventListener("focus", updateActivity);
@@ -832,9 +888,15 @@ export default function start(options: BuildOptions) {
     attachCard(lyricsOpen ? null : panel);
   }
   function syncHost() {
+    if (unloading) return;
     syncPlaybar();
-    if (restorePending && host.mainView()) void open();
-    if (mainContainer && !mainContainer.isConnected) close?.();
+    if (pendingView) restoreView();
+    else if (!rememberedView && !switchingLyricsView && host.viewLocation()) rememberView(false);
+    const main = mainContainer && host.mainView();
+    if (mainContainer && main && mainContainer.parentElement !== main) {
+      main.append(mainContainer);
+      mainContainer.shadowRoot?.querySelector(".lyssna-full-window")?.classList.remove("lyssna-full-window");
+    }
     const panel = findNowPlaying();
     syncBackdrop(panel);
     syncNowPlaying(panel);
@@ -859,6 +921,8 @@ export default function start(options: BuildOptions) {
       disposeProvider();
       stopPreferenceSync();
       stopEnhancementStartup();
+      window.removeEventListener("pagehide", beginUnload);
+      window.removeEventListener("pageshow", resumePage);
       document.removeEventListener("visibilitychange", updateActivity);
       window.removeEventListener("focus", updateActivity);
       window.removeEventListener("blur", updateActivity);

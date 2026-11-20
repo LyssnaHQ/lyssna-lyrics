@@ -436,7 +436,11 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
 }
 
 .lyssna-lyrics-view.immersive .canvas-lyrics:not(.narrow):has(> .lyssna-playback:is(:hover, :focus-within, [data-always="both"], [data-always="time"], [data-always="controls"])) {
-  --canvas-playback-offset: 100px;
+  --canvas-playback-offset: calc(100px + var(--canvas-volume-offset, 0px));
+}
+
+.lyssna-lyrics-view.immersive .canvas-lyrics:not(.narrow):has(> .lyssna-playback > .lyssna-volume.below) {
+  --canvas-volume-offset: 36px;
 }
 
 .lyssna-lyrics-view .lyrics-visualiser {
@@ -1386,6 +1390,10 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
 .lyssna-lyrics-view.immersive .canvas-lyrics.artwork-right:not(.narrow) > .lyssna-playback {
   left: auto;
   right: 2%;
+}
+
+.lyssna-lyrics-view.immersive .canvas-lyrics > .lyssna-playback > .lyssna-seek {
+  margin-bottom: 16px;
 }
 
 .lyssna-lyrics-view .lyssna-seek,

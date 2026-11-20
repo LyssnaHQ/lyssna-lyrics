@@ -13,7 +13,7 @@ async function ready(signal) {
   while (Date.now() < deadline) {
     signal.throwIfAborted();
     const spice = globalThis.Spicetify;
-    if (spice?.React && spice.ReactDOM && spice.Player && spice.Playbar?.Button) return;
+    if (spice?.React && spice.ReactDOM && spice.Player && spice.Playbar?.Button && spice.Platform?.History?.listen) return;
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   throw new Error("Spicetify did not become ready");

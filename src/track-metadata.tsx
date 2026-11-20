@@ -29,18 +29,44 @@ function CatalogueLink({ host, uri, children }: { host: Host; uri?: string; chil
   }}>{children}</a> : <>{children}</>;
 }
 
-export function TrackMetadata({ host, track, year, yearPosition, reduceMotion, artistFirst = false }: {
-  host: Host; track: Track; year?: string; yearPosition: Settings["lyrics_year_position"]; reduceMotion: boolean; artistFirst?: boolean;
+export function TrackMetadata({ host, track, year, yearPosition, reduceMotion, orderByWidth = false }: {
+  host: Host; track: Track; year?: string; yearPosition: Settings["lyrics_year_position"]; reduceMotion: boolean; orderByWidth?: boolean;
 }) {
+  const details = useRef<HTMLDivElement>(null);
+  const [artistFirst, setArtistFirst] = useState(false);
   const artists = track.artistLinks?.length ? track.artistLinks : [{ name: track.artists, uri: track.artistUri }];
   const hasYear = year && yearPosition !== "off";
   const dot = hasYear && track.artists && <span className="lyrics-year-dot" aria-hidden="true">·</span>;
-  const title = <Marquee className="lyrics-title" text={track.title} reduceMotion={reduceMotion}>
+
+  useLayoutEffect(() => {
+    const element = details.current;
+    if (!orderByWidth || !element) return;
+    const title = element.querySelector<HTMLElement>(".lyrics-title .marquee-content");
+    const artistParts = element.querySelectorAll<HTMLElement>(".lyrics-artist-names .marquee-content, .lyrics-year, .lyrics-year-dot");
+    if (!title || !artistParts.length) return;
+    const view = element.ownerDocument.defaultView ?? window;
+    const update = () => {
+      let artistWidth = 0;
+      for (const part of artistParts) {
+        artistWidth += part.getBoundingClientRect().width;
+        if (part.classList.contains("lyrics-year-dot")) {
+          const style = view.getComputedStyle(part);
+          artistWidth += parseFloat(style.marginLeft) + parseFloat(style.marginRight);
+        }
+      }
+      setArtistFirst(title.getBoundingClientRect().width > artistWidth);
+    };
+    const observer = new ResizeObserver(update);
+    observer.observe(title);
+    for (const part of artistParts) observer.observe(part);
+    update();
+    return () => observer.disconnect();
+  }, [orderByWidth, track.id, track.title, track.artists, hasYear, yearPosition]);
+
+  const title = <Marquee key="title" className="lyrics-title" text={track.title} reduceMotion={reduceMotion}>
     <strong className="song-title"><CatalogueLink host={host} uri={track.albumUri}>{track.title}</CatalogueLink></strong>
   </Marquee>;
-  return <div className="lyrics-details">
-    {!artistFirst && title}
-    {(hasYear || track.artists) && <div className="lyrics-artists">
+  const byline = (hasYear || track.artists) && <div className="lyrics-artists" key="artists">
       {hasYear && yearPosition === "left" && <><span className="lyrics-year">{year}</span>{dot}</>}
       {track.artists && <Marquee className="lyrics-artist-names" text={track.artists} reduceMotion={reduceMotion}>
         {artists.map((artist, index) => <Fragment key={`${artist.uri ?? artist.name}-${index}`}>
@@ -48,7 +74,8 @@ export function TrackMetadata({ host, track, year, yearPosition, reduceMotion, a
         </Fragment>)}
       </Marquee>}
       {hasYear && yearPosition === "right" && <>{dot}<span className="lyrics-year">{year}</span></>}
-    </div>}
-    {artistFirst && title}
+    </div>;
+  return <div className="lyrics-details" ref={details}>
+    {orderByWidth && artistFirst ? [byline, title] : [title, byline]}
   </div>;
 }
