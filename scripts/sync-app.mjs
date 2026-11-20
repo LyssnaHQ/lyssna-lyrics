@@ -264,24 +264,6 @@ for (const [file, content] of snapshot) {
 write("types.ts", `${types}\n`);
 write("renderer.tsx", `${renderer.join("\n\n")}\n`);
 write("visual-settings.tsx", `${settingsRows.join("\n")}\n`);
-write("custom-fonts.tsx", read("frontend/custom-fonts.tsx")
-  .replace('from "./types"', 'from "../settings"')
-  .replace(/\/\*\* Fonts imported before[\s\S]*?(?=\/\*\* Custom font families)/, "")
-  .replace('"lyssna-fonts"', '"lyssna-lyrics-fonts"')
-  .replace(/    request\.onsuccess = \(\) => \{[\s\S]*?    \};/, "    request.onsuccess = () => resolve(request.result);")
-  .replace(/\/\*\* Copies fonts from[\s\S]*?(?=async function storedFonts)/, "")
-  .replace("const loaded = new Map<string, Promise<void>>();\nasync function registerFont(font: StoredFont) {",
-    "const documents = new WeakMap<Document, Map<string, Promise<void>>>();\nasync function registerFont(font: StoredFont, page = document) {\n  const loaded = documents.get(page) ?? new Map<string, Promise<void>>();\n  documents.set(page, loaded);")
-  .replace("document.fonts.add(face)", "page.fonts.add(face)")
-  .replace("loadSelectedFonts(families: (string | undefined)[])", "loadSelectedFonts(families: (string | undefined)[], page = document)")
-  .replace(".map(registerFont)", ".map((font) => registerFont(font, page))")
-  .replace("fontFamily(family?: string)", "fontFamily(family?: string, fallback = true)")
-  .replace('\", "Segoe UI", sans-serif`;', '\"${fallback ? \', "Segoe UI", sans-serif\' : ""}`;')
-  .replace('"Inter Variable"', '"Lyssna Inter"')
-  .replace('  settings: Pick<Settings, "ui_font" | "lyric_font">,', '  settings: Pick<Settings, "ui_font" | "lyric_font">,\n  page = document,')
-  .replace("loadSelectedFonts([settings.ui_font, settings.lyric_font])", "loadSelectedFonts([settings.ui_font, settings.lyric_font], page)")
-  .replace("}, [settings.ui_font, settings.lyric_font]);", "}, [settings.ui_font, settings.lyric_font, page]);")
-  .replace("Used across menus, lists and the player.", "Used across Lyssna’s settings and song details."));
 write("lyrics-visualiser.tsx", read("frontend/lyrics-visualiser.tsx")
   .replace('import { rpc } from "./bridge";\n', "")
   .replace("  opacity,", "  opacity,\n  spectrum,")

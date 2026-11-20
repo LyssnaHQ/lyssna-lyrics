@@ -3,7 +3,7 @@ import { ArrowRightToLine, AudioLines, Eye, EyeOff, Settings2, Square } from "lu
 import { useCreatorEnvironment } from "./environment";
 import { pitchBands, spectrumFrequency, spectrumFrequencyPosition } from "./audio";
 import { useLiveSpectrum } from "./live-spectrum";
-import { usePlaybarPopover } from "./playbar-popover";
+import { useAnchoredPopover } from "../anchored-popover";
 import { LIVE_COLUMNS, LIVE_ROWS, LIVE_TILE_MS } from "./spectrum-storage";
 import {
   type CreatorLine,
@@ -277,7 +277,7 @@ export function TtmlSpectrogram({
   const shareButton = useRef<HTMLButtonElement>(null);
   const intro = useRef<HTMLDivElement>(null);
   const introId = useId();
-  usePlaybarPopover(window, showIntro, shareButton, intro);
+  useAnchoredPopover(window, showIntro, shareButton, intro);
   useEffect(() => {
     if (!showIntro) return;
     const dismiss = (event: KeyboardEvent) => {

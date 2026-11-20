@@ -2,7 +2,7 @@ import { cloneElement, isValidElement, useEffect, useLayoutEffect, useRef, useSt
 import { AlignLeft, AppWindow, ChevronLeft, FileText, FlaskConical, Info, Palette, Pin, Search, Settings2, WandSparkles, Wrench, X } from "lucide-react";
 import EnhancementsSection from "./enhancements/section";
 import { AnimatorPanel } from "./lyssna/animator-settings";
-import { FontSettings, useAppFonts } from "./lyssna/custom-fonts";
+import { appFontStyles, FontSettings } from "./font-settings";
 import { HiddenSettings, SettingRow, SettingsQuery, Toggle } from "./lyssna/setting-row";
 import { visualRows } from "./lyssna/visual-settings";
 import { lyricSources, refreshLyrics } from "./lyric-sources";
@@ -96,7 +96,7 @@ export function SettingsPanel({ settings, change, close, options, track, notice,
   const transferInput = useRef<HTMLInputElement>(null);
   const searching = !!query.trim();
   const visuals = visualRows(settings, change, () => setTuning(true));
-  const fonts = useAppFonts(settings, view.document);
+  const fonts = appFontStyles(settings);
   const { flag, range } = visuals;
   const version = options.channels[options.channel];
   const hidden = new Set(settings.hidden_settings);
@@ -201,6 +201,11 @@ export function SettingsPanel({ settings, change, close, options, track, notice,
   const offset = trackId ? settings.lyric_song_offsets[trackId] ?? 0 : 0;
   const visualRowsByKey = new Map([...visuals.Look, ...visuals.Effects].map((row) => [visualRowKey(row), row]));
   const sections: Section[] = [
+    ["Appearance", "Fonts", [
+      flag("custom_fonts_enabled", "Use custom fonts", "Use Spotify Mix or installed fonts. Turn off to use Lyssna’s fonts.", "font typeface"),
+      <FontSettings key="lyric-font" field="lyric_font" settings={settings} change={change} view={view} />,
+      <FontSettings key="app-font" field="ui_font" settings={settings} change={change} view={view} />,
+    ]],
     ["Appearance", "Appearance", [
       flag("liquid_glass", "Liquid Glass", "Use translucent glass for settings, source management, and the TTML database.", "theme glass blur translucent"),
       ...appearanceRows.map((key) => visualRowsByKey.get(key)),
@@ -213,10 +218,6 @@ export function SettingsPanel({ settings, change, close, options, track, notice,
           <option value="dark">Dark</option><option value="light">Light</option><option value="system">Match system</option>
         </select>
       </SettingRow>,
-    ]],
-    ["Appearance", "Fonts", [
-      <FontSettings key="lyric-font" field="lyric_font" settings={settings} onSettings={change} onNotice={setNotice} />,
-      <FontSettings key="app-font" field="ui_font" settings={settings} onSettings={change} onNotice={setNotice} />,
     ]],
     ["Lyrics", "Lyrics display", [
       visualRowsByKey.get("size"),
@@ -250,8 +251,6 @@ export function SettingsPanel({ settings, change, close, options, track, notice,
     ]],
     ["Effects", "Lyric effects", visuals.Effects.filter((row) => !appearanceRows.includes(visualRowKey(row)))],
     ["Sources", "Sources", [
-      <AccountSettings key="lyssna-account" ready={options.lyssnaSignIn === true} />,
-      flag("lyrics_credit_lyssna", "Credit Lyssna", "Show Lyssna beside lyrics it provides.", "attribution provider credits"),
       <SettingRow key="source-order" label="Manage Sources" help="Set lyric source priority, availability, and provider options."
         keywords={`sources order ${sourceSearch}`}>
         {submenuButton("sources", "Manage")}
@@ -284,6 +283,7 @@ export function SettingsPanel({ settings, change, close, options, track, notice,
       </SettingRow>,
     ]],
     ["Advanced", "Advanced", [
+      <AccountSettings key="lyssna-account" ready={options.lyssnaSignIn === true} />,
       flag("ttml_creator", "TTML Creator", "Add an editor button beside fullscreen in the playbar to write and time lyrics for the playing song.",
         "ttml creator maker editor sync timing word by word karaoke amll make lyrics"),
       <SettingRow key="channel" label="Build Channel" help={`${channelLabels[options.channel]}${version ? ` · v${version}` : ""}`} keywords="version canary stable beta">

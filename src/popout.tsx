@@ -4,7 +4,7 @@ import type { Host, Track } from "./host";
 import { Ambience } from "./lyssna/ambience";
 import { NextIcon, PauseIcon, PlayIcon, PreviousIcon, RepeatIcon, ShuffleIcon } from "./lyssna/player-icons";
 import { clock, usePlaybackControls, usePosition } from "./playback";
-import { useAppFonts } from "./lyssna/custom-fonts";
+import { appFontStyles } from "./font-settings";
 import type { Settings } from "./settings";
 import { DJ_COVER, DJInterlude } from "./dj-interlude";
 
@@ -59,7 +59,7 @@ export function LyricsPopout({ host, view, close, track, playing, settings, narr
   host: Host; view: Window; close: () => void; track: Track | null; playing: boolean;
   settings: Settings; narrating: boolean; children: ReactNode;
 }) {
-  const fonts = useAppFonts(settings, view.document);
+  const fonts = appFontStyles(settings);
   const artwork = narrating ? DJ_COVER : track?.cover;
   const title = narrating ? "DJ" : track?.title;
   const [awake, setAwake] = useState(false);

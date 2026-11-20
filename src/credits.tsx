@@ -2,7 +2,6 @@ import { useEffect, useState, type CSSProperties } from "react";
 import { UserRound } from "lucide-react";
 import { CREDIT_NAME_OVERRIDES, lookupDiscordUser, type DiscordIdentity } from "./discord-lookup";
 import type { Contributor, Lyrics } from "./lyssna/types";
-import { readSettings, settingsEvent } from "./settings";
 
 function CreditPerson({ role, person, usernames }: { role: string; person: Contributor; usernames: boolean }) {
   const [identity, setIdentity] = useState<DiscordIdentity | null>(null);
@@ -55,19 +54,12 @@ export function LyricCredits({ lyrics, expanded = false, discord = false }: {
 }
 
 function LyssnaCredits({ attribution, timing, expanded }: { attribution: NonNullable<Lyrics["lyssna"]>; timing: string; expanded: boolean }) {
-  const [showProvider, setShowProvider] = useState(() => readSettings().lyrics_credit_lyssna);
-  useEffect(() => {
-    const update = () => setShowProvider(readSettings().lyrics_credit_lyssna);
-    window.addEventListener(settingsEvent, update);
-    return () => window.removeEventListener(settingsEvent, update);
-  }, []);
   const contributors = attribution.contributors.slice(0, 5);
   const named = contributors.slice(0, (contributors[1]?.share ?? 0) >= 30 ? 2 : 1);
-  if (!showProvider && !contributors.length) return null;
   return <div className={`lyric-source lyssna-provider-credits${expanded ? " expanded" : ""}`}>
-    {showProvider && <div>Lyrics provided by: Lyssna
+    <div>Lyrics provided by: Lyssna
       {timing && <> <span className="lyssna-credit-timing">{timing}</span></>}
-    </div>}
+    </div>
     {contributors.length > 0 && <div className="lyssna-community-credits lyssna-contributors">
       <span>Contributors:</span>
       <span className="lyssna-contributor-avatars">

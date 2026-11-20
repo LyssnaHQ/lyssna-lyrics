@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { GLYPH_PROBE_FONT } from "./fonts/glyph-probe";
-import { fontFamily, loadSelectedFonts } from "./lyssna/custom-fonts";
+import { fontFamily } from "./font-settings";
 import type { Lyrics } from "./lyssna/types";
+import { spotifyMix } from "./settings";
 
 const PROBE_FAMILY = "LyssnaLyricsGlyphProbe";
 const probes = new WeakMap<Document, Promise<CanvasRenderingContext2D | null>>();
@@ -37,8 +38,7 @@ export async function needsDefaultLyricsFont(
   text: string,
   targetDocument: Document
 ): Promise<boolean> {
-  const family = fontFamily(selectedFont, false);
-  if (!family) return false;
+  const family = fontFamily(selectedFont);
 
   const characters = new Map<string, number>();
   let total = 0;
@@ -68,15 +68,15 @@ export async function needsDefaultLyricsFont(
   return false;
 }
 
-export function useDefaultLyricsFont(font: string, lyrics: Lyrics | undefined, page: Document) {
+export function useDefaultLyricsFont(font: string | undefined, lyrics: Lyrics | undefined, page: Document) {
   const [fallback, setFallback] = useState<{ font: string; lyrics: Lyrics }>();
   useEffect(() => {
-    if (!font || !lyrics?.lines.length) return;
+    if (!font || font === spotifyMix || !lyrics?.lines.length) return;
     let active = true;
     const text = lyrics.lines.map((line) => line.reading ? `${line.text}\n${line.reading.text}` : line.text).join("\n");
-    void loadSelectedFonts([font], page).catch(() => {}).then(() => needsDefaultLyricsFont(font, text, page))
+    void needsDefaultLyricsFont(font, text, page)
       .then((needed) => { if (active) setFallback(needed ? { font, lyrics } : undefined); }).catch(() => {});
     return () => { active = false; };
   }, [font, lyrics, page]);
-  return fallback?.font === font && fallback.lyrics === lyrics;
+  return !!fallback && fallback.font === font && fallback.lyrics === lyrics;
 }

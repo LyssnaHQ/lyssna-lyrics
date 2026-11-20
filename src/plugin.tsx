@@ -17,7 +17,7 @@ import type { AudioAnalysisData } from "./experimental-word-sync";
 import { readSettings, saveSettings, settingsEvent, type Settings } from "./settings";
 import { channelLabels, SettingsPanel, type BuildOptions } from "./settings-panel";
 import { startSpicyProvider } from "./spicy";
-import { useAppFonts } from "./lyssna/custom-fonts";
+import { appFontStyles, copySpotifyFonts, selectedFont } from "./font-settings";
 import { downloadTtml, hasTemporaryTtml, keepTemporaryLyricsFor, listLocalLyrics, lyricsChanged, removeLocalLyrics } from "./local-lyrics";
 import { LoadTtml } from "./lyssna/load-ttml";
 import { useReviewerSettings } from "./ttml-reviewer";
@@ -160,7 +160,7 @@ function TrackLyrics({ track, host, playing, settings, compact = false, view = w
   const rendered = useMemo(() => filterWords(displayLyrics(lyrics, estimateTiming,
     settings.romanized && { below: settings.romanization_below && !gravity }, duration, analysis), settings.lyrics_word_filter),
   [lyrics, duration, estimateTiming, settings.romanized, settings.romanization_below, gravity, settings.lyrics_word_filter, analysis]);
-  const defaultFont = useDefaultLyricsFont(settings.lyric_font, rendered, view.document);
+  const defaultFont = useDefaultLyricsFont(selectedFont(settings, "lyric_font"), rendered, view.document);
   const fontClass = defaultFont ? "lyssna-default-lyrics-font" : undefined;
   const upcoming = fullView && settings.lyrics_up_next && duration > 0 && position >= duration - 30_000 ? host.upcoming() : undefined;
   const upNext = upcoming && <div className="lyrics-up-next">
@@ -207,7 +207,7 @@ function NowPlayingCard({ host, open, expand }: { host: Host; open: () => void; 
 function NowPlayingLyrics({ track, playing, settings, host, open, expand }: {
   track: Track; playing: boolean; settings: Settings; host: Host; open: () => void; expand: (expanded: boolean) => void;
 }) {
-  const fonts = useAppFonts(settings);
+  const fonts = appFontStyles(settings);
   const duration = host.duration();
   const data = useTrackLyrics(track, duration, window, settings, host);
   const hasLyrics = !!data.lyrics?.lines.length;
@@ -423,7 +423,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
     setShowSettings(false);
     setShowTtml(false);
   }, [showCreator]);
-  const fonts = useAppFonts(settings, view.document);
+  const fonts = appFontStyles(settings);
   const artwork = narrating ? DJ_COVER : track?.cover;
   const coverColour = useArtworkColor(artwork);
   const canvasEnabled = settings.canvas_lyrics && !settings.lyrics_hide_artwork;
@@ -846,6 +846,7 @@ export default function start(options: BuildOptions) {
       detached?.dismiss();
       try {
         view.document.head.append(stylesheet.cloneNode(true));
+        copySpotifyFonts(view.document);
         const parent = view.document.createElement("div");
         parent.className = cinema ? "lyssna-lyrics-view lyssna-cinema-window immersive" : "lyssna-lyrics-view lyssna-popout-view";
         if (cinema) view.document.title = "Cinema Lyrics · Lyssna";

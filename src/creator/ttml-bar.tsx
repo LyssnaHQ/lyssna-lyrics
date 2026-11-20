@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState, type CSSProperties } from "react";
 import { ChevronDown, ChevronUp, Gauge, Headphones, Pause, Play } from "lucide-react";
 import { useCreatorEnvironment, type RecordingStatus } from "./environment";
-import { usePlaybarPopover } from "./playbar-popover";
+import { useAnchoredPopover } from "../anchored-popover";
 import { recordingExportEnabled, recordingFormats, type RecordingFormat } from "./recording-export";
 import { formatTime } from "./ttml-creator-model";
 
@@ -50,7 +50,7 @@ function RecordingDetails({ percent, sharing, deleting, returnToSpotify, remove,
   const trigger = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);
   const id = useId();
-  usePlaybarPopover(view, open, trigger, panel);
+  useAnchoredPopover(view, open, trigger, panel);
   async function exportRecording() {
     setExporting(true);
     setError("");

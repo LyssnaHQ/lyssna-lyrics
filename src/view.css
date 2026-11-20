@@ -1441,6 +1441,76 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   color: light-dark(#0007, #fff7);
 }
 
+.lyssna-lyrics-view .lyssna-font-control {
+  position: relative;
+  width: 220px;
+  max-width: 100%;
+}
+
+.lyssna-lyrics-view .lyssna-font-control > input {
+  box-sizing: border-box;
+  width: 100%;
+  padding-inline: 12px 36px;
+  background-image: none;
+  cursor: text;
+}
+
+.lyssna-lyrics-view .lyssna-font-control > button {
+  position: absolute;
+  inset-block: 1px;
+  inset-inline-end: 1px;
+  display: grid;
+  width: 32px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  color: light-dark(#454545, #bbb);
+  background: transparent;
+  cursor: pointer;
+}
+
+.lyssna-lyrics-view .lyssna-font-control > button:hover:not(:disabled) {
+  background: light-dark(#0001, #fff1);
+}
+
+.lyssna-lyrics-view .lyssna-font-control > :disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.lyssna-lyrics-view .lyssna-font-options {
+  position: fixed;
+  inset: auto;
+  box-sizing: border-box;
+  max-height: min(224px, var(--popover-available-height, 224px));
+  margin: 0;
+  padding: 4px;
+  overflow: auto;
+  list-style: none;
+  border: 1px solid light-dark(#0002, #fff2);
+  border-radius: 8px;
+  color: light-dark(#191919, #f6f6f6);
+  background: light-dark(#fafafa, #282828);
+  box-shadow: 0 6px 20px #0004;
+  font: inherit;
+  font-size: 13px;
+}
+
+.lyssna-lyrics-view .lyssna-font-options > li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 28px;
+  padding: 2px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.lyssna-lyrics-view .lyssna-font-options > li:is(:hover, [data-active]) {
+  background: light-dark(#0001, #fff2);
+}
+
 .lyssna-lyrics-view .lyrics-settings-tabs > button,
 .lyssna-lyrics-view .lyrics-settings-about-link,
 .lyssna-lyrics-view .lyrics-settings .text-link {
@@ -1761,7 +1831,7 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
     scrollbar-width: thin;
   }
 
-  .lyssna-lyrics-view .plugin-settings :is(.setting-control, .font-control, .settings-range) {
+  .lyssna-lyrics-view .plugin-settings :is(.setting-control, .lyssna-font-control, .settings-range) {
     min-width: 0;
     max-width: 100%;
   }

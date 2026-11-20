@@ -1,12 +1,14 @@
 import { cleanAnimatorValues, cleanSavedPresets, type AnimatorSettings } from "./lyssna/animator-tuning";
 import type { WordFilter } from "./lyssna/word-filter";
 
+export const spotifyMix = "Spotify Mix";
 export const defaults = {
   theme: "dark" as "dark" | "light" | "system",
   liquid_glass: false,
-  ui_font: "",
+  custom_fonts_enabled: true,
+  ui_font: spotifyMix,
   lyric_size: 36,
-  lyric_font: "",
+  lyric_font: spotifyMix,
   lyric_offset_ms: 0,
   lyric_song_offsets: {} as Record<string, number>,
   reduce_motion: false,
@@ -45,7 +47,6 @@ export const defaults = {
   lyrics_skeleton: true,
   lyrics_no_lyrics_notice: true,
   lyrics_discord_usernames: false,
-  lyrics_credit_lyssna: true,
   lyrics_word_filter: "off" as WordFilter,
   space_gravity: false,
   lyrics_highlighter: false,
@@ -82,7 +83,11 @@ export const defaults = {
 export type Settings = typeof defaults;
 const key = "lyssna-lyrics.settings.v1";
 export const settingsEvent = "lyssna-lyrics:settings";
-type StoredSettings = Partial<Settings> & { legacy_preferences_migrated?: boolean; desktop_animator_default_applied?: boolean };
+type StoredSettings = Partial<Settings> & {
+  legacy_preferences_migrated?: boolean;
+  desktop_animator_default_applied?: boolean;
+  lyrics_credit_lyssna?: boolean;
+};
 
 function readRecord() {
   const saved = JSON.parse(localStorage.getItem(key) ?? "null") as StoredSettings | null;
@@ -96,7 +101,8 @@ export function legacyPreferencesMigrated() {
 
 export function readSettings(): Settings {
   try {
-    const { legacy_preferences_migrated: _migrated, desktop_animator_default_applied: _animator, ...saved } = readRecord();
+    const { legacy_preferences_migrated: _migrated, desktop_animator_default_applied: _animator,
+      lyrics_credit_lyssna: _legacyCredit, ...saved } = readRecord();
     const settings = { ...defaults, ...saved };
     const animator = settings.lyrics_animator;
     settings.lyrics_animator = animator ? {
