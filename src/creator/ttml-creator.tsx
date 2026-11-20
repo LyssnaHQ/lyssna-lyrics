@@ -257,7 +257,6 @@ export function TtmlCreator({
   notify,
   renderPreview,
   barSlot,
-  onHideBar,
   onClose,
 }: {
   state: CreatorState;
@@ -274,7 +273,6 @@ export function TtmlCreator({
   notify: (message: string, error?: boolean) => void;
   renderPreview?: (lyrics: Lyrics, position: number, track: Track) => ReactNode;
   barSlot?: HTMLElement | null;
-  onHideBar: () => void;
   onClose?: () => void;
 }) {
   const { root, view: window, waveform, playClip } = useCreatorEnvironment();
@@ -2982,8 +2980,6 @@ export function TtmlCreator({
             spans={barSpans}
             onToggle={onToggle}
             onSeek={seek}
-            onHideBar={onHideBar}
-            onClose={onClose}
             speed={shownSpeed}
             minSpeed={MIN_SPEED}
             maxSpeed={MAX_SPEED}

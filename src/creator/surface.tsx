@@ -45,7 +45,6 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
   const [root, setRoot] = useState<HTMLDivElement | null>(null);
   const [portal, setPortal] = useState<HTMLDivElement | null>(null);
   const [bar, setBar] = useState<HTMLDivElement | null>(null);
-  const [showBar, setShowBar] = useState(true);
   const [seed, setSeed] = useState<{ uri: string; lyrics?: Lyrics }>();
   const [notice, setNotice] = useState<{ message: string; error: boolean }>();
   const [audio, setAudio] = useState<LocalAudio>();
@@ -247,7 +246,6 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
         if (file) void pickAudio(file);
       }} />
       {audioForSong && <button type="button" onClick={releaseAudio} title="Return to Spotify playback">{audioForSong.name} <X size={13} /></button>}
-      {!showBar && <button type="button" onClick={() => setShowBar(true)}>Show Creator controls</button>}
     </div>
     {audioForSong && <audio key={audioForSong.url} ref={audioElement} src={audioForSong.url} data-track-uri={audioForSong.uri}
       onPlay={() => setLocalPlaying(true)} onPause={() => setLocalPlaying(false)} onEnded={() => setLocalPlaying(false)} />}
@@ -255,7 +253,7 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
       {root && portal && <CreatorEnvironment.Provider value={{ root, portal, view, read, readCapturePosition, waveform, spectrogram,
         spectrumKey: audio?.url ?? "spotify", spectrumAudioUri: audio?.uri, openAudio, playClip }}>
         <TtmlCreator state={state} onPlayer={player} onToggle={() => player({ command: isPlaying ? "pause" : "play" })}
-          onSpeed={setSpeed} notify={notify} barSlot={bar} onHideBar={() => { releaseAudio(); setShowBar(false); }}
+          onSpeed={setSpeed} notify={notify} barSlot={bar}
           onClose={close}
           onParse={async (filename, text, song) => {
             const ms = song?.duration_ms ?? 0;
@@ -301,7 +299,7 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
           }} />
       </CreatorEnvironment.Provider>}
     </div>
-    {showBar && <div className="lyssna-creator-transport" ref={setBar} />}
+    <div className="lyssna-creator-transport" ref={setBar} />
     <div className="lyssna-creator-portals" ref={setPortal} />
     {notice && <p className="lyssna-creator-notice" role={notice.error ? "alert" : "status"}>{notice.message}</p>}
   </div>;

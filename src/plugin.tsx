@@ -18,8 +18,9 @@ import { readSettings, saveSettings, settingsEvent, type Settings } from "./sett
 import { channelLabels, SettingsPanel, type BuildOptions } from "./settings-panel";
 import { startSpicyProvider } from "./spicy";
 import { useAppFonts } from "./lyssna/custom-fonts";
-import { downloadTtml, keepTemporaryLyricsFor, listLocalLyrics, lyricsChanged, removeLocalLyrics } from "./local-lyrics";
+import { downloadTtml, hasTemporaryTtml, keepTemporaryLyricsFor, listLocalLyrics, lyricsChanged, removeLocalLyrics } from "./local-lyrics";
 import { LoadTtml } from "./lyssna/load-ttml";
+import { useReviewerSettings } from "./ttml-reviewer";
 import { attachBulkLyrics, importLyricFile, loadBulkLyrics } from "./ttml-import";
 import { enabledSources, readLyrics, refreshLyrics, sourceIds } from "./lyric-sources";
 import { LyricCredits } from "./credits";
@@ -41,7 +42,7 @@ import { submitLyssnaTtml } from "./lyssna-submission";
 import { CreatorSurface } from "./creator/surface";
 import { dismissDraft, draftPreview } from "./creator/ttml-working";
 import { trackLyssnaListens, useLyssnaPlay } from "./lyssna-plays";
-import { MotionArtwork, supportsMotionArtwork, useMotionArtwork } from "./motion-artwork";
+import { MotionArtwork, motionArtworkFormat, useMotionArtwork, usePlayableMotionArtwork } from "./motion-artwork";
 import fontCss from "./fonts/fonts.css?inline";
 import desktopCss from "./lyssna/lyrics.css?inline";
 import settingsCss from "./lyssna/settings.css?inline";
@@ -120,7 +121,8 @@ function LyricsForTrack({ track, host, playing, settings, view = window, fullVie
   const uri = `spotify:track:${track.id}`;
   const [draft, setDraft] = useState(() => fullView ? draftPreview(uri) : null);
   useEffect(() => { setDraft(fullView ? draftPreview(uri) : null); }, [uri, fullView]);
-  if (draft) return <>
+  if (draft && !(settings.ttml_reviewer !== "off" && hasTemporaryTtml(track.id) &&
+    !settings.lyrics_sources_disabled.includes("local"))) return <>
     <button type="button" className="lyssna-dismiss-draft" onClick={() => { dismissDraft(uri); setDraft(null); }}>Hide draft preview</button>
     <TrackLyrics track={track} host={host} playing={playing} settings={settings} view={view} fullView={fullView}
       duration={duration} lyrics={draft} waiting={false} />
@@ -191,7 +193,7 @@ const nowPlayingModeKey = "lyssna-lyrics.v1.now-playing-mode";
 
 function NowPlayingCard({ host, open, expand }: { host: Host; open: () => void; expand: (expanded: boolean) => void }) {
   const { track, playing } = usePlayback(host);
-  const settings = useLiveSettings();
+  const settings = useReviewerSettings(useLiveSettings(), track?.id);
   if (!track || settings.lyrics_hide_npv) return null;
   return <NowPlayingLyrics key={track.id} track={track} playing={playing} settings={settings} host={host} open={open} expand={expand} />;
 }
@@ -246,7 +248,7 @@ function NowPlayingLyrics({ track, playing, settings, host, open, expand }: {
 
 function NowPlayingBackdrop({ host, panel }: { host: Host; panel: HTMLElement }) {
   const { track, playing } = usePlayback(host);
-  const settings = useLiveSettings();
+  const settings = useReviewerSettings(useLiveSettings(), track?.id);
   const enabled = !!track?.cover && settings.npv_ambience;
   const canvas = useMemo(() => () => nowPlayingCanvas(panel), [panel]);
 
@@ -261,7 +263,7 @@ function NowPlayingBackdrop({ host, panel }: { host: Host; panel: HTMLElement })
 
 function PopoutView({ host, view, close }: { host: Host; view: Window; close: () => void }) {
   const { track, playing, narrating } = usePlayback(host, true);
-  const settings = useLiveSettings();
+  const settings = useReviewerSettings(useLiveSettings(), track?.id);
   return <LyricsPopout host={host} view={view} close={close} track={track} playing={playing} settings={settings} narrating={narrating}>
     {track && <LyricsForTrack key={track.id} track={track} host={host} playing={playing} settings={settings} view={view} />}
   </LyricsPopout>;
@@ -354,7 +356,8 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
 }) {
   const externalCinema = view !== window;
   const { track, playing, narrating } = usePlayback(host, true);
-  const settings = useLiveSettings();
+  const preferences = useLiveSettings();
+  const settings = useReviewerSettings(preferences, track?.id);
   const [showSettings, setShowSettings] = useState(false);
   const [showTtml, setShowTtml] = useState(false);
   const showCreator = !!closeCreator;
@@ -388,9 +391,10 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
   const artistUri = track?.artistUri;
   const trackId = track?.id;
   const albumUri = track?.albumUri;
-  const canPlayMotion = useMemo(() => supportsMotionArtwork(view), [view]);
-  const motionUrl = useMotionArtwork(albumUri, track?.albumUpc,
-    canPlayMotion && settings.animated_covers && !settings.reduce_motion && !settings.lyrics_hide_artwork && !canvas);
+  const motionFormat = useMemo(() => motionArtworkFormat(view), [view]);
+  const motionSource = useMotionArtwork(albumUri, track?.albumUpc,
+    !!motionFormat && !showCreator && settings.animated_covers && !settings.reduce_motion && !settings.lyrics_hide_artwork && !canvas);
+  const motionUrl = usePlayableMotionArtwork(motionSource, motionFormat);
   const [unavailableMotion, setUnavailableMotion] = useState<string>();
   const motion = motionUrl !== unavailableMotion ? motionUrl : undefined;
   const year = track?.year ?? (albumYear?.uri === albumUri ? albumYear?.year : undefined);
@@ -557,7 +561,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
       style={{ "--artwork-blur": `${settings.lyrics_background_blur}px` } as CSSProperties}
       onError={banner ? () => setArtistHeader((current) => current?.url === banner && current.uri === artistUri ? undefined : current) : undefined} alt="" />}
     {closeCreator ? <div className="lyssna-creator-container" style={pageStyle}>
-      <CreatorSurface host={host} view={view} settings={settings} close={closeCreator} />
+      <CreatorSurface host={host} view={view} settings={preferences} close={closeCreator} />
     </div> : <section ref={lyricsPage} className={className} aria-label="Lyssna Lyrics" style={pageStyle}
       onPointerMove={wakeTools} onPointerLeave={sleepTools} onKeyDownCapture={wakeTools}>
       {narrating && <DJInterlude playing={playing} reduceMotion={settings.reduce_motion} />}
@@ -610,6 +614,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
       {!artworkDock && playback}
     </section>}
     {!showCreator && showTtml && <LoadTtml song={track ? track.title || "Unknown song" : undefined} glass={settings.liquid_glass} theme={settings.theme} style={fonts}
+      reviewer={preferences.ttml_reviewer} onReviewer={(ttml_reviewer) => change({ ttml_reviewer })}
       onSubmit={async (file) => {
         if (!track) throw new Error("Play the song you want to submit lyrics for.");
         const result = await submitLyssnaTtml(file, track, host);
@@ -636,7 +641,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
       listSaved={listLocalLyrics} deleteSaved={removeLocalLyrics} onPlay={host.playTrack} onDownload={downloadTtml}
       onBulk={(files, signal) => loadBulkLyrics(files, host, signal)} searchSongs={host.searchTracks}
       attachSong={attachBulkLyrics} onClose={closeTtml} />}
-    {!showCreator && showSettings && <SettingsPanel settings={settings} change={change} close={() => { setNotice(""); setShowSettings(false); }}
+    {!showCreator && showSettings && <SettingsPanel settings={preferences} change={change} close={() => { setNotice(""); setShowSettings(false); }}
       options={options} track={track ?? undefined} notice={notice} setNotice={setNotice} view={view} developerMode={host.developerMode} />}
   </>;
 }

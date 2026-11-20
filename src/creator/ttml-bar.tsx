@@ -10,8 +10,6 @@ import {
 import {
   ChevronDown,
   ChevronUp,
-  PanelBottom,
-  FilePenLine,
   Music2,
   Pause,
   Play,
@@ -36,8 +34,6 @@ export function TtmlBar({
   spans,
   onToggle,
   onSeek,
-  onHideBar,
-  onClose,
   speed,
   minSpeed,
   maxSpeed,
@@ -57,8 +53,6 @@ export function TtmlBar({
   spans: BarSpan[];
   onToggle: () => void;
   onSeek: (ms: number) => void;
-  onHideBar: () => void;
-  onClose?: () => void;
   speed: number;
   minSpeed: number;
   maxSpeed: number;
@@ -361,23 +355,6 @@ export function TtmlBar({
       />
       <span className="ttml-bar-time">{formatTime(duration)}</span>
       <div className="ttml-bar-extras">
-        <button
-          className="icon-button"
-          onClick={onHideBar}
-          title="Hide Creator controls"
-          aria-label="Hide Creator controls"
-        >
-          <PanelBottom size={18} />
-        </button>
-        {onClose && (
-          <button
-            className="icon-button ttml-button active"
-            title="TTML Creator"
-            onClick={onClose}
-          >
-            <FilePenLine size={19} />
-          </button>
-        )}
         <button
           className="icon-button"
           aria-label="Spectrogram"

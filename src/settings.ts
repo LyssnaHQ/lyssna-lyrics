@@ -22,6 +22,7 @@ export const defaults = {
   romanization_below: true,
   lyrics_translations: false,
   ttml_creator: false,
+  ttml_reviewer: "off" as "off" | "temporary" | "always",
   experimental_word_sync: false,
   lyrics_animator: {} as AnimatorSettings,
   lyrics_background: "animated" as "animated" | "static" | "cover" | "artist" | "color" | "none",

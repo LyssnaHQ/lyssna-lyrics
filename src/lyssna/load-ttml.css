@@ -94,6 +94,20 @@
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
 }
+.load-ttml-reviewer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: light-dark(#0000000f, #ffffff0f);
+}
+.load-ttml-reviewer :is(strong, small) { display: block; }
+.load-ttml-reviewer small { margin-top: 3px; color: light-dark(#4c4c4c, #b3b3b3); }
+.load-ttml-reviewer .settings-select { width: auto; max-width: 100%; }
 .load-ttml-submit {
   grid-column: 1 / -1;
 }

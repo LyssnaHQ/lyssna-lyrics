@@ -18,6 +18,7 @@ export async function exportSettings(settings: Settings) {
 
 const choices = {
   theme: ["dark", "light", "system"],
+  ttml_reviewer: ["off", "temporary", "always"],
   lyrics_background: ["animated", "static", "cover", "artist", "color", "none"],
   lyrics_pinned_footer: ["off", "no_writers", "full"],
   lyrics_year_position: ["off", "left", "right"],

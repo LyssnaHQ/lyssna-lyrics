@@ -218,10 +218,6 @@ export function SettingsPanel({ settings, change, close, options, track, notice,
       <FontSettings key="lyric-font" field="lyric_font" settings={settings} onSettings={change} onNotice={setNotice} />,
       <FontSettings key="app-font" field="ui_font" settings={settings} onSettings={change} onNotice={setNotice} />,
     ]],
-    ["Lyrics", "TTML Creator", [
-      flag("ttml_creator", "TTML Creator", "Add an editor button beside fullscreen in the playbar to write and time lyrics for the playing song.",
-        "ttml creator maker editor sync timing word by word karaoke amll make lyrics"),
-    ]],
     ["Lyrics", "Lyrics display", [
       visualRowsByKey.get("size"),
       <SettingRow key="lyrics_discord_usernames" label="Discord display name in credits"
@@ -288,6 +284,8 @@ export function SettingsPanel({ settings, change, close, options, track, notice,
       </SettingRow>,
     ]],
     ["Advanced", "Advanced", [
+      flag("ttml_creator", "TTML Creator", "Add an editor button beside fullscreen in the playbar to write and time lyrics for the playing song.",
+        "ttml creator maker editor sync timing word by word karaoke amll make lyrics"),
       <SettingRow key="channel" label="Build Channel" help={`${channelLabels[options.channel]}${version ? ` · v${version}` : ""}`} keywords="version canary stable beta">
         {submenuButton("builds", "Manage")}
       </SettingRow>,

@@ -185,6 +185,10 @@ export async function readLocalLyrics(trackId: string, duration: number) {
   return entry && readImport(entry, duration);
 }
 
+export function hasTemporaryTtml(trackId?: string) {
+  return temporary?.kind === "ttml" && temporary.uri === `spotify:track:${trackId}`;
+}
+
 function validateImport(entry: TransferLyrics) {
   if (!trackUri.test(entry.uri) || new TextEncoder().encode(entry.text).length > 2_000_000) {
     throw new Error("Choose a TTML or LRC file under 2 MB for a Spotify track.");

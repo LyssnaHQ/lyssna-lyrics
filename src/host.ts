@@ -31,14 +31,15 @@ type CatalogueResult = {
   } };
 };
 export type CanvasInfo = { fileId?: string; type?: string; url?: string };
+type SpotifyImage = { url?: string; width?: number; height?: number };
 type SpotifyTrack = {
   uri?: string;
   name?: string;
   provider?: string;
   type?: string;
   artists?: Array<{ name?: string; uri?: string; id?: string }>;
-  images?: Array<{ url?: string }>;
-  album?: { uri?: string; name?: string; images?: Array<{ url?: string }>; release_date?: string; releaseDate?: string; upc?: string };
+  images?: SpotifyImage[];
+  album?: { uri?: string; name?: string; images?: SpotifyImage[]; release_date?: string; releaseDate?: string; upc?: string };
   metadata?: Record<string, string>;
 };
 type PlayerState = {
@@ -160,6 +161,18 @@ const icon = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke
 
 function artwork(url: string) {
   return url.replace(/^spotify:image:/, "https://i.scdn.co/image/");
+}
+
+function albumArtwork(track: SpotifyTrack) {
+  const metadata = track.metadata;
+  const sized = metadata?.image_xlarge_url || metadata?.image_large_url;
+  if (sized) return artwork(sized);
+  const images = [...(track.album?.images ?? []), ...(track.images ?? [])];
+  const size = (image: SpotifyImage) => image.width ?? image.height ??
+    (image.url?.includes("ab67616d0000b273") ? 640 : image.url?.includes("ab67616d00001e02") ? 300 : 0);
+  const largest = images.reduce<SpotifyImage | undefined>((best, image) =>
+    image.url && (!best || size(image) > size(best)) ? image : best, undefined);
+  return artwork(largest?.url || metadata?.image_url || "");
 }
 
 const repeatModes = ["off", "context", "track"] as const;
@@ -347,7 +360,7 @@ export function getHost() {
         albumUpc: track.album?.upc ?? track.metadata?.album_upc,
         isrc: track.metadata?.isrc?.toUpperCase(),
         year: /^(\d{4})(?:-|$)/.exec(track.album?.release_date ?? track.album?.releaseDate ?? track.metadata?.album_release_date ?? "")?.[1],
-        cover: artwork(track.images?.[0]?.url ?? track.album?.images?.[0]?.url ?? track.metadata?.image_url ?? ""),
+        cover: albumArtwork(track),
       };
     },
     seek: (ms: number) => kit ? kit.Player.seek(ms) : spice?.Player.seek(ms),

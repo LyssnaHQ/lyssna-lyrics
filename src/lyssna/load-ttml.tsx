@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import { BulkTtml } from "./bulk-ttml";
 import type { TtmlTrack } from "../host";
 import type { LoadMode } from "../local-lyrics";
+import type { Settings } from "../settings";
 import { accountChanged, hasLyssnaSession, readLyssnaProfile } from "../lyssna-account";
 import { publishingRoles } from "../lyssna-submission";
 import { importError, type BulkFile, type BulkLyric } from "../ttml-import";
@@ -53,6 +54,8 @@ const MODES: { mode: LoadMode; title: string; detail: string }[] = [
  */
 export function LoadTtml({
   song,
+  reviewer,
+  onReviewer,
   onLoad,
   onReset,
   onGuide,
@@ -74,6 +77,8 @@ export function LoadTtml({
   attachSong: (file: BulkFile, songs: TtmlTrack[]) => Promise<void>;
   onSubmit: (file: File) => Promise<void>;
   song?: string;
+  reviewer: Settings["ttml_reviewer"];
+  onReviewer: (mode: Settings["ttml_reviewer"]) => void;
   onLoad: (file: File, mode: LoadMode) => Promise<void>;
   onReset: () => Promise<void>;
   onGuide: () => void;
@@ -198,6 +203,18 @@ export function LoadTtml({
                 </button>
               </div>
             </div>
+            <label className="load-ttml-reviewer">
+              <span>
+                <strong>TTML Reviewer</strong>
+                <small>Use default lyric timing and rendering with a still background while reviewing.</small>
+              </span>
+              <select className="settings-select" value={reviewer} disabled={busy}
+                onChange={(event) => onReviewer(event.currentTarget.value as Settings["ttml_reviewer"])}>
+                <option value="off">Off</option>
+                <option value="temporary">Apply on Temp</option>
+                <option value="always">Always Apply</option>
+              </select>
+            </label>
             <input
               ref={input}
               type="file"

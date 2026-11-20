@@ -1,13 +1,67 @@
 import { useEffect, useRef, useState } from "react";
 import { lyssnaInstallReady, lyssnaRequest, lyssnaRetryAt } from "./lyssna-api";
 import { fetchSpotifyMedia } from "./spotify-media";
+import workerSource from "./motion-artwork-worker.js?raw";
 
 const digits = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const upcs = new Map<string, Promise<string | null | undefined>>();
 const covers = new Map<string, { expires: number; value: Promise<string | undefined> }>();
+const convertedCovers = new Map<string, Blob>();
 
-export function supportsMotionArtwork(view: Window) {
-  return !!view.document.createElement("video").canPlayType('video/mp4; codecs="avc1.64001f"');
+export function motionArtworkFormat(view: Window) {
+  const video = view.document.createElement("video");
+  if (video.canPlayType('video/mp4; codecs="avc1.64001f"')) return "mp4";
+  if (video.canPlayType('video/webm; codecs="vp8"') && typeof Worker === "function" &&
+    typeof WebAssembly === "object") return "webm";
+}
+
+export function usePlayableMotionArtwork(source: string | undefined, format: ReturnType<typeof motionArtworkFormat>) {
+  const [converted, setConverted] = useState<{ source: string; url: string }>();
+  useEffect(() => {
+    if (!source || format !== "webm") return;
+    const input = source;
+    let url: string | undefined;
+    function show(blob: Blob) {
+      url = URL.createObjectURL(blob);
+      setConverted({ source: input, url });
+    }
+    function release() {
+      if (!url) return;
+      URL.revokeObjectURL(url);
+      setConverted((current) => current?.url === url ? undefined : current);
+    }
+    const cached = convertedCovers.get(input);
+    if (cached) {
+      show(cached);
+      return release;
+    }
+    const script = URL.createObjectURL(new Blob([workerSource], { type: "text/javascript" }));
+    let worker: Worker;
+    try { worker = new Worker(script, { type: "module" }); }
+    catch { return; }
+    finally { URL.revokeObjectURL(script); }
+    const timeout = window.setTimeout(stop, 60_000);
+    function stop() {
+      window.clearTimeout(timeout);
+      worker.terminate();
+    }
+    worker.onmessage = ({ data }: MessageEvent<Uint8Array<ArrayBuffer> | null>) => {
+      stop();
+      if (!data?.length) return;
+      const blob = new Blob([data], { type: "video/webm" });
+      convertedCovers.set(input, blob);
+      if (convertedCovers.size > 6) convertedCovers.delete(convertedCovers.keys().next().value!);
+      show(blob);
+    };
+    worker.onerror = stop;
+    worker.postMessage(input);
+    return () => {
+      stop();
+      release();
+    };
+  }, [source, format]);
+  if (format === "mp4") return source;
+  if (format === "webm" && converted?.source === source) return converted?.url;
 }
 
 function normalizeUpc(value: unknown) {
