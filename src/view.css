@@ -19,6 +19,31 @@
   display: contents;
 }
 
+:is(.main-nowPlayingBar-extraControls, .now-playing-bar-extra-controls) {
+  reading-flow: flex-visual;
+}
+
+:is(.main-nowPlayingBar-extraControls, .now-playing-bar-extra-controls)
+  > :is([data-lyssna-playbar-lyrics], #LyssnaLyrics_PageButton, button[data-testid="lyrics-button"]) {
+  order: -3;
+}
+
+/* Spotify's current DJ jump button has a bundled class and no test ID. */
+:is(.main-nowPlayingBar-extraControls, .now-playing-bar-extra-controls)
+  > :is(button.Gf9V3C4X_WPPfvjwXujC, button[data-testid="dj-jump-button"]) {
+  order: -2;
+}
+
+:is(.main-nowPlayingBar-extraControls, .now-playing-bar-extra-controls)
+  :is(button[data-testid="control-button-npv"], button[data-spotify-plus-disable-peek="true"]) {
+  order: -1;
+}
+
+:is(.main-nowPlayingBar-extraControls, .now-playing-bar-extra-controls)
+  > :has(> button[data-testid="control-button-npv"]):not(:has(button[data-testid="control-button-queue"])) {
+  order: -1;
+}
+
 .lyssna-playbar-button {
   display: inline-flex !important;
 }

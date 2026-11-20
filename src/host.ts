@@ -4,7 +4,7 @@ import { hosts } from "./host-react";
 type Removal = () => void;
 type RepeatMode = "off" | "context" | "track";
 type ButtonOptions = { label: string; icon: string; onClick: () => void };
-type Button = { active: boolean; remove(): void };
+type Button = { active: boolean; element?: HTMLElement; remove(): void };
 type HistoryLocation = { pathname: string; search?: string; hash?: string };
 const viewPath = (location?: HistoryLocation) => location?.pathname
   ? `${location.pathname}${location.search ?? ""}${location.hash ?? ""}`
@@ -455,12 +455,14 @@ export function getHost() {
     button(label: string, click: () => void) {
       if (kit) {
         const button = (kit.Playbar ?? kit.Topbar).add({ label, icon, onClick: click });
+        if (kit.Playbar && button.element) button.element.dataset.lyssnaPlaybarLyrics = "";
         return {
           setActive(active: boolean) { button.active = active; },
           remove: () => button.remove(),
         };
       }
       const button = new spice!.Playbar.Button(label, icon, click, false, false, false);
+      button.element.dataset.lyssnaPlaybarLyrics = "";
       button.element.classList.add("lyssna-playbar-button");
       button.element.setAttribute("aria-label", label);
       button.element.setAttribute("aria-pressed", "false");
