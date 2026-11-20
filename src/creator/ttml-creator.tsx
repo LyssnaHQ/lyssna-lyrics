@@ -2970,6 +2970,7 @@ export function TtmlCreator({
                 onLines={setLines}
                 onCursor={setCursor}
                 onPlayUnit={playUnit}
+                canOpenAudio={here}
               />
             }
             spectrogram={spectrogram}

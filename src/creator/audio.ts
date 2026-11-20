@@ -3,6 +3,11 @@ import type { Host } from "../host";
 const fftSize = 2048;
 const analysisLevel = (db = -60) => Math.min(1, Math.max(0, (db + 55) / 55));
 export const pitchBands = 12;
+const lowFrequency = 40;
+const highFrequency = 20_000;
+const frequencyRatio = highFrequency / lowFrequency;
+export const spectrumFrequency = (position: number) => lowFrequency * frequencyRatio ** position;
+export const spectrumFrequencyPosition = (hz: number) => Math.log(hz / lowFrequency) / Math.log(frequencyRatio);
 
 export async function creatorWaveform(host: Host, uri: string, buckets: number, buffer?: AudioBuffer) {
   const peaks = new Uint8Array(buckets);
@@ -78,11 +83,11 @@ export async function creatorSpectrum(buffer: AudioBuffer, fromMs: number, toMs:
   const output = new Uint16Array(columns * rows);
   const real = new Float32Array(fftSize);
   const imaginary = new Float32Array(fftSize);
-  // Interpolate columns when zoomed beyond the useful time resolution of the FFT.
-  const samples = Math.min(columns, 512);
-  for (let column = 0; column < samples; column++) {
+  const binEdges = Uint16Array.from({ length: rows + 1 }, (_, edge) =>
+    Math.min(fftSize / 2, Math.round(spectrumFrequency(1 - edge / rows) * fftSize / buffer.sampleRate)));
+  for (let column = 0; column < columns; column++) {
     signal.throwIfAborted();
-    const at = (fromMs + (toMs - fromMs) * (column + 0.5) / samples) * buffer.sampleRate / 1000;
+    const at = (fromMs + (toMs - fromMs) * (column + 0.5) / columns) * buffer.sampleRate / 1000;
     const start = Math.round(at) - fftSize / 2;
     imaginary.fill(0);
     for (let i = 0; i < fftSize; i++) {
@@ -106,14 +111,15 @@ export async function creatorSpectrum(buffer: AudioBuffer, fromMs: number, toMs:
         }
       }
     }
-    const first = Math.floor(column / samples * columns);
-    const last = Math.floor((column + 1) / samples * columns);
     for (let row = 0; row < rows; row++) {
-      const hz = (rows - row - 0.5) / rows * 20_000;
-      const bin = Math.round(hz * fftSize / buffer.sampleRate);
-      if (bin >= fftSize / 2) continue;
-      const level = Math.log10(1 + Math.hypot(real[bin], imaginary[bin]));
-      output.fill(Math.min(65535, Math.round(level / 4 * 65535)), row * columns + first, row * columns + last);
+      const first = binEdges[row + 1];
+      const last = Math.max(first + 1, binEdges[row]);
+      let power = 0;
+      for (let bin = first; bin < last && bin < fftSize / 2; bin++) {
+        power = Math.max(power, real[bin] * real[bin] + imaginary[bin] * imaginary[bin]);
+      }
+      const level = Math.log10(1 + Math.sqrt(power));
+      output[row * columns + column] = Math.min(65535, Math.round(level / 4 * 65535));
     }
     if (column % 16 === 15) await new Promise((resolve) => setTimeout(resolve, 0));
   }

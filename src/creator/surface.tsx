@@ -56,6 +56,7 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
   const [volume, setVolume] = useState(host.volume);
   const audioElement = useRef<HTMLAudioElement>(null);
   const picker = useRef<HTMLInputElement>(null);
+  const openAudio = useCallback(() => picker.current?.click(), []);
   const audioLoad = useRef(0);
   const clip = useRef<{ uri: string; end: number; from: number; expires: number; started: boolean }>(undefined);
   const audioForSong = audio?.uri === current?.uri ? audio : undefined;
@@ -229,7 +230,7 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
     <style>{css}</style>
     <div className="lyssna-creator-tools">
       <button type="button" className="icon-button" title="Open local audio for speed and spectrogram" aria-label="Open local audio"
-        disabled={!current} onClick={() => picker.current?.click()}><Headphones size={17} /></button>
+        disabled={!current} onClick={openAudio}><Headphones size={17} /></button>
       <input type="file" ref={picker} hidden accept="audio/*,.wav,.flac,.mp3,.m4a,.ogg,.opus" onChange={(event) => {
         const file = event.currentTarget.files?.[0];
         event.currentTarget.value = "";
@@ -242,7 +243,7 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
       onPlay={() => setLocalPlaying(true)} onPause={() => setLocalPlaying(false)} onEnded={() => setLocalPlaying(false)} />}
     <div className="lyssna-creator-body">
       {root && portal && <CreatorEnvironment.Provider value={{ root, portal, view, read, waveform, spectrogram,
-        spectrumKey: audio?.url ?? "spotify", spectrumAudioUri: audio?.uri, playClip }}>
+        spectrumKey: audio?.url ?? "spotify", spectrumAudioUri: audio?.uri, openAudio, playClip }}>
         <TtmlCreator state={state} onPlayer={player} onToggle={() => player({ command: isPlaying ? "pause" : "play" })}
           onSpeed={setSpeed} notify={notify} barSlot={showBar ? playbarSlot ?? bar : null} onShowPlayer={() => { releaseAudio(); setShowBar(false); }}
           onClose={close}
