@@ -1,18 +1,20 @@
 import { execFileSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { build } from "vite";
 
 const args = process.argv.slice(2);
-if (args.length > 1 || (args.length && args[0] !== "--test")) {
-  throw new Error("Usage: npm run build [-- --test]");
+if (args.length > 1 || (args.length && !["--test", "--hidden"].includes(args[0]))) {
+  throw new Error("Usage: npm run build [-- --test|--hidden]");
 }
 
 const testBuild = args[0] === "--test";
+const hiddenBuild = args[0] === "--hidden";
 const { version } = JSON.parse(readFileSync("package.json", "utf8"));
 const filename = `lyssna-lyrics@${version}.mjs`;
 const output = "dist";
-const host = testBuild ? "Y:/website/lyssna-plugin" : output;
+const host = testBuild || hiddenBuild ? "Y:/website/lyssna-plugin" : output;
 const entrypoint = join(host, "rewrite", "v1.0");
 const channelsFile = join(entrypoint, "channels.json");
 
@@ -30,17 +32,6 @@ execFileSync(process.execPath, ["node_modules/typescript/bin/tsc"], { stdio: "in
 await build({ build: { outDir: join(output, "bundle") } });
 
 const payload = join(output, "bundle", "plugin.mjs");
-const channels = existsSync(channelsFile)
-  ? JSON.parse(readFileSync(channelsFile, "utf8"))
-  : { protocol: 1, channels: { stable: null, beta: null, canary: null } };
-if (channels.protocol !== 1 || !channels.channels) throw new Error(`Invalid manifest at ${channelsFile}`);
-channels.channels.canary = version;
-
-mkdirSync(join(output, "spotikit"), { recursive: true });
-mkdirSync(join(host, "builds"), { recursive: true });
-mkdirSync(entrypoint, { recursive: true });
-copyFileSync("loader/lyssna-lyrics.mjs", join(output, "spotikit", "extension.js"));
-copyFileSync("loader/spotikit.json", join(output, "spotikit", "spotikit.json"));
 const notices = readFileSync("THIRD_PARTY_NOTICES.md", "utf8");
 const licenses = ["lucide-react/LICENSE", "@kawarp/core/LICENSE", "transliteration/LICENSE.txt",
   "compromise/LICENSE", "compromise-speech/LICENSE", "efrt/LICENSE", "suffix-thumb/LICENSE"]
@@ -50,8 +41,29 @@ for (const path of ["src/fonts/Inter-OFL.txt", "src/fonts/Metropolis-Unlicense.t
 }
 // Use line comments so a third-party notice can contain a literal block-comment terminator.
 const header = [notices.trim(), ...licenses].join("\n\n").split(/\r?\n/).map((line) => `// ${line}`).join("\n");
-write(join(host, "builds", filename), `${header}\n${readFileSync(payload, "utf8")}`);
-copy("loader/entrypoint.mjs", join(entrypoint, "entrypoint.mjs"));
-copy("loader/lyssna-lyrics.mjs", join(host, "rewrite", "lyssna-lyrics.mjs"));
-write(channelsFile, JSON.stringify(channels, null, 2) + "\n");
-console.log(`Canary ${version} built to ${join(host, "builds", filename)}`);
+const bundle = `${header}\n${readFileSync(payload, "utf8")}`;
+if (hiddenBuild) {
+  const key = randomBytes(24).toString("base64url");
+  const folder = join(host, "builds", "hidden", key);
+  mkdirSync(folder, { recursive: true });
+  write(join(folder, filename), bundle);
+  write(join(folder, "release.json"), JSON.stringify({ protocol: 1, version }) + "\n");
+  console.log(`Hidden build ${version} access key: ${key}`);
+} else {
+  const channels = existsSync(channelsFile)
+    ? JSON.parse(readFileSync(channelsFile, "utf8"))
+    : { protocol: 1, channels: { stable: null, beta: null, canary: null } };
+  if (channels.protocol !== 1 || !channels.channels) throw new Error(`Invalid manifest at ${channelsFile}`);
+  channels.channels.canary = version;
+
+  mkdirSync(join(output, "spotikit"), { recursive: true });
+  mkdirSync(join(host, "builds"), { recursive: true });
+  mkdirSync(entrypoint, { recursive: true });
+  copyFileSync("loader/lyssna-lyrics.mjs", join(output, "spotikit", "extension.js"));
+  copyFileSync("loader/spotikit.json", join(output, "spotikit", "spotikit.json"));
+  write(join(host, "builds", filename), bundle);
+  copy("loader/entrypoint.mjs", join(entrypoint, "entrypoint.mjs"));
+  copy("loader/lyssna-lyrics.mjs", join(host, "rewrite", "lyssna-lyrics.mjs"));
+  write(channelsFile, JSON.stringify(channels, null, 2) + "\n");
+  console.log(`Canary ${version} built to ${join(host, "builds", filename)}`);
+}

@@ -1628,7 +1628,7 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   white-space: nowrap;
 }
 
-.lyssna-lyrics-view .lyssna-account-form {
+.lyssna-lyrics-view :is(.lyssna-account-form, .lyssna-build-key-form) {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -1776,7 +1776,7 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   bottom: calc(110px + var(--canvas-toolbar-offset, 0px));
 }
 
-.lyssna-lyrics-view .lyssna-account-form input {
+.lyssna-lyrics-view :is(.lyssna-account-form, .lyssna-build-key-form) input {
   flex: 1 1 14rem;
   min-width: 0;
   padding: 8px 12px;

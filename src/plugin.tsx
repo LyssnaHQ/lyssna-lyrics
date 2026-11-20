@@ -1044,7 +1044,7 @@ export default function start(options: BuildOptions) {
 
   let stopViewSwitch: () => void;
   try {
-    button = host.button(`Lyssna Lyrics (${channelLabels[options.channel]})`, () => void open());
+    button = host.button(`Lyssna Lyrics (${options.hiddenVersion ? "Hidden build" : channelLabels[options.channel]})`, () => void open());
     stopViewSwitch = host.watchViewSwitch((source) => {
       if (unloading || restoringRoute || switchingLyricsView) return;
       const route = host.viewLocation();

@@ -8,12 +8,16 @@ Community lyrics provided by [Lyssna](https://lyssna.org). Imported TTML takes p
 
 With Node.js LTS installed, run `npm ci` and `npm run build`. `dist/` contains the versioned payload, the v1.0 entrypoint, and the host loaders. `npm run build -- --test` also deploys the payload to `Y:/website/lyssna-plugin/builds/` and points Canary at it. Stable and Beta get their own version fields in `rewrite/v1.0/channels.json`.
 
+Run `npm run build -- --hidden` to publish a standalone build under `builds/hidden/<key>/` and print its access key. Share the key with testers. Anyone with the key can load the build. Keep directory listings disabled for `builds/hidden/`. To retire a key, remove its `release.json` and bundle from the host.
+
 ## Install the loader
 
 - **Spicetify** accepts `loader/lyssna-lyrics.mjs` in its Extensions folder. Enable `lyssna-lyrics.mjs` and apply the configuration.
 - **SpotiKit** accepts the `dist/spotikit` folder in its Extensions folder.
 
-Open Lyssna from the microphone button in Spotify’s playbar. Older SpotiKit versions use the top bar. Use the playbar’s fullscreen button to open lyrics across the display. In the lyrics view, the fullscreen button and F11 do the same. Hold Shift for cinema mode inside the Spotify window. On clients that expose Document Picture-in-Picture, the pop-out button opens a floating lyrics window with playback controls. The gear opens Lyssna settings, where changes apply immediately and persist across Spotify restarts. The Build channel selector is under Advanced. Stable takes precedence on first launch, followed by Beta and Canary.
+Open Lyssna from the microphone button in Spotify’s playbar. Older SpotiKit versions use the top bar. Use the playbar’s fullscreen button to open lyrics across the display. In the lyrics view, the fullscreen button and F11 do the same. Hold Shift for cinema mode inside the Spotify window. On clients that expose Document Picture-in-Picture, the pop-out button opens a floating lyrics window with playback controls. The gear opens Lyssna settings.
+
+**Advanced → Build Channel** manages Stable, Beta, Canary and hidden build keys. Stable takes precedence on first launch, followed by Beta and Canary. Paste a hidden build key and choose **Apply and reload** to use that build on this Spotify client. **Remove key** reloads the public channel. The loader falls back to the public channel when the hidden build is unavailable.
 
 **Cinema Lyrics Window** opens the full lyrics view in a separate, resizable window and follows Spotify playback. Run `spicetify enable-devtools` with Spicetify, then turn on **Enable Cinema Lyrics Window** in Lyssna’s **Layout** settings. Click **Cinema Lyrics Window** in the playbar to open it. The separate window requires Spotify DevTools to be enabled.
 

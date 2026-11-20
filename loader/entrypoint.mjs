@@ -1,7 +1,9 @@
 const root = new URL("../../", import.meta.url);
 const channelKey = "lyssna-lyrics.v1.channel";
+const hiddenKey = "lyssna-lyrics.v1.hidden-build";
 const names = ["stable", "beta", "canary"];
 const versionPattern = /^\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$/;
+const keyPattern = /^[A-Za-z0-9_-]{32}$/;
 
 async function ready(signal) {
   if (globalThis.SpotiKit) {
@@ -17,6 +19,26 @@ async function ready(signal) {
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   throw new Error("Spicetify did not become ready");
+}
+
+async function hiddenRelease(key, signal) {
+  if (!keyPattern.test(key)) throw new Error("Enter the 32-character build key.");
+  const folder = new URL(`builds/hidden/${key}/`, root);
+  let release;
+  try {
+    const response = await fetch(new URL("release.json", folder), {
+      cache: "no-store", redirect: "error", referrerPolicy: "no-referrer",
+      signal: AbortSignal.any([signal, AbortSignal.timeout(8_000)]),
+    });
+    if (response.ok) release = await response.json();
+  } catch {
+    signal.throwIfAborted();
+    throw new Error("Couldn’t reach the hidden build. Try again.");
+  }
+  if (release?.protocol !== 1 || typeof release.version !== "string" || !versionPattern.test(release.version)) {
+    throw new Error("No hidden build matches that key.");
+  }
+  return { version: release.version, url: new URL(`lyssna-lyrics@${release.version}.mjs`, folder) };
 }
 
 export async function start(signal) {
@@ -35,6 +57,29 @@ export async function start(signal) {
   const saved = localStorage.getItem(channelKey);
   const selected = names.includes(saved) && channels[saved] ? saved : names.find((name) => channels[name]);
   if (!selected) throw new Error("No Lyssna builds are published yet");
+  const savedHiddenKey = localStorage.getItem(hiddenKey);
+
+  async function selectHiddenBuild(key) {
+    await hiddenRelease(key, signal);
+    signal.throwIfAborted();
+    localStorage.setItem(hiddenKey, key);
+    location.reload();
+  }
+
+  function clearHiddenBuild() {
+    localStorage.removeItem(hiddenKey);
+    location.reload();
+  }
+
+  async function selectChannel(channel) {
+    if (!names.includes(channel) || !channels[channel] || switching) return;
+    if (savedHiddenKey) {
+      localStorage.setItem(channelKey, channel);
+      clearHiddenBuild();
+    } else {
+      await load(channel, true);
+    }
+  }
 
   let current;
   let switching = false;
@@ -44,14 +89,17 @@ export async function start(signal) {
   }
   signal.addEventListener("abort", stop, { once: true });
 
-  async function load(channel, reopen) {
-    if (!names.includes(channel) || !channels[channel] || switching) return;
+  async function load(channel, reopen, hidden) {
     switching = true;
     try {
-      const url = new URL(`builds/lyssna-lyrics@${channels[channel]}.mjs`, root);
+      const url = hidden?.url ?? new URL(`builds/lyssna-lyrics@${channels[channel]}.mjs`, root);
       const build = await import(url.href);
       signal.throwIfAborted();
-      const next = build.default({ channel, channels, lyssnaSignIn: catalog.lyssnaSignIn === true, selectChannel: (name) => load(name, true) });
+      const next = build.default({
+        channel, channels, selectChannel, lyssnaSignIn: catalog.lyssnaSignIn === true,
+        hiddenVersion: hidden?.version, selectHiddenBuild,
+        clearHiddenBuild: savedHiddenKey ? clearHiddenBuild : undefined,
+      });
       stop();
       current = next;
       if (reopen) {
@@ -64,7 +112,15 @@ export async function start(signal) {
   }
 
   try {
-    await load(selected, false);
+    if (savedHiddenKey) {
+      try {
+        await load(selected, false, await hiddenRelease(savedHiddenKey, signal));
+      } catch {
+        signal.throwIfAborted();
+        console.warn("[Lyssna Lyrics] Hidden build unavailable. Loading the public channel.");
+      }
+    }
+    if (!current) await load(selected, false);
   } catch (error) {
     signal.removeEventListener("abort", stop);
     stop();

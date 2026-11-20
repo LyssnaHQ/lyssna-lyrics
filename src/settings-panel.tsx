@@ -21,6 +21,9 @@ export type BuildOptions = {
   channel: Channel;
   channels: Record<Channel, string | null>;
   selectChannel: (channel: Channel) => Promise<void>;
+  hiddenVersion?: string;
+  selectHiddenBuild?: (key: string) => Promise<void>;
+  clearHiddenBuild?: () => void;
   lyssnaSignIn?: boolean;
 };
 
@@ -92,6 +95,8 @@ export function SettingsPanel({ settings, change, close, options, track, notice,
   const [query, setQuery] = useState("");
   const [tuning, setTuning] = useState(false);
   const [switching, setSwitching] = useState(false);
+  const [buildKey, setBuildKey] = useState("");
+  const [buildError, setBuildError] = useState("");
   const [transferring, setTransferring] = useState(false);
   const [marker, setMarker] = useState<{ left: number; width: number }>();
   const scroll = useRef<HTMLDivElement>(null);
@@ -105,7 +110,9 @@ export function SettingsPanel({ settings, change, close, options, track, notice,
   const visuals = visualRows(settings, change, () => setTuning(true));
   const fonts = appFontStyles(settings);
   const { flag, range } = visuals;
-  const version = options.channels[options.channel];
+  const version = options.hiddenVersion ?? options.channels[options.channel];
+  const activeBuild = options.hiddenVersion ? "Hidden build" : channelLabels[options.channel];
+  const { selectHiddenBuild, clearHiddenBuild } = options;
   const hidden = new Set(settings.hidden_settings);
   const hiding = {
     allow: settings.settings_allow_hiding,
@@ -179,12 +186,13 @@ export function SettingsPanel({ settings, change, close, options, track, notice,
     return <button type="button" className="pill outline" id={`lyssna-open-${menu}`} onClick={() => openSubmenu(menu)}>{title}</button>;
   }
 
-  async function selectChannel(channel: Channel) {
+  async function runBuildAction(action: () => void | Promise<void>, reportError: (message: string) => void) {
     setSwitching(true);
+    reportError("");
     try {
-      await options.selectChannel(channel);
-    } catch {
-      setNotice("Couldn’t load that build.");
+      await action();
+    } catch (error) {
+      reportError(error instanceof Error ? error.message : "Couldn’t load that build.");
     } finally {
       setSwitching(false);
     }
@@ -293,6 +301,32 @@ export function SettingsPanel({ settings, change, close, options, track, notice,
         </div>
       </SettingRow>,
     ]],
+    ["Advanced", "Build Channel", [
+      <SettingRow key="channel" label="Current build" help={`${activeBuild}${version ? ` · v${version}` : ""}`} keywords="build channel version canary stable beta">
+        {submenuButton("builds", "Manage")}
+      </SettingRow>,
+      selectHiddenBuild && <SettingRow key="hidden-build-key" label="Hidden build key" stacked
+        help={options.hiddenVersion ? "Remove the key to reload your public channel."
+          : clearHiddenBuild ? "Saved build unavailable. Remove the key or enter a new one."
+          : "Enter a key from Lyssna to load a specific build on this Spotify client."}
+        keywords="access key private test release hidden build channel">
+        <form className="lyssna-build-key-form" onSubmit={(event) => {
+          event.preventDefault();
+          const key = buildKey.trim();
+          if (!switching && key) void runBuildAction(() => selectHiddenBuild(key), setBuildError);
+        }}>
+          <input type="password" autoComplete="off" aria-label="Hidden build key" placeholder="Paste build key"
+            value={buildKey} disabled={switching} maxLength={64} onChange={(event) => {
+              setBuildKey(event.target.value);
+              setBuildError("");
+            }} />
+          <button type="submit" className="pill outline" disabled={switching || !buildKey.trim()}>Apply and reload</button>
+          {clearHiddenBuild && <button type="button" className="pill outline" disabled={switching}
+            onClick={() => void runBuildAction(clearHiddenBuild, setBuildError)}>Remove key</button>}
+        </form>
+        {buildError && <p className="settings-alert" role="alert">{buildError}</p>}
+      </SettingRow>,
+    ]],
     ["Advanced", "Advanced", [
       <AccountSettings key="lyssna-account" ready={options.lyssnaSignIn === true} />,
       <SettingRow key="manage-storage" label="Manage Stored Data" help="Clear recordings, spectrograms, and cached animated cover art."
@@ -308,9 +342,6 @@ export function SettingsPanel({ settings, change, close, options, track, notice,
           change({ auto_record });
           if (auto_record) onEnableAutoRecord?.();
         }} />
-      </SettingRow>,
-      <SettingRow key="channel" label="Build Channel" help={`${channelLabels[options.channel]}${version ? ` · v${version}` : ""}`} keywords="version canary stable beta">
-        {submenuButton("builds", "Manage")}
       </SettingRow>,
       <SettingRow key="settings-transfer" label="Import and export settings" help="Transfer Lyssna preferences, animator presets, per-song offsets and imported TTML." keywords="backup restore transfer">
         <div className="settings-actions">
@@ -413,11 +444,17 @@ export function SettingsPanel({ settings, change, close, options, track, notice,
         {submenu === "library" && <LyricsLibrary notice={setNotice} />}
         {submenu === "storage" && <StoredDataSettings notice={setNotice} />}
         {submenu === "builds" && <div className="lyrics-settings-group">
-          {(Object.keys(options.channels) as Channel[]).map((channel) => <SettingRow key={channel} label={channelLabels[channel]}
-            help={options.channels[channel] ? `v${options.channels[channel]}` : "No build published."}>
-            <button type="button" className="pill outline" disabled={switching || channel === options.channel || !options.channels[channel]}
-              onClick={() => void selectChannel(channel)}>{channel === options.channel ? "Current" : "Switch"}</button>
-          </SettingRow>)}
+          {(Object.keys(options.channels) as Channel[]).map((channel) => {
+            const current = channel === options.channel && !clearHiddenBuild;
+            return <SettingRow key={channel} label={channelLabels[channel]}
+              help={options.channels[channel] ? `v${options.channels[channel]}` : "No build published."}>
+              <button type="button" className="pill outline" disabled={switching || current || !options.channels[channel]}
+                onClick={() => void runBuildAction(() => options.selectChannel(channel),
+                  (message) => setNotice(message ? "Couldn’t load that build." : ""))}>
+                {current ? "Current" : clearHiddenBuild ? "Switch and reload" : "Switch"}
+              </button>
+            </SettingRow>;
+          })}
         </div>}
         {submenu === "hidden" && (hiddenSettings.length ? <div className="lyrics-settings-group">{hiddenSettings}</div>
           : <p className="settings-submenu-empty">No hidden settings.</p>)}
