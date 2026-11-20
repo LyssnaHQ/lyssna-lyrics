@@ -8,7 +8,7 @@
   <a href="https://discord.gg/qfYAsFQawp"><img src="https://img.shields.io/badge/Join_our_Discord-5865F2?style=for-the-badge&amp;logo=discord&amp;logoColor=white" alt="Join the Lyssna Discord" /></a>
 </p>
 
-**[Explore features](#features) · [Create and share lyrics](#create-and-share-lyrics) · [Releases](https://github.com/LyssnaHQ/lyssna-lyrics/releases) · [Lyssna for Windows](https://lyssna.org/lyssna_setup.exe)**
+**[Explore features](#features) · [Create and share lyrics](#create-and-share-lyrics) · [Releases](https://github.com/LyssnaHQ/lyssna-lyrics/releases) · [Lyssna for Windows](https://lyssna.org/)**
 
 </div>
 
