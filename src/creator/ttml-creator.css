@@ -1474,6 +1474,15 @@
   box-shadow: 0 16px 48px #000a;
   animation: ttml-bar-panel-in 0.16s ease-out;
 }
+.ttml-bar-panel:popover-open {
+  position: fixed;
+  inset: auto;
+  box-sizing: border-box;
+  width: min(334px, calc(100vw - 16px));
+  margin: 0;
+  overflow-y: auto;
+  color: inherit;
+}
 @keyframes ttml-bar-panel-in {
   from {
     opacity: 0;

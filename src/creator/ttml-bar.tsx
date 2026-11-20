@@ -1,6 +1,8 @@
 import { useCreatorEnvironment } from "./environment";
 import {
   useEffect,
+  useId,
+  useLayoutEffect,
   useRef,
   useState,
   type PointerEvent as ReactPointerEvent,
@@ -100,6 +102,37 @@ export function TtmlBar({
   }, []);
   const panelShown = panel || hovered;
   const root = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const panelElement = useRef<HTMLDivElement>(null);
+  const panelId = useId();
+  useLayoutEffect(() => {
+    const controls = panelElement.current;
+    const button = trigger.current;
+    if (!panelShown || !controls || !button || !controls.showPopover) return;
+    controls.showPopover();
+    const place = () => {
+      const gap = 8;
+      const box = button.getBoundingClientRect();
+      const above = box.top - gap;
+      const below = window.innerHeight - box.bottom - gap;
+      const opensAbove = above >= below;
+      controls.style.left = `${Math.max(gap, Math.min(box.left, window.innerWidth - controls.offsetWidth - gap))}px`;
+      controls.style.top = opensAbove ? "auto" : `${box.bottom + gap}px`;
+      controls.style.bottom = opensAbove ? `${window.innerHeight - above}px` : "auto";
+      controls.style.maxHeight = `${Math.max(0, (opensAbove ? above : below) - gap)}px`;
+    };
+    place();
+    const observer = new window.ResizeObserver(place);
+    if (root.current) observer.observe(root.current);
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", place);
+      window.removeEventListener("scroll", place, true);
+      if (controls.matches(":popover-open")) controls.hidePopover();
+    };
+  }, [panelShown, window]);
   const closePanel = () => {
     clearTimeout(leaving.current);
     setHovered(false);
@@ -112,6 +145,7 @@ export function TtmlBar({
     const escape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       event.stopPropagation();
+      if (panelElement.current?.contains(event.composedPath()[0] as Node)) trigger.current?.focus({ preventScroll: true });
       closePanel();
     };
     window.addEventListener("pointerdown", away, true);
@@ -234,8 +268,26 @@ export function TtmlBar({
   };
   return (
     <div className={`ttml-bar${spectrogram ? " spectral" : ""}`} ref={root}>
+      <button
+        ref={trigger}
+        className={`ttml-bar-round${panelShown ? " active" : ""}`}
+        aria-label="Playback controls"
+        aria-expanded={panelShown}
+        aria-controls={panelShown ? panelId : undefined}
+        title="Speed and volume"
+        {...hoverProps}
+        onClick={() => {
+          setHovered(false);
+          setPanel(!panel);
+        }}
+      >
+        <Music2 size={16} />
+      </button>
       {panelShown && (
         <div
+          ref={panelElement}
+          id={panelId}
+          popover="manual"
           className="ttml-bar-panel"
           role="dialog"
           aria-label="Playback controls"
@@ -289,19 +341,6 @@ export function TtmlBar({
           <div className="ttml-bar-song">{song}</div>
         </div>
       )}
-      <button
-        className={`ttml-bar-round${panelShown ? " active" : ""}`}
-        aria-label="Playback controls"
-        aria-expanded={panelShown}
-        title="Speed and volume"
-        {...hoverProps}
-        onClick={() => {
-          setHovered(false);
-          setPanel(!panel);
-        }}
-      >
-        <Music2 size={16} />
-      </button>
       <button
         className="ttml-bar-play"
         onClick={onToggle}
