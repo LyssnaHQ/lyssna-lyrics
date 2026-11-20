@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useState } from "react";
+import type { ReplayPacket } from "./captured-replay";
 
 export type CreatorEnvironmentValue = {
   root: HTMLElement;
@@ -6,6 +7,9 @@ export type CreatorEnvironmentValue = {
   view: Window & typeof globalThis;
   read: (at?: number) => number;
   readCapturePosition: (uri: string) => { ms: number; transportRevision: number; volume: number } | undefined;
+  appendReplay: (packet: ReplayPacket) => void;
+  replayAvailable: boolean;
+  replayCaptured: (rate: number) => void;
   spectrumKey: string;
   spectrumAudioUri?: string;
   openAudio: () => void;

@@ -870,7 +870,7 @@ export function TtmlSpectrogram({
           ref={shareButton} type="button" disabled={liveSpectrum.status === "selecting"}
           aria-label={liveSpectrum.status === "live" ? "Stop sharing Spotify audio" : "Share Spotify audio"}
           aria-describedby={showIntro ? introId : undefined}
-          title={liveSpectrum.status === "live" ? "Stop sharing Spotify audio" : "Share Spotify audio"}
+          title={liveSpectrum.status === "live" ? "Stop sharing Spotify audio" : "Share Spotify audio for the spectrogram and slow replay"}
           onClick={() => {
             if (showIntro) setIntroSeen(true);
             if (liveSpectrum.status === "live") liveSpectrum.stop();
@@ -882,6 +882,7 @@ export function TtmlSpectrogram({
           <strong>Live spectrogram</strong>
           <p>Click <b>Share Spotify audio</b>. {liveSpectrum.sharePrompt}</p>
           <p>Play the sections you want to capture. Click the same button to stop. The spectrogram stays in this Spotify client.</p>
+          <p>The last 12 seconds of audio stay in memory for slow replay until you switch songs or close Creator.</p>
           <button type="button" onClick={() => {
             setIntroSeen(true);
             shareButton.current?.focus({ preventScroll: true });

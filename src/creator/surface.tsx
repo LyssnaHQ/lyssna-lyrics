@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Headphones, X } from "lucide-react";
 import type { Host, Track as SpotifyTrack } from "../host";
 import type { Settings } from "../settings";
@@ -14,14 +14,22 @@ import { submitLyssnaTtml } from "../lyssna-submission";
 import { revalidateLyssnaSong } from "../lyssna-provider";
 import { lyssnaInstallReady } from "../lyssna-api";
 import { CreatorEnvironment } from "./environment";
+import { createCapturedReplay } from "./captured-replay";
 import { creatorPitchSpectrum, creatorSpectrum, creatorWaveform } from "./audio";
 import { TtmlCreator } from "./ttml-creator";
 import { currentCreatorLyrics, within } from "./current-lyrics";
 import { dismissDraft } from "./ttml-working";
 import type { CreatorState, PlayerRequest, Track } from "./types";
+import { formatTime } from "./ttml-creator-model";
 import css from "./ttml-creator.css?inline";
 
-type LocalAudio = { uri: string; url: string; name: string; buffer: AudioBuffer };
+type EditorAudio = {
+  uri: string;
+  url: string;
+  name: string;
+  buffer?: AudioBuffer;
+  replay?: { startMs: number; endMs: number; speed: number };
+};
 
 function creatorTrack(track: SpotifyTrack, duration: number): Track {
   return { id: track.id, uri: `spotify:track:${track.id}`, name: track.title,
@@ -47,7 +55,10 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
   const [bar, setBar] = useState<HTMLDivElement | null>(null);
   const [seed, setSeed] = useState<{ uri: string; lyrics?: Lyrics }>();
   const [notice, setNotice] = useState<{ message: string; error: boolean }>();
-  const [audio, setAudio] = useState<LocalAudio>();
+  const [audio, setAudio] = useState<EditorAudio>();
+  const [captured] = useState(createCapturedReplay);
+  const replayAvailable = useSyncExternalStore(captured.subscribe, () => captured.canReplay(current?.uri));
+  const replaying = useRef(false);
   const [localPlaying, setLocalPlaying] = useState(false);
   const [rate, setRate] = useState(1);
   const [volume, setVolume] = useState(host.volume);
@@ -60,11 +71,17 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
   const audioForSong = audio?.uri === current?.uri ? audio : undefined;
   const isPlaying = audioForSong ? localPlaying : playing;
   const readCapturePosition = useCallback((uri: string) => {
-    if (host.playing() && !host.djNarrating() && uri === `spotify:track:${host.track()?.id}`) {
+    if (!replaying.current && host.playing() && !host.djNarrating() && uri === `spotify:track:${host.track()?.id}`) {
       return { ms: host.position(), transportRevision: transportRevision.current, volume: host.volume() };
     }
   }, [host]);
   const notify = useCallback((message: string, error = false) => setNotice({ message, error }), []);
+
+  useLayoutEffect(() => {
+    replaying.current = false;
+    setAudio((entry) => entry?.replay && entry.uri !== current?.uri ? undefined : entry);
+    return captured.clear;
+  }, [captured, current?.uri]);
 
   const sourceKey = enabledSources(settings).join(",");
   useEffect(() => {
@@ -105,18 +122,25 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
   useEffect(() => {
     if (!audioForSong || !audioElement.current) return;
     const element = audioElement.current;
-    element.currentTime = host.position() / 1000;
+    const replay = audioForSong.replay;
+    element.currentTime = replay ? 0 : host.position() / 1000;
     element.volume = host.volume();
+    element.playbackRate = replay?.speed ?? 1;
+    element.preservesPitch = true;
     setLocalPlaying(false);
-    setRate(1);
+    setRate(element.playbackRate);
+    if (replay) void element.play().catch((error) => {
+      if (audioElement.current === element && error.name !== "AbortError") notify("Couldn’t start the captured replay.", true);
+    });
     return () => { element.pause(); };
-  }, [audioForSong, host]);
+  }, [audioForSong, host, notify]);
 
   const read = useCallback((at?: number) => {
     const element = audioForSong && audioElement.current;
     const now = view.performance.now();
-    const raw = element ? element.currentTime * 1000 : host.position();
-    return Math.max(0, raw + (isPlaying && at !== undefined ? (at - now) * (element ? element.playbackRate : 1) : 0));
+    const raw = element ? (audioForSong?.replay?.startMs ?? 0) + element.currentTime * 1000 : host.position();
+    const adjusted = raw + (isPlaying && at !== undefined ? (at - now) * (element ? element.playbackRate : 1) : 0);
+    return Math.max(0, Math.min(adjusted, audioForSong?.replay?.endMs ?? Infinity));
   }, [audioForSong, host, isPlaying, view]);
 
   const player = useCallback((request: PlayerRequest) => {
@@ -128,6 +152,7 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
           void host.playTrack(request.uri).catch((why) => notify(String(why), true));
         } else if (element) {
           if (host.playing()) host.toggle();
+          if (element.ended) element.currentTime = 0;
           void element.play().catch((why) => notify(String(why), true));
         } else if (!host.playing()) host.toggle();
         break;
@@ -141,8 +166,11 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
         break;
       case "seek":
         clip.current = undefined;
-        if (element) element.currentTime = request.positionMs / 1000;
-        else {
+        if (element) {
+          const replay = audioForSong?.replay;
+          const position = Math.min(request.positionMs, replay?.endMs ?? Infinity) - (replay?.startMs ?? 0);
+          element.currentTime = Math.max(0, position / 1000);
+        } else {
           transportRevision.current++;
           host.seek(Math.min(host.duration(), request.positionMs));
         }
@@ -159,10 +187,16 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
 
   const playClip = useCallback((uri: string, from: number, end: number) => {
     if (uri !== current?.uri || end <= from) return;
+    const replay = audioForSong?.replay;
+    if (replay) {
+      from = Math.max(from, replay.startMs);
+      end = Math.min(end, replay.endMs);
+      if (end <= from) { notify("That timing is outside the captured section.", true); return; }
+    }
     player({ command: "seek", positionMs: from });
     player({ command: "play" });
     clip.current = { uri, end, from, started: false, expires: Date.now() + 4_000 + (end - from) / Math.max(0.25, rate) };
-  }, [current?.uri, player, rate]);
+  }, [audioForSong?.replay, current?.uri, notify, player, rate]);
 
   useEffect(() => {
     const timer = view.setInterval(() => {
@@ -182,7 +216,9 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
   const returnToSpotify = useCallback(() => {
     const element = audioElement.current;
     const uri = `spotify:track:${host.track()?.id}`;
-    if (element?.dataset.trackUri === uri) {
+    if (element?.hasAttribute("data-captured-replay")) {
+      element.pause();
+    } else if (element?.dataset.trackUri === uri) {
       const resume = !clip.current && !element.paused;
       element.pause();
       host.seek(Math.round(element.currentTime * 1000));
@@ -191,6 +227,7 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
       host.toggle();
     }
     audioLoad.current++;
+    replaying.current = false;
     clip.current = undefined;
   }, [host]);
   useLayoutEffect(() => returnToSpotify, [returnToSpotify]);
@@ -200,10 +237,24 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
     audioElement.current.playbackRate = speed;
     setRate(speed);
   }, [audioForSong]);
+  function replayCaptured(speed: number) {
+    if (!current || current.id !== host.track()?.id) return;
+    const replay = captured.read(current.uri);
+    if (!replay) { notify("Share Spotify audio and play the section first.", true); return; }
+    audioLoad.current++;
+    transportRevision.current++;
+    replaying.current = true;
+    clip.current = undefined;
+    if (host.playing()) host.toggle();
+    const { blob, startMs, endMs } = replay;
+    const name = `Captured replay · ${formatTime(startMs)}–${formatTime(endMs)}`;
+    setAudio({ uri: current.uri, url: URL.createObjectURL(blob), name, replay: { startMs, endMs, speed } });
+  }
+
   const waveform = useCallback((uri: string, buckets: number) => creatorWaveform(host, uri, buckets,
     audio?.uri === uri ? audio.buffer : undefined), [host, audio]);
   const spectrogram = useCallback(async (uri: string, from: number, to: number, columns: number, rows: number, signal: AbortSignal) => {
-    if (audio?.uri === uri) return creatorSpectrum(audio.buffer, from, to, columns, rows, signal);
+    if (audio?.uri === uri && audio.buffer) return creatorSpectrum(audio.buffer, from, to, columns, rows, signal);
     return creatorPitchSpectrum(host, uri, from, to, columns, signal);
   }, [host, audio]);
 
@@ -216,6 +267,7 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
       try { buffer = await context.decodeAudioData(await file.arrayBuffer()); }
       finally { void context.close().catch(() => {}); }
       if (generation !== audioLoad.current) return;
+      replaying.current = false;
       setAudio({ uri: current.uri, url: URL.createObjectURL(file), name: file.name, buffer });
     } catch {
       if (generation === audioLoad.current) notify("Couldn’t decode this audio file.", true);
@@ -248,10 +300,13 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
       {audioForSong && <button type="button" onClick={releaseAudio} title="Return to Spotify playback">{audioForSong.name} <X size={13} /></button>}
     </div>
     {audioForSong && <audio key={audioForSong.url} ref={audioElement} src={audioForSong.url} data-track-uri={audioForSong.uri}
+      data-captured-replay={audioForSong.replay ? "" : undefined}
       onPlay={() => setLocalPlaying(true)} onPause={() => setLocalPlaying(false)} onEnded={() => setLocalPlaying(false)} />}
     <div className="lyssna-creator-body">
       {root && portal && <CreatorEnvironment.Provider value={{ root, portal, view, read, readCapturePosition, waveform, spectrogram,
-        spectrumKey: audio?.url ?? "spotify", spectrumAudioUri: audio?.uri, openAudio, playClip }}>
+        appendReplay: captured.append, replayAvailable, replayCaptured,
+        spectrumKey: audio?.buffer ? audio.url : "spotify", spectrumAudioUri: audio?.buffer ? audio.uri : undefined,
+        openAudio, playClip }}>
         <TtmlCreator state={state} onPlayer={player} onToggle={() => player({ command: isPlaying ? "pause" : "play" })}
           onSpeed={setSpeed} notify={notify} barSlot={bar}
           onClose={close}

@@ -275,7 +275,7 @@ export function TtmlCreator({
   barSlot?: HTMLElement | null;
   onClose?: () => void;
 }) {
-  const { root, view: window, waveform, playClip } = useCreatorEnvironment();
+  const { root, view: window, waveform, playClip, replayAvailable, replayCaptured } = useCreatorEnvironment();
   const document = window.document;
   const focused = () => (root.getRootNode() as Document | ShadowRoot).activeElement;
   const playing = state.playback.item;
@@ -2984,6 +2984,7 @@ export function TtmlCreator({
             minSpeed={MIN_SPEED}
             maxSpeed={MAX_SPEED}
             speedEnabled={state.speedEnabled}
+            replay={here && replayAvailable ? replayCaptured : undefined}
             onSpeed={(value) => slideSpeed(clampSpeed(value))}
             volume={barVolume}
             onVolume={changeVolume}

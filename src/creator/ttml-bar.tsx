@@ -38,6 +38,7 @@ export function TtmlBar({
   minSpeed,
   maxSpeed,
   speedEnabled,
+  replay,
   onSpeed,
   volume,
   onVolume,
@@ -57,6 +58,7 @@ export function TtmlBar({
   minSpeed: number;
   maxSpeed: number;
   speedEnabled: boolean;
+  replay?: (rate: number) => void;
   onSpeed: (speed: number) => void;
   volume: number;
   onVolume: (percent: number) => void;
@@ -270,8 +272,9 @@ export function TtmlBar({
               <button
                 key={preset}
                 className={Math.abs(speed - preset) < 0.001 ? "active" : ""}
-                disabled={!speedEnabled}
-                onClick={() => onSpeed(preset)}
+                disabled={!speedEnabled && !(replay && preset < 1)}
+                title={!speedEnabled && replay && preset < 1 ? `Replay captured audio at ${preset}×` : undefined}
+                onClick={() => speedEnabled ? onSpeed(preset) : replay?.(preset)}
               >
                 {preset}×
               </button>
@@ -289,7 +292,8 @@ export function TtmlBar({
             onChange={(event) => onSpeed(Number(event.target.value))}
           />
           {!speedEnabled && (
-            <small>Open an audio file to change playback speed.</small>
+            <small>{replay ? "Choose 0.5× or 0.75× to replay the captured section."
+              : "Share Spotify audio from the spectrogram for slow replay, or open a local audio file."}</small>
           )}
           <div className="ttml-bar-panel-row">
             <strong>Volume</strong>

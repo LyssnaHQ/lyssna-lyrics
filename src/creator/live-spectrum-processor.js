@@ -29,6 +29,8 @@ class LiveSpectrumProcessor extends AudioWorkletProcessor {
     this.imaginary = new Float32Array(fftSize);
     this.decibels = new Float32Array(this.rows * batchSize);
     this.count = 0;
+    this.replay = new Int16Array(Math.round(sampleRate / 10) * 2);
+    this.replayOffset = 0;
   }
 
   sample(sequence) {
@@ -72,10 +74,19 @@ class LiveSpectrumProcessor extends AudioWorkletProcessor {
     if (this.nextSequence === undefined || currentFrame !== this.nextBlock) {
       this.nextSequence = Math.ceil((currentFrame + fftSize) / this.hop);
       this.count = 0;
+      this.replayOffset = 0;
     }
     this.nextBlock = currentFrame + left.length;
     let nextFrame = Math.round(this.nextSequence * this.hop);
     for (let i = 0; i < left.length; i++) {
+      if (this.replayOffset === 0) this.replayStart = currentFrame + i;
+      this.replay[this.replayOffset++] = Math.min(1, Math.max(-1, left[i])) * 32767;
+      this.replay[this.replayOffset++] = Math.min(1, Math.max(-1, right[i])) * 32767;
+      if (this.replayOffset === this.replay.length) {
+        this.port.postMessage({ firstFrame: this.replayStart, samples: this.replay }, [this.replay.buffer]);
+        this.replay = new Int16Array(this.replayOffset);
+        this.replayOffset = 0;
+      }
       this.ring[this.position] = (left[i] + right[i]) / 2;
       this.position = (this.position + 1) & mask;
       if (currentFrame + i + 1 < nextFrame) continue;

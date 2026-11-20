@@ -24,6 +24,7 @@ type DisplayOptions = DisplayMediaStreamOptions & {
 type BufferedTile = { tile: LiveTile; revision: number; savedRevision: number };
 type CaptureStatus = "idle" | "selecting" | "live";
 type FrameBatch = { first: number; decibels: Float32Array };
+type ReplayBatch = { firstFrame: number; samples: Int16Array };
 const signalFloor = -120;
 
 function captureError(error: unknown) {
@@ -33,7 +34,7 @@ function captureError(error: unknown) {
 }
 
 export function useLiveSpectrum(uri: string, duration: number, canCapture: boolean) {
-  const { view, readCapturePosition } = useCreatorEnvironment();
+  const { view, readCapturePosition, appendReplay } = useCreatorEnvironment();
   const desktop = view.location.hostname === "xpui.app.spotify.com";
   const sharePrompt = desktop ? "Choose the Spotify window and enable window audio." : "Choose this Spotify tab and enable tab audio.";
   const [status, setStatus] = useState<CaptureStatus>("idle");
@@ -222,6 +223,7 @@ export function useLiveSpectrum(uri: string, duration: number, canCapture: boole
       let previousClock: { ms: number; audioMs: number; transportRevision: number; volume: number } | undefined;
       let captureFrom = 0;
       let columnOffset: number | undefined;
+      let replayOrigin: number | undefined;
       let noSignalSince = 0;
       let suspendedSince = 0;
       let heard = false;
@@ -253,6 +255,7 @@ export function useLiveSpectrum(uri: string, duration: number, canCapture: boole
         if (discontinuity) {
           captureFrom = audioMs + 160;
           columnOffset = undefined;
+          replayOrigin = undefined;
         }
         if (discontinuity || playback.volume !== previousClock?.volume) {
           referencePeak = signalFloor;
@@ -307,7 +310,7 @@ export function useLiveSpectrum(uri: string, duration: number, canCapture: boole
         if (++frames % 4 === 1) redraw((value) => value + 1);
       };
       const sampleOnTimer = () => {
-        setMessage("Sharing Spotify audio in compatibility mode.");
+        setMessage("Sharing Spotify audio in compatibility mode. Slow replay requires AudioWorklet support.");
         const analyser = audioContext.createAnalyser();
         analyser.fftSize = fftSize;
         analyser.smoothingTimeConstant = 0;
@@ -360,10 +363,18 @@ export function useLiveSpectrum(uri: string, duration: number, canCapture: boole
         worklet = node;
         const output = audioContext.createGain();
         output.gain.value = 0;
-        node.port.onmessage = ({ data }: MessageEvent<FrameBatch>) => {
+        node.port.onmessage = ({ data }: MessageEvent<FrameBatch | ReplayBatch>) => {
           const clock = captureClock();
           if (!clock) return;
           if (audio.muted) { acceptSignal(false, clock.now); return; }
+          if ("samples" in data) {
+            const sampleRate = audioContext.sampleRate;
+            if (heard && data.firstFrame * 1000 / sampleRate >= captureFrom) {
+              replayOrigin ??= clock.ms - clock.audioMs;
+              appendReplay({ uri, sampleRate, originMs: replayOrigin, ...data });
+            }
+            return;
+          }
           // Map the worklet's continuous audio clock to the Spotify playhead once per uninterrupted stretch.
           const offset = columnOffset ??= Math.round((clock.ms - clock.audioMs - halfWindowMs) / LIVE_SAMPLE_MS);
           for (let i = 0; i < data.decibels.length / LIVE_ROWS; i++) {
