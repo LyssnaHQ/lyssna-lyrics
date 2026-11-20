@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AudioSegment, CanvasInfo, Host } from "./host";
 import { LyricsVisualiser } from "./lyssna/lyrics-visualiser";
 import { playCanvasMedia } from "./canvas-media";
@@ -33,10 +33,25 @@ function canvasUrl(value?: string) {
   } catch { /* Keep the cover when Spotify has no usable Canvas URL. */ }
 }
 
-export function CanvasArtwork({ info, cover, playing, onUnavailable }: {
+export function CanvasArtwork({ info, cover, playing, onUnavailable, onVideo, heldFrame }: {
   info: CanvasInfo; cover: string; playing: boolean; onUnavailable(info: CanvasInfo): void;
+  onVideo(video: HTMLVideoElement | null): void; heldFrame?: number;
 }) {
   const ref = useRef<HTMLVideoElement>(null);
+  function syncFrame(video: HTMLVideoElement) {
+    if (heldFrame !== undefined) {
+      video.pause();
+      if (Number.isFinite(video.duration)) {
+        const target = Math.min(heldFrame, Math.max(0, video.duration - 0.001));
+        if (Math.abs(video.currentTime - target) > 0.001) video.currentTime = target;
+      }
+    } else if (playing) void video.play().catch(() => {});
+    else video.pause();
+  }
+  const attach = useCallback((video: HTMLVideoElement | null) => {
+    ref.current = video;
+    onVideo(video);
+  }, [onVideo]);
   useEffect(() => {
     const video = ref.current;
     if (!video) return;
@@ -60,12 +75,11 @@ export function CanvasArtwork({ info, cover, playing, onUnavailable }: {
     };
   }, [info, onUnavailable]);
   useEffect(() => {
-    if (playing) void ref.current?.play().catch(() => {});
-    else ref.current?.pause();
-  }, [playing]);
-  return <div className="lyrics-canvas-cover"><video ref={ref} data-canvas-video=""
-    poster={cover || undefined} muted autoPlay={playing} loop playsInline
-    onCanPlay={(event) => { if (playing) void event.currentTarget.play().catch(() => {}); }} aria-label="Spotify Canvas" /></div>;
+    if (ref.current) syncFrame(ref.current);
+  }, [playing, heldFrame]);
+  return <div className="lyrics-canvas-cover"><video ref={attach} data-canvas-video=""
+    poster={cover || undefined} muted autoPlay={playing && heldFrame === undefined} loop playsInline
+    onCanPlay={(event) => syncFrame(event.currentTarget)} aria-label="Spotify Canvas" /></div>;
 }
 
 export function SpotifyVisualiser({ host, trackId, playing, opacity }: { host: Host; trackId: string; playing: boolean; opacity: number }) {

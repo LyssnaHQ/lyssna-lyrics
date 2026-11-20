@@ -474,6 +474,10 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
   const canvasInfo = useCanvas(host, track?.id, canvasEnabled);
   const [unavailableCanvas, setUnavailableCanvas] = useState<CanvasInfo>();
   const canvas = canvasInfo === unavailableCanvas ? undefined : canvasInfo;
+  const [canvasVideo, setCanvasVideo] = useState<HTMLVideoElement | null>(null);
+  const [canvasFrame, setCanvasFrame] = useState<{ video: HTMLVideoElement; seconds: number }>();
+  const heldFrame = canvasFrame && canvasFrame.video === canvasVideo ? canvasFrame.seconds : undefined;
+  useEffect(() => { setCanvasFrame((frame) => frame?.video === canvasVideo ? frame : undefined); }, [canvasVideo]);
   useEffect(() => setUnavailableCanvas(undefined), [track?.id, canvasEnabled]);
   useLayoutEffect(() => { onSidebarCover?.(canvas ? track?.cover : undefined); }, [canvas, track?.cover, onSidebarCover]);
   const background = settings.lyrics_background;
@@ -658,7 +662,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
       {!narrating && (track ? <>
         <div className="lyrics-album">
           {canvas ? <CanvasArtwork key={`${track.id}:${canvas.fileId ?? canvas.url}`} info={canvas} cover={track.cover}
-            playing={playing && !settings.reduce_motion} onUnavailable={setUnavailableCanvas} />
+            playing={playing && !settings.reduce_motion} onUnavailable={setUnavailableCanvas} onVideo={setCanvasVideo} heldFrame={heldFrame} />
             : (motion.state !== "idle" || track.cover) && <div className="lyrics-media lyrics-motion-stage">
               {track.cover && <img className={`cover${settings.cover_animation && !settings.reduce_motion ? " crossfade" : ""}`}
                 key={track.cover} src={track.cover} alt="" />}
@@ -741,6 +745,9 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
       attachSong={attachBulkLyrics} onClose={closeTtml} />}
     {settingsPage && <SettingsPanel key={settingsPage} settings={preferences} change={change} close={closeSettings}
       initialSubmenu={settingsPage === "storage" ? "storage" : undefined}
+      canvasFrame={{ video: canvasVideo, heldFrame,
+        hold: (seconds) => { if (canvasVideo) setCanvasFrame({ video: canvasVideo, seconds }); },
+        release: () => setCanvasFrame(undefined) }}
       onEnableAutoRecord={externalCinema ? undefined : () => void capture.start("auto")}
       options={options} track={track ?? undefined} notice={notice} setNotice={setNotice} view={view} developerMode={host.developerMode} />}
   </>;

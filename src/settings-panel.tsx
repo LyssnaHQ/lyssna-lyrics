@@ -37,6 +37,7 @@ const submenus = {
   storage: "Manage Stored Data",
   builds: "Build Channels",
   hidden: "Hidden Settings",
+  misc: "Extra Misc Settings That Aren’t Often Useful",
 };
 type Submenu = keyof typeof submenus;
 type Place = { tab: Tab; scroll: number; submenu?: Submenu; submenuScroll?: number };
@@ -69,7 +70,7 @@ function visualRowKey(row: ReactNode) {
   return isValidElement(row) && row.key !== null ? String(row.key) : "";
 }
 
-export function SettingsPanel({ settings, change, close, options, track, notice, setNotice, view = window, developerMode, initialSubmenu, onEnableAutoRecord }: {
+export function SettingsPanel({ settings, change, close, options, track, notice, setNotice, view = window, developerMode, initialSubmenu, onEnableAutoRecord, canvasFrame }: {
   settings: Settings;
   change: (patch: Partial<Settings>) => void;
   close: () => void;
@@ -81,6 +82,7 @@ export function SettingsPanel({ settings, change, close, options, track, notice,
   developerMode?: boolean;
   initialSubmenu?: "storage";
   onEnableAutoRecord?: () => void;
+  canvasFrame?: CanvasFrameControl;
 }) {
   const trackId = track?.id;
   const [initial] = useState<Place>(() => initialSubmenu
@@ -322,11 +324,12 @@ export function SettingsPanel({ settings, change, close, options, track, notice,
         </div>
       </SettingRow>,
       flag("settings_remember_place", "Remember settings location", "Reopen Settings on the tab and at the place it was closed.", "tab location remember reopen"),
-      flag("sync_other_plugin_preferences", "Sync preferences with other plugins", "Apply changes to compatible preferences from Legacy, Spicy Lyrics or Spotify+."),
-      flag("settings_allow_hiding", "Allow hiding settings", "Hide settings you never change. Restore them from Hidden settings.", "hide manage"),
       settings.settings_allow_hiding && flag("settings_hide_buttons", "Show hide buttons", "Put a hide button beside each setting's name.", "hide hidden settings buttons eye"),
       settings.settings_allow_hiding && <SettingRow key="manage-hidden" label="Manage Hidden Settings" help="Restore settings hidden from the main window.">
         {submenuButton("hidden", "Manage")}
+      </SettingRow>,
+      <SettingRow key="misc" label={submenus.misc} keywords="canvas frame scrub freeze allow hiding settings sync preferences with other plugins">
+        {submenuButton("misc", "Manage")}
       </SettingRow>,
     ]],
     ["Credits", "Credits and licences", [
@@ -418,6 +421,11 @@ export function SettingsPanel({ settings, change, close, options, track, notice,
         </div>}
         {submenu === "hidden" && (hiddenSettings.length ? <div className="lyrics-settings-group">{hiddenSettings}</div>
           : <p className="settings-submenu-empty">No hidden settings.</p>)}
+        {submenu === "misc" && <div className="lyrics-settings-group">
+          <CanvasFrameSlider control={canvasFrame} />
+          {flag("settings_allow_hiding", "Allow hiding settings", "Hide settings you never change. Restore them from Hidden settings.")}
+          {flag("sync_other_plugin_preferences", "Sync preferences with other plugins", "Apply changes to compatible preferences from Legacy, Spicy Lyrics or Spotify+.")}
+        </div>}
         {!submenu && <HiddenSettings.Provider value={hiding}><SettingsQuery.Provider value={query}>
           <div id="lyssna-settings-content" role={searching ? "region" : "tabpanel"}
             aria-label={searching ? "Search results" : undefined} aria-labelledby={searching ? undefined : `lyssna-settings-tab-${tab}`}>
@@ -448,4 +456,42 @@ function TimingOffsetSlider({ label, value, disabled, onChange }: {
       onChange={(event) => onChange(event.currentTarget.valueAsNumber)} />
     <output>{text}</output>
   </span>;
+}
+
+type CanvasFrameControl = {
+  video: HTMLVideoElement | null; heldFrame?: number;
+  hold(seconds: number): void; release(): void;
+};
+
+function CanvasFrameSlider({ control }: { control?: CanvasFrameControl }) {
+  const video = control?.video;
+  const heldFrame = control?.heldFrame;
+  const [timeline, setTimeline] = useState<{ video: HTMLVideoElement; max: number; seconds: number }>();
+  useEffect(() => {
+    if (!video) return;
+    const sync = () => {
+      const max = Number.isFinite(video.duration) ? Math.max(0, Math.ceil(video.duration * 100) - 1) : 0;
+      setTimeline({ video, max, seconds: video.currentTime });
+    };
+    const events = ["loadedmetadata", "durationchange", "timeupdate", "emptied"];
+    for (const event of events) video.addEventListener(event, sync);
+    sync();
+    return () => { for (const event of events) video.removeEventListener(event, sync); };
+  }, [video]);
+  const current = timeline && timeline.video === video ? timeline : undefined;
+  const max = current?.max ?? 0;
+  const value = Math.min(max, Math.round((heldFrame ?? current?.seconds ?? 0) * 100));
+  const time = `${(value / 100).toFixed(2)} s`;
+  return <SettingRow label="Canvas frame" help="Drag to freeze the frame. Resume returns to normal Canvas playback."
+    unavailable={max ? undefined : "Open lyrics with an active Spotify Canvas."}>
+    <div className="settings-actions">
+      <span className="settings-range">
+        <input type="range" aria-label="Canvas frame" aria-valuetext={time} min={0} max={max || 1} value={value}
+          disabled={!max} style={{ "--fill": `${max ? (value / max) * 100 : 0}%` } as CSSProperties}
+          onChange={(event) => control?.hold(event.currentTarget.valueAsNumber / 100)} />
+        <output>{time}</output>
+      </span>
+      <button type="button" className="pill outline" disabled={heldFrame === undefined} onClick={control?.release}>Resume</button>
+    </div>
+  </SettingRow>;
 }
