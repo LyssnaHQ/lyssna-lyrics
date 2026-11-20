@@ -17,12 +17,11 @@ export type PlayerRequest =
   | { command: "play"; uri?: string }
   | { command: "pause" }
   | { command: "seek"; positionMs: number }
-  | { command: "volume"; volume: number }
-  | { command: "repeat"; repeat: "off" | "context" | "track" };
+  | { command: "volume"; volume: number };
 
 export type CreatorState = {
   settings: { lyric_offset_ms: number; reduce_motion: boolean };
-  playback: { item?: Track; is_playing: boolean; repeat_state: "off" | "context" | "track"; volume: number };
+  playback: { item?: Track; is_playing: boolean; volume: number };
   playback_rate: number;
   speedEnabled: boolean;
   lyrics?: import("../lyssna/types").Lyrics;

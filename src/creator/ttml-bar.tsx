@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type CSSProperties } from "react";
 import { ChevronDown, ChevronUp, Gauge, Headphones, Pause, Play } from "lucide-react";
-import { useCreatorEnvironment } from "./environment";
+import { useCreatorEnvironment, type RecordingStatus } from "./environment";
+import { usePlaybarPopover } from "./playbar-popover";
+import { recordingExportEnabled } from "./recording-export";
 import { formatTime } from "./ttml-creator-model";
 
 export function CreatorSpeed({ speed, min, max, disabled, onChange, openAudio }: {
@@ -39,8 +41,57 @@ export interface BarSpan {
   current: boolean;
 }
 
-export function TtmlBar({ position, duration, peaks, spans, onSeek }: {
+function RecordingDetails({ percent, sharing, deleting, remove, exportAudio }: RecordingStatus) {
+  const { view } = useCreatorEnvironment();
+  const [open, setOpen] = useState(false);
+  const [format, setFormat] = useState<"wav" | "flac">("flac");
+  const [exporting, setExporting] = useState(false);
+  const [error, setError] = useState("");
+  const trigger = useRef<HTMLButtonElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  const id = useId();
+  usePlaybarPopover(view, open, trigger, panel);
+  async function exportRecording() {
+    setExporting(true);
+    setError("");
+    try { await exportAudio(format); }
+    catch (why) { setError(why instanceof Error ? why.message : "Couldn’t export the recording."); }
+    finally { setExporting(false); }
+  }
+
+  return <div className="ttml-recording">
+    <button type="button" className="ttml-recording-trigger" ref={trigger}
+      aria-label={`Saved audio, ${percent}% recorded`} aria-expanded={open} aria-controls={id}
+      title="Saved audio" onClick={() => setOpen(!open)}>
+      <span className="ttml-recording-ring" aria-hidden="true" style={{ "--recorded": `${percent}%` } as CSSProperties} />
+      <span>{percent}%</span>
+    </button>
+    <div className="ttml-recording-popover" ref={panel} id={id} popover="auto" role="dialog" aria-label="Saved audio"
+      onToggle={(event) => { if (event.newState === "closed") setOpen(false); }}>
+      <strong>Saved audio</strong>
+      <p>{percent === 100 ? "The full song is saved on this device. Creator uses saved audio for playback."
+        : `${percent}% of this song is recorded on this device. Use the speed slider to sync with the recording.`}</p>
+      {sharing && <p>Stop sharing Spotify audio to delete this recording.</p>}
+      <button type="button" disabled={sharing || deleting || exporting || percent === 0} onClick={() => void remove()}>
+        {deleting ? "Deleting…" : "Delete recording"}
+      </button>
+      {open && percent > 0 && recordingExportEnabled() && <div className="ttml-recording-export">
+        <select aria-label="Audio export format" value={format} disabled={exporting || deleting}
+          onChange={(event) => setFormat(event.currentTarget.value === "wav" ? "wav" : "flac")}>
+          <option value="flac">FLAC</option><option value="wav">WAV</option>
+        </select>
+        <button type="button" disabled={exporting || deleting} onClick={() => void exportRecording()}>
+          {exporting ? "Exporting…" : percent === 100 ? "Export audio" : "Export section"}
+        </button>
+      </div>}
+      {error && <p role="alert">{error}</p>}
+    </div>
+  </div>;
+}
+
+export function TtmlBar({ position, duration, peaks, spans, onSeek, recording }: {
   position: number; duration: number; peaks: Uint8Array | null; spans: BarSpan[]; onSeek(ms: number): void;
+  recording?: RecordingStatus;
 }) {
   const { view: window } = useCreatorEnvironment();
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -188,6 +239,7 @@ export function TtmlBar({ position, duration, peaks, spans, onSeek }: {
         }}
       />
       <span className="ttml-bar-time">{formatTime(duration)}</span>
+      {recording && <RecordingDetails {...recording} />}
     </div>
   );
 }

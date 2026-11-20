@@ -278,7 +278,7 @@ export function TtmlCreator({
   playbar?: CreatorPlaybarSlots;
   onClose?: () => void;
 }) {
-  const { root, view: window, waveform, playClip, replayAvailable, replayCaptured, openAudio } = useCreatorEnvironment();
+  const { root, view: window, waveform, playClip, recording, playingFullRecording, replayAvailable, replayCaptured, openAudio } = useCreatorEnvironment();
   const document = window.document;
   const focused = () => (root.getRootNode() as Document | ShadowRoot).activeElement;
   const playing = state.playback.item;
@@ -422,20 +422,6 @@ export function TtmlCreator({
     markWorking(track.uri);
     snapshot(false);
   }, [track, lines, text, metadata, snapshot]);
-
-  const repeatRef = useRef(state.playback.repeat_state);
-  repeatRef.current = state.playback.repeat_state;
-  const playerRef = useRef(onPlayer);
-  playerRef.current = onPlayer;
-  useEffect(() => {
-    if (!here) return;
-    const before = repeatRef.current ?? "off";
-    if (before === "track") return;
-    playerRef.current({ command: "repeat", repeat: "track" });
-    return () => {
-      playerRef.current({ command: "repeat", repeat: before });
-    };
-  }, [here]);
 
   const lastPosition = useRef(0);
   useEffect(() => {
@@ -2954,12 +2940,13 @@ export function TtmlCreator({
           onLines={setLines}
           onCursor={setCursor}
           onPlayUnit={playUnit}
-          canCapture={here}
+          canCapture={here && !playingFullRecording}
         />
       )}
       {barSlot && createPortal(
         <TtmlBar position={position} duration={track.duration_ms}
-          peaks={peaks?.uri === track.uri ? peaks.values : null} spans={barSpans} onSeek={seek} />, barSlot)}
+          peaks={peaks?.uri === track.uri ? peaks.values : null} spans={barSpans} onSeek={seek}
+          recording={here ? recording : undefined} />, barSlot)}
       {barSlot && createPortal(
         <CreatorSpeed speed={shownSpeed} min={MIN_SPEED} max={MAX_SPEED}
           disabled={!here || (!state.speedEnabled && !replayAvailable)}

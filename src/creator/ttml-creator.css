@@ -1398,6 +1398,82 @@
   font-size: 12.5px;
   font-variant-numeric: tabular-nums;
 }
+.ttml-recording {
+  flex: none;
+}
+.ttml-recording-trigger {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 6px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.ttml-recording-trigger:is(:hover, [aria-expanded="true"]) {
+  color: #fff;
+  background: #ffffff14;
+}
+.ttml-recording-ring {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: conic-gradient(var(--spice-button, #1ed760) var(--recorded), #ffffff30 0);
+  mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1.5px));
+}
+.ttml-recording-popover {
+  position: fixed;
+  inset: auto;
+  box-sizing: border-box;
+  width: min(245px, calc(100vw - 16px));
+  margin: 0;
+  padding: 12px;
+  overflow-y: auto;
+  border: 1px solid #ffffff24;
+  border-radius: 12px;
+  background: #242424;
+  color: #fff;
+  color-scheme: dark;
+  box-shadow: 0 8px 24px #0007;
+  font: 13px/1.45 "Lyssna Metropolis", "Segoe UI", sans-serif;
+}
+.ttml-recording-popover p {
+  margin: 6px 0 10px;
+  color: #b3b3b3;
+}
+.ttml-recording-popover button {
+  padding: 5px 10px;
+  border: 0;
+  border-radius: 999px;
+  background: #ffffff16;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.ttml-recording-popover button:hover:enabled { background: #ffffff26; }
+.ttml-recording-popover button:disabled { opacity: .45; cursor: default; }
+.ttml-recording-export {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #ffffff24;
+}
+.ttml-recording-export select {
+  padding: 4px 6px;
+  border: 1px solid #ffffff26;
+  border-radius: 6px;
+  color: inherit;
+  background: #303030;
+  font: inherit;
+}
 .ttml-bar-wave {
   flex: 1;
   min-width: 0;

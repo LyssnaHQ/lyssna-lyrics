@@ -1,6 +1,14 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import type { ReplayPacket } from "./captured-replay";
 
+export type RecordingStatus = {
+  percent: number;
+  sharing: boolean;
+  deleting: boolean;
+  remove(): Promise<void>;
+  exportAudio(format: "wav" | "flac"): Promise<void>;
+};
+
 export type CreatorEnvironmentValue = {
   root: HTMLElement;
   portal: HTMLElement;
@@ -10,6 +18,8 @@ export type CreatorEnvironmentValue = {
   appendReplay: (packet: ReplayPacket) => void;
   flushReplay: () => Promise<void>;
   setRecordingAudio: (recording: boolean) => void;
+  recording?: RecordingStatus;
+  playingFullRecording: boolean;
   replayAvailable: boolean;
   replayCaptured: (rate: number) => void;
   spectrumKey: string;

@@ -14,7 +14,8 @@ import { submitLyssnaTtml } from "../lyssna-submission";
 import { revalidateLyssnaSong } from "../lyssna-provider";
 import { lyssnaInstallReady } from "../lyssna-api";
 import { CreatorEnvironment } from "./environment";
-import { createCapturedReplay, recordedFrames, replaySampleRate } from "./captured-replay";
+import { couldBeComplete, createCapturedReplay, recordedFrames, replaySampleRate, type SavedRecording } from "./captured-replay";
+import { downloadRecording, recordingExportEnabled } from "./recording-export";
 import { useCreatorPlaybar } from "./playbar";
 import { creatorPitchSpectrum, creatorSpectrum, creatorWaveform } from "./audio";
 import { TtmlCreator } from "./ttml-creator";
@@ -29,7 +30,7 @@ type EditorAudio = {
   url: string;
   name: string;
   buffer?: AudioBuffer;
-  replay?: { startMs: number; endMs: number; positionMs: number; speed: number };
+  replay?: { startMs: number; endMs: number; positionMs: number; speed: number; resume: boolean; full: boolean };
 };
 
 function creatorTrack(track: SpotifyTrack, duration: number): Track {
@@ -59,6 +60,8 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
   const [notice, setNotice] = useState<{ message: string; error: boolean }>();
   const [audio, setAudio] = useState<EditorAudio>();
   const [recorded, setRecorded] = useState<{ uri: string; frames: number }>();
+  const [completeAudio, setCompleteAudio] = useState<{ uri: string; duration: number; recording: SavedRecording }>();
+  const [spotifyOnly, setSpotifyOnly] = useState<string>();
   const [recordingAudio, setRecordingAudio] = useState(false);
   const [deletingRecording, setDeletingRecording] = useState(false);
   const activeUri = useRef<string | undefined>(undefined);
@@ -74,6 +77,7 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
   const transportRevision = useRef(0);
   const clip = useRef<{ uri: string; end: number; from: number; expires: number; started: boolean }>(undefined);
   const audioForSong = audio?.uri === current?.uri ? audio : undefined;
+  const hasTrack = !!current;
   const isPlaying = audioForSong ? localPlaying : playing;
   const readCapturePosition = useCallback((uri: string) => {
     if (!replaying.current && host.playing() && !host.djNarrating() && uri === `spotify:track:${host.track()?.id}`) {
@@ -90,13 +94,17 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
     },
   ));
   const savedFrames = recorded?.uri === current?.uri ? recorded?.frames ?? 0 : 0;
+  const fullRecording = completeAudio?.uri === current?.uri && completeAudio?.duration === duration ? completeAudio.recording : undefined;
   const recordedPercent = savedFrames > 0 && duration > 0
-    ? Math.max(1, Math.min(100, Math.round(100 * savedFrames / (duration * replaySampleRate / 1000)))) : undefined;
+    ? fullRecording ? 100 : Math.max(1, Math.min(99, Math.round(100 * savedFrames / (duration * replaySampleRate / 1000))))
+    : undefined;
 
   useLayoutEffect(() => {
     activeUri.current = current?.uri;
     replaying.current = false;
     audioLoad.current++;
+    setCompleteAudio(undefined);
+    setSpotifyOnly(undefined);
     setAudio((entry) => entry?.replay && entry.uri !== current?.uri ? undefined : entry);
     return () => { activeUri.current = undefined; void captured.flush(); };
   }, [captured, current?.uri]);
@@ -109,11 +117,33 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
     }).catch(() => {});
     return () => { live = false; };
   }, [current?.uri]);
+  useEffect(() => {
+    const uri = current?.uri;
+    if (!uri || fullRecording || deletingRecording || !couldBeComplete(savedFrames, duration)) return;
+    let live = true;
+    void captured.read(uri, 0, duration, true).then((recording) => {
+      if (live && recording) setCompleteAudio({ uri, duration, recording });
+    }).catch(() => { if (live) notify("Couldn’t open the saved recording.", true); });
+    return () => { live = false; };
+  }, [captured, current?.uri, deletingRecording, duration, fullRecording, notify, savedFrames]);
 
   const recordingChanged = useCallback((recording: boolean) => {
     if (recording) recordingError.current = false;
     setRecordingAudio(recording);
   }, []);
+  useEffect(() => {
+    if (!hasTrack) return;
+    const before = host.repeat();
+    if (before === "track") return;
+    let live = true;
+    const restore = () => {
+      if (host.repeat() === "track") void Promise.resolve(host.setRepeat(before)).catch(() => {});
+    };
+    void Promise.resolve().then(() => live && host.setRepeat("track")).then(() => {
+      if (!live) restore();
+    }).catch(() => {});
+    return () => { live = false; restore(); };
+  }, [hasTrack, host]);
 
   const sourceKey = enabledSources(settings).join(",");
   useEffect(() => {
@@ -164,7 +194,7 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
     element.preservesPitch = true;
     setLocalPlaying(false);
     setRate(element.playbackRate);
-    if (replay) void element.play().catch((error) => {
+    if (replay?.resume) void element.play().catch((error) => {
       if (audioElement.current === element && error.name !== "AbortError") notify("Couldn’t start the captured replay.", true);
     });
     return () => { element.pause(); };
@@ -187,7 +217,7 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
           void host.playTrack(request.uri).catch((why) => notify(String(why), true));
         } else if (element) {
           if (host.playing()) host.toggle();
-          if (element.ended) element.currentTime = 0;
+          if (element.ended || element.currentTime >= element.duration) element.currentTime = 0;
           void element.play().catch((why) => notify(String(why), true));
         } else if (!host.playing()) host.toggle();
         break;
@@ -209,9 +239,6 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
           transportRevision.current++;
           host.seek(Math.min(host.duration(), request.positionMs));
         }
-        break;
-      case "repeat":
-        void Promise.resolve(host.setRepeat(request.repeat)).catch(() => {});
         break;
       case "volume":
         if (element) element.volume = request.volume / 100;
@@ -251,12 +278,12 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
   const returnToSpotify = useCallback(() => {
     const element = audioElement.current;
     const uri = `spotify:track:${host.track()?.id}`;
-    if (element?.hasAttribute("data-captured-replay")) {
+    if (element?.hasAttribute("data-captured-replay") && !element.hasAttribute("data-full-recording")) {
       element.pause();
     } else if (element?.dataset.trackUri === uri) {
       const resume = !clip.current && !element.paused;
       element.pause();
-      host.seek(Math.round(element.currentTime * 1000));
+      host.seek(Math.min(Math.max(0, host.duration() - 1), Math.round(element.currentTime * 1000)));
       if (resume && !host.playing()) host.toggle();
     } else if (clip.current?.uri === uri && host.playing()) {
       host.toggle();
@@ -272,6 +299,27 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
     audioElement.current.playbackRate = speed;
     setRate(speed);
   }, [audioForSong]);
+
+  const activateRecording = useCallback((uri: string, replay: SavedRecording, speed: number, resume: boolean, position: number) => {
+    transportRevision.current++;
+    replaying.current = true;
+    clip.current = undefined;
+    if (host.playing()) host.toggle();
+    const { blob, startMs, endMs, full } = replay;
+    const positionMs = full ? Math.max(0, Math.min(position, endMs)) : position >= startMs && position < endMs - 500 ? position : startMs;
+    const name = full ? "Saved audio" : `Saved audio · ${formatTime(startMs)}–${formatTime(endMs)}`;
+    setAudio({ uri, url: URL.createObjectURL(blob), name, replay: { startMs, endMs, positionMs, speed, resume, full } });
+  }, [host]);
+
+  useEffect(() => {
+    const uri = current?.uri;
+    if (!uri || !fullRecording || spotifyOnly === uri || audioForSong || deletingRecording ||
+      activeUri.current !== uri || uri !== `spotify:track:${host.track()?.id}`) return;
+    const position = host.position();
+    const resume = host.playing() && position < fullRecording.endMs - 100;
+    activateRecording(uri, fullRecording, 1, resume, position);
+  }, [activateRecording, audioForSong, current?.uri, deletingRecording, fullRecording, host, spotifyOnly]);
+
   async function replayCaptured(speed: number) {
     if (!current || current.id !== host.track()?.id) return;
     const generation = ++audioLoad.current;
@@ -284,14 +332,7 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
     }
     if (generation !== audioLoad.current || activeUri.current !== current.uri || current.id !== host.track()?.id) return;
     if (!replay) { notify("Share Spotify audio and play the section first.", true); return; }
-    transportRevision.current++;
-    replaying.current = true;
-    clip.current = undefined;
-    if (host.playing()) host.toggle();
-    const { blob, startMs, endMs } = replay;
-    const positionMs = position >= startMs && position < endMs - 500 ? position : startMs;
-    const name = `Saved audio · ${formatTime(startMs)}–${formatTime(endMs)}`;
-    setAudio({ uri: current.uri, url: URL.createObjectURL(blob), name, replay: { startMs, endMs, positionMs, speed } });
+    activateRecording(current.uri, replay, speed, true, position);
   }
 
   async function removeRecording() {
@@ -302,12 +343,24 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
     if (audioForSong?.replay) releaseAudio();
     try {
       await captured.remove(uri);
-      if (activeUri.current === uri) setRecorded({ uri, frames: 0 });
+      if (activeUri.current === uri) {
+        setCompleteAudio(undefined);
+        setRecorded({ uri, frames: 0 });
+      }
     } catch {
       if (activeUri.current === uri) notify("Couldn’t delete the saved recording.", true);
     } finally {
       setDeletingRecording(false);
     }
+  }
+
+  async function exportAudio(format: "wav" | "flac") {
+    if (!current || !recordingExportEnabled()) return;
+    const recording = fullRecording ?? await captured.read(current.uri, read(), duration);
+    if (!recording) throw new Error("There’s no saved section to export.");
+    const title = current.artists.length ? `${current.name} - ${current.artists.map(({ name }) => name).join(", ")}` : current.name;
+    const name = recording.full ? title : `${title} [${formatTime(recording.startMs)}–${formatTime(recording.endMs)}]`;
+    await downloadRecording(recording.blob, name, format);
   }
 
   const waveform = useCallback((uri: string, buckets: number) => creatorWaveform(host, uri, buckets,
@@ -334,13 +387,14 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
   }
 
   function releaseAudio() {
+    setSpotifyOnly(current?.uri);
     returnToSpotify();
     setAudio(undefined);
   }
 
   const state: CreatorState = {
     settings: { lyric_offset_ms: settings.lyric_offset_ms + (track ? settings.lyric_song_offsets[track.id] ?? 0 : 0), reduce_motion: settings.reduce_motion },
-    playback: { item: current, is_playing: isPlaying, repeat_state: host.repeat(), volume: volume * 100 },
+    playback: { item: current, is_playing: isPlaying, volume: volume * 100 },
     playback_rate: audioForSong ? rate : 1, speedEnabled: !!audioForSong,
     lyrics: seed?.uri === current?.uri ? seed?.lyrics : undefined, lyrics_uri: seed?.uri,
     lyrics_pending: !!current && seed?.uri !== current.uri,
@@ -355,16 +409,21 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
         if (file) void pickAudio(file);
       }} />
       {audioForSong && <button type="button" onClick={releaseAudio} title="Return to Spotify playback">{audioForSong.name} <X size={13} /></button>}
-      {recordedPercent !== undefined && <small>{recordedPercent}% recorded on this device</small>}
-      {recordedPercent !== undefined && !recordingAudio && <button type="button" disabled={deletingRecording}
-        onClick={() => void removeRecording()}>Delete recording</button>}
     </div>
     {audioForSong && <audio key={audioForSong.url} ref={audioElement} src={audioForSong.url} data-track-uri={audioForSong.uri}
       data-captured-replay={audioForSong.replay ? "" : undefined}
-      onPlay={() => setLocalPlaying(true)} onPause={() => setLocalPlaying(false)} onEnded={() => setLocalPlaying(false)} />}
+      data-full-recording={audioForSong.replay?.full ? "" : undefined}
+      onPlay={() => setLocalPlaying(true)} onPause={() => setLocalPlaying(false)} onEnded={(event) => {
+        setLocalPlaying(false);
+        if (audioForSong.replay?.full && host.repeat() === "track") event.currentTarget.currentTime = 0;
+      }} />}
     <div className="lyssna-creator-body">
       {root && portal && <CreatorEnvironment.Provider value={{ root, portal, view, read, readCapturePosition, waveform, spectrogram,
         appendReplay: captured.append, flushReplay: captured.flush, setRecordingAudio: recordingChanged,
+        recording: recordingAudio || recordedPercent !== undefined ? {
+          percent: recordedPercent ?? 0, sharing: recordingAudio, deleting: deletingRecording, remove: removeRecording, exportAudio,
+        } : undefined,
+        playingFullRecording: !!audioForSong?.replay?.full,
         replayAvailable: !deletingRecording && savedFrames >= replaySampleRate / 2, replayCaptured,
         spectrumKey: audio?.buffer ? audio.url : "spotify", spectrumAudioUri: audio?.buffer ? audio.uri : undefined,
         openAudio, playClip }}>

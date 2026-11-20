@@ -2,16 +2,24 @@ export const replaySampleRate = 48_000;
 const channels = 2;
 const bytesPerFrame = channels * Int16Array.BYTES_PER_ELEMENT;
 const framesPerTile = replaySampleRate;
+const edgeTolerance = Math.round(replaySampleRate * 0.25);
+const gapTolerance = Math.round(replaySampleRate * 0.06);
 
 export type ReplayPacket = {
   uri: string;
   startFrame: number;
   samples: Int16Array;
 };
+export type SavedRecording = { blob: Blob; startMs: number; endMs: number; full: boolean };
 
 type Range = { start: number; end: number };
 type Tile = { uri: string; index: number; samples: Int16Array; ranges: Range[] };
 type TrackRecording = { uri: string; frames: number };
+
+export function couldBeComplete(frames: number, duration: number) {
+  const total = Math.round(duration * replaySampleRate / 1000);
+  return total > 0 && frames >= Math.max(total * 0.95, total - 2 * edgeTolerance - gapTolerance);
+}
 
 let database: Promise<IDBDatabase> | undefined;
 function openRecording() {
@@ -161,9 +169,9 @@ export function createCapturedReplay(onSaved: (uri: string, frames: number) => v
       if (pending.length >= 10) void flush();
     },
     flush,
-    async read(uri: string, positionMs: number, duration: number) {
+    async read(uri: string, positionMs: number, duration: number, completeOnly = false) {
       await flush();
-      return readRecording(uri, positionMs, duration);
+      return readRecording(uri, positionMs, duration, completeOnly);
     },
     async remove(uri: string) {
       await flush();
@@ -191,7 +199,7 @@ function wavHeader(frames: number) {
   return header.buffer;
 }
 
-async function readRecording(uri: string, positionMs: number, duration: number) {
+async function readRecording(uri: string, positionMs: number, duration: number, completeOnly: boolean): Promise<SavedRecording | undefined> {
   const db = await openRecording();
   const tiles: Tile[] = await result(db.transaction("tiles").objectStore("tiles").getAll(tileRange(uri)));
   const total = Math.min(Math.ceil(duration * replaySampleRate / 1000), Math.floor((0xffffffff - 36) / bytesPerFrame));
@@ -200,8 +208,11 @@ async function readRecording(uri: string, positionMs: number, duration: number) 
   })).filter(({ start, end }) => end > start));
   const position = Math.round(positionMs * replaySampleRate / 1000);
   const distance = (range: Range) => Math.max(range.start - position, position - range.end, 0);
-  const ranges = mergeRanges(timeline, Math.round(replaySampleRate * 0.06));
-  const selected = ranges.filter(({ start, end }) => end - start >= replaySampleRate / 2)
+  const ranges = mergeRanges(timeline, gapTolerance);
+  const full = ranges.length === 1 && ranges[0].start <= edgeTolerance && ranges[0].end >= total - edgeTolerance &&
+    couldBeComplete(coverage(timeline), duration);
+  if (completeOnly && !full) return;
+  const selected = full ? { start: 0, end: total } : ranges.filter(({ start, end }) => end - start >= replaySampleRate / 2)
     .sort((a, b) => distance(a) - distance(b) || (b.end - b.start) - (a.end - a.start))[0];
   if (!selected) return;
 
@@ -218,5 +229,6 @@ async function readRecording(uri: string, positionMs: number, duration: number) 
     blob: new Blob(parts, { type: "audio/wav" }),
     startMs: start * 1000 / replaySampleRate,
     endMs: end * 1000 / replaySampleRate,
+    full,
   };
 }

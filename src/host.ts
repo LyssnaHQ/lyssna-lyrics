@@ -54,6 +54,7 @@ type PlayerState = {
 type PlayerAPI = {
   _state?: PlayerState | null;
   sendSignal?(signal: string): unknown;
+  setRepeat?(mode: number): unknown;
   skipTo?(item: SpotifyTrack): unknown;
   _events?: {
     addListener(event: "update", listener: () => void): void;
@@ -394,7 +395,12 @@ export function getHost() {
     volume: () => kit ? kit.Player.volume : spice?.Player.getVolume?.() ?? 0,
     setVolume: (level: number) => kit ? kit.Player.setVolume(level) : spice?.Player.setVolume?.(level),
     repeat: () => kit ? kit.Player.repeat : repeatModes[spice?.Player.getRepeat?.() ?? 0] ?? "off",
-    setRepeat: (mode: RepeatMode) => kit ? kit.Player.setRepeat?.(mode) : spice?.Player.setRepeat?.(repeatModes.indexOf(mode)),
+    setRepeat(mode: RepeatMode) {
+      if (kit) return kit.Player.setRepeat?.(mode);
+      const player = spice?.Player.origin;
+      const index = repeatModes.indexOf(mode);
+      return player?.setRepeat ? player.setRepeat(index) : spice?.Player.setRepeat?.(index);
+    },
     shuffle: () => kit ? kit.Player.shuffle : spice?.Player.getShuffle?.() ?? false,
     toggleShuffle: () => kit ? kit.Player.setShuffle?.(!kit.Player.shuffle) : spice?.Player.toggleShuffle?.(),
     liked: () => kit ? kit.Player.liked : spice?.Player.getHeart?.() ?? false,
