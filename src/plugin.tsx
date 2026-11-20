@@ -39,8 +39,8 @@ import { readViewSession, saveViewSession } from "./view-session";
 import { lyssnaApiNotice, lyssnaInstallReady } from "./lyssna-api";
 import { revalidateLyssnaSong, resumeLyssnaRequests } from "./lyssna-provider";
 import { submitLyssnaTtml } from "./lyssna-submission";
-import { CreatorSurface } from "./creator/surface";
-import { dismissDraft, draftPreview } from "./creator/ttml-working";
+import { CreatorSurface, type CreatorPlayback } from "./creator/surface";
+import { dismissDraft, draftPreview, liveDraftChanged } from "./creator/ttml-working";
 import { trackLyssnaListens, useLyssnaPlay } from "./lyssna-plays";
 import { MotionArtwork, useAlbumMotionArtwork } from "./motion-artwork";
 import fontCss from "./fonts/fonts.css?inline";
@@ -113,36 +113,33 @@ function useTrackLyrics(track: Track, duration: number, view: Window, settings: 
   return { lyrics, waiting };
 }
 
-function LyricsForTrack({ track, host, playing, settings, view = window, fullView = false, openCreator }: {
+function LyricsForTrack({ track, host, playing, settings, view = window, fullView = false, openCreator, draft, showOriginal, localPlayback }: {
   track: Track; host: Host; playing: boolean; settings: Settings; view?: Window; fullView?: boolean;
   openCreator?(): void;
+  draft?: Lyrics | null; showOriginal?(): void; localPlayback?: CreatorPlayback;
 }) {
   const duration = host.duration();
   const data = useTrackLyrics(track, duration, view, settings, host);
-  const uri = `spotify:track:${track.id}`;
-  const [draft, setDraft] = useState(() => fullView ? draftPreview(uri) : null);
-  const reviewing = settings.ttml_reviewer !== "off" && hasTemporaryTtml(track.id) &&
-    !settings.lyrics_sources_disabled.includes("local");
-  const visibleDraft = reviewing ? null : draft;
   const lyrics = <TrackLyrics track={track} host={host} playing={playing} settings={settings} view={view} fullView={fullView}
-    duration={duration} {...(visibleDraft ? { lyrics: visibleDraft, waiting: false } : data)} />;
+    duration={duration} localPlayback={localPlayback} {...(draft ? { lyrics: draft, waiting: false } : data)} />;
   if (!fullView) return lyrics;
   return <>
     <div className="lyrics-body">{lyrics}</div>
-    {visibleDraft && <div className="ttml-draft-banner">
+    {draft && <div className="ttml-draft-banner">
       <span role="status">Showing your TTML draft</span>
       {openCreator && <button type="button" onClick={openCreator}>Back to Creator</button>}
-      <button type="button" onClick={() => { dismissDraft(uri); setDraft(null); }}>Original lyrics</button>
+      <button type="button" onClick={showOriginal}>Original lyrics</button>
     </div>}
   </>;
 }
 
-function TrackLyrics({ track, host, playing, settings, compact = false, view = window, fullView = !compact, duration, lyrics, waiting }: {
+function TrackLyrics({ track, host, playing, settings, compact = false, view = window, fullView = !compact, duration, lyrics, waiting, localPlayback }: {
   track: Track; host: Host; playing: boolean; settings: Settings; compact?: boolean; view?: Window; fullView?: boolean;
-  duration: number; lyrics?: Lyrics; waiting: boolean;
+  duration: number; lyrics?: Lyrics; waiting: boolean; localPlayback?: CreatorPlayback;
 }) {
   const playMarker = useLyssnaPlay(host, track.id, lyrics?.lyssna?.songId, playing, view);
-  const position = usePosition(host, playing, view);
+  const position = usePosition(host, playing, view, localPlayback?.read);
+  const seek = localPlayback?.seek ?? host.seek;
   const time = position + settings.lyric_offset_ms + (settings.lyric_song_offsets[track.id] ?? 0);
   const gravity = fullView && settings.space_gravity && !!lyrics &&
     !lyrics.instrumental && (lyrics.synced || duration > 0);
@@ -174,7 +171,7 @@ function TrackLyrics({ track, host, playing, settings, compact = false, view = w
 
   if (gravity && rendered?.synced && rendered.lines.some((line) => line.words.length)) {
     return <div className={fontClass} style={{ display: "contents" }}><span ref={playMarker} hidden /><SpaceGravityLyrics lyrics={rendered} time={time} reduceMotion={settings.reduce_motion}
-      tuning={settings.lyrics_animator} onSeek={(ms) => host.seek(Math.max(0, ms - (settings.lyrics_seek_compensation ? 300 : 0)))}
+      tuning={settings.lyrics_animator} onSeek={(ms) => seek(Math.max(0, ms - (settings.lyrics_seek_compensation ? 300 : 0)))}
       highlighter={settings.lyrics_highlighter ? markerColour(settings.lyrics_highlighter_color) : undefined}
       linkWidth={settings.gravity_links ? settings.gravity_link_width / 100 : 0}
       credits={<div className={upNext ? "lyric-credits-row" : undefined}>
@@ -186,7 +183,7 @@ function TrackLyrics({ track, host, playing, settings, compact = false, view = w
       </div>} /></div>;
   }
   if (rendered) return <div className={fontClass} style={{ display: "contents" }}><span ref={playMarker} hidden /><LyricsDisplay lyrics={rendered} positionMs={time} settings={settings}
-    onSeek={host.seek} compact={compact} upNext={upNext} /></div>;
+    onSeek={seek} compact={compact} upNext={upNext} /></div>;
   if (waiting && settings.lyrics_skeleton) return <LyricsSkeleton />;
   if (!waiting && !settings.lyrics_no_lyrics_notice) return null;
   return <div className="lyrics-message" role="status"><MicVocal />
@@ -312,10 +309,11 @@ const rangeFocus = {
   onBlur: clearPointerFocus,
 };
 
-function FullscreenControls({ host, playing, settings, view, trackId, narrating }: {
-  host: Host; playing: boolean; settings: Settings; view: Window; trackId?: string; narrating: boolean;
+function FullscreenControls({ host, playing, settings, view, trackId, narrating, localPlayback }: {
+  host: Host; playing: boolean; settings: Settings; view: Window; trackId?: string; narrating: boolean; localPlayback?: CreatorPlayback;
 }) {
-  const position = usePosition(host, playing, view);
+  const position = usePosition(host, playing, view, localPlayback?.read);
+  const seek = localPlayback?.seek ?? host.seek;
   const { liked, shuffle, repeat, canJumpDJ, activate, cycleRepeat } = usePlaybackControls(host, trackId, true);
   const likeLabel = liked ? "Remove from Liked Songs" : "Save to Liked Songs";
   const duration = host.duration();
@@ -346,7 +344,7 @@ function FullscreenControls({ host, playing, settings, view, trackId, narrating 
       <div className="lyrics-glass-seek" style={{ "--range": `${elapsed / Math.max(1, duration) * 100}%` } as CSSProperties}>
         <span className="lyrics-glass-fill" aria-hidden="true" />
         <input aria-label="Seek position" type="range" min={0} max={duration || 1} {...rangeFocus}
-          disabled={narrating || !duration} value={elapsed} onChange={(event) => host.seek(event.target.valueAsNumber)} />
+          disabled={narrating || !duration} value={elapsed} onChange={(event) => seek(event.target.valueAsNumber)} />
       </div>
       <time>{total}</time>
     </div>
@@ -360,7 +358,7 @@ function FullscreenControls({ host, playing, settings, view, trackId, narrating 
           onClick={activate(host.toggleShuffle)}><FullscreenShuffleIcon /></button>
         <button type="button" className="icon-button" aria-label="Previous" onClick={host.previous}><SkipPreviousIcon /></button>
       </div>
-      <button type="button" className="icon-button" aria-label={playing ? "Pause" : "Play"} onClick={host.toggle}>
+      <button type="button" className="icon-button" aria-label={playing ? "Pause" : "Play"} onClick={localPlayback?.toggle ?? host.toggle}>
         {playing ? <FullscreenPauseIcon /> : <FullscreenPlayIcon />}
       </button>
       <div className="lyssna-transport-side">
@@ -394,13 +392,37 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
   onSidebarCover?(cover?: string): void;
 }) {
   const externalCinema = view !== window;
-  const { track, playing, narrating } = usePlayback(host, true);
+  const { track, playing: spotifyPlaying, narrating } = usePlayback(host, true);
   const preferences = useLiveSettings();
   const settings = useReviewerSettings(preferences, track?.id);
   const [settingsPage, setSettingsPage] = useState<"settings" | "storage">();
   const showSettings = !!settingsPage;
   const [showTtml, setShowTtml] = useState(false);
   const showCreator = !!closeCreator;
+  const trackId = track?.id;
+  const [creatorTrackId, setCreatorTrackId] = useState<string>();
+  const [creatorPlayback, setCreatorPlayback] = useState<CreatorPlayback>();
+  const [draftRevision, refreshDraft] = useState(0);
+  const draftUri = trackId && !showCreator ? `spotify:track:${trackId}` : undefined;
+  const draft = useMemo(() => draftPreview(draftUri), [draftUri, draftRevision]);
+  const reviewing = trackId && settings.ttml_reviewer !== "off" && hasTemporaryTtml(trackId) &&
+    !settings.lyrics_sources_disabled.includes("local");
+  const visibleDraft = reviewing ? null : draft;
+  const keepCreator = !!visibleDraft && preferences.ttml_creator && !!trackId && creatorTrackId === trackId;
+  const localPlayback = keepCreator && creatorPlayback?.trackId === trackId ? creatorPlayback : undefined;
+  const playing = localPlayback?.playing ?? spotifyPlaying;
+  useEffect(() => {
+    if (!draftUri) return;
+    const update = (event: Event) => {
+      if ((event as CustomEvent<string>).detail === draftUri) refreshDraft((revision) => revision + 1);
+    };
+    window.addEventListener(liveDraftChanged, update);
+    return () => window.removeEventListener(liveDraftChanged, update);
+  }, [draftUri]);
+  useLayoutEffect(() => {
+    if (showCreator) setCreatorTrackId(trackId);
+    else if (!keepCreator) setCreatorTrackId(undefined);
+  }, [keepCreator, showCreator, trackId]);
   const [fullscreen, setFullscreen] = useState(fullscreenRequest > 0);
   const [leaving, setLeaving] = useState(false);
   const [narrow, setNarrow] = useState(false);
@@ -423,7 +445,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
     if (trigger) view.requestAnimationFrame(() => trigger.focus({ preventScroll: true }));
   }
   useLayoutEffect(() => { if (lyricsPage.current) lyricsPage.current.inert = showTtml; }, [showTtml, showCreator]);
-  useLayoutEffect(() => { if (creatorPage.current) creatorPage.current.inert = showSettings; }, [showSettings, showCreator]);
+  useLayoutEffect(() => { if (creatorPage.current) creatorPage.current.inert = showSettings || showTtml; }, [showSettings, showTtml, showCreator, keepCreator]);
   useLayoutEffect(() => {
     if (!settingsRequest) return;
     setNotice("");
@@ -446,7 +468,6 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
   useLayoutEffect(() => { onSidebarCover?.(canvas ? track?.cover : undefined); }, [canvas, track?.cover, onSidebarCover]);
   const background = settings.lyrics_background;
   const artistUri = track?.artistUri;
-  const trackId = track?.id;
   const albumUri = track?.albumUri;
   const motion = useAlbumMotionArtwork(albumUri, track?.albumUpc,
     !showCreator && settings.animated_covers && !settings.reduce_motion && !settings.lyrics_hide_artwork && !canvas, view);
@@ -606,20 +627,22 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
     "--lyrics-cover-color": coverColour, "--hero": coverColour } as CSSProperties;
   const artworkDock = !!track && !canvas && !compact && !settings.lyrics_hide_artwork;
   const playback = (fullscreen || externalCinema) && <FullscreenControls host={host} playing={playing} settings={settings}
-    view={view} trackId={track?.id} narrating={narrating} />;
+    view={view} trackId={trackId} narrating={narrating} localPlayback={localPlayback} />;
   return <>
     {!showCreator && hasAmbience && <Ambience image={artwork} animate={playing && background === "animated"}
       reduceMotion={settings.reduce_motion} followCanvas={canvas ? "window" : false} />}
     {!showCreator && backgroundImage && <img className="lyrics-background" src={backgroundImage}
       style={{ "--artwork-blur": `${settings.lyrics_background_blur}px` } as CSSProperties}
       onError={banner ? () => setArtistHeader((current) => current?.url === banner && current.uri === artistUri ? undefined : current) : undefined} alt="" />}
-    {closeCreator ? <div className="lyssna-creator-container" ref={creatorPage} style={pageStyle}>
-      <CreatorSurface host={host} view={view} settings={preferences} close={closeCreator} manageStoredData={(trigger) => {
+    {(showCreator || keepCreator) && <div className="lyssna-creator-container" ref={creatorPage} style={pageStyle} data-draft-preview={keepCreator || undefined}>
+      <CreatorSurface host={host} view={view} settings={preferences} close={closeCreator ?? close} previewing={keepCreator}
+        onLocalPlayback={setCreatorPlayback} manageStoredData={(trigger) => {
         settingsTrigger.current = trigger ?? undefined;
         setNotice("");
         setSettingsPage("storage");
       }} />
-    </div> : <section ref={lyricsPage} className={className} aria-label="Lyssna Lyrics" style={pageStyle}
+    </div>}
+    {!showCreator && <section ref={lyricsPage} className={className} aria-label="Lyssna Lyrics" style={pageStyle}
       onPointerMove={wakeTools} onPointerLeave={sleepTools} onKeyDownCapture={wakeTools}>
       {narrating && <DJInterlude playing={playing} reduceMotion={settings.reduce_motion} />}
       {!narrating && (track ? <>
@@ -636,6 +659,10 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
           {artworkDock && playback}
         </div>
         <LyricsForTrack key={track.id} track={track} host={host} playing={playing} settings={settings} view={view} fullView
+          draft={visibleDraft} localPlayback={localPlayback} showOriginal={() => {
+            if (draftUri) dismissDraft(draftUri);
+            refreshDraft((revision) => revision + 1);
+          }}
           openCreator={preferences.ttml_creator && openCreator ? () => {
             if (fullscreen && !externalCinema) toggleFullscreen();
             openCreator();

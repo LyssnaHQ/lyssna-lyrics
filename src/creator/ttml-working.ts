@@ -44,10 +44,13 @@ let shown = showsPreview();
 // The lines open in the TTML Creator, saved or not, so a song with nothing
 // drafted yet still previews as a draft.
 const live = new Map<string, CreatorLine[]>();
+export const liveDraftChanged = "lyssna-lyrics:live-draft-changed";
 
 export function showLive(uri: string, lines: CreatorLine[]) {
+  if (live.get(uri) === (lines.length ? lines : undefined)) return;
   if (lines.length) live.set(uri, lines);
   else live.delete(uri);
+  window.dispatchEvent(new CustomEvent(liveDraftChanged, { detail: uri }));
 }
 
 export function draftPreview(uri: string | undefined): Lyrics | null {

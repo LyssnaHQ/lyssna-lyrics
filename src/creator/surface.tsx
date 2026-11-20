@@ -35,6 +35,14 @@ type EditorAudio = {
   replay?: { startMs: number; endMs: number; positionMs: number; speed: number; resume: boolean; full: boolean };
 };
 
+export type CreatorPlayback = {
+  trackId: string;
+  playing: boolean;
+  read(): number;
+  seek(ms: number): void;
+  toggle(): void;
+};
+
 function creatorTrack(track: SpotifyTrack, duration: number): Track {
   return { id: track.id, uri: `spotify:track:${track.id}`, name: track.title,
     artists: track.artistLinks?.length ? track.artistLinks : track.artists ? [{ name: track.artists }] : [],
@@ -49,8 +57,9 @@ async function seedTimings(host: Host, lyrics: Lyrics, duration: number, trackId
   } : undefined) ?? lyrics;
 }
 
-export function CreatorSurface({ host, view: owner, settings, close, manageStoredData }: {
-  host: Host; view: Window; settings: Settings; close: () => void; manageStoredData(trigger: HTMLElement | null): void;
+export function CreatorSurface({ host, view: owner, settings, close, previewing, onLocalPlayback, manageStoredData }: {
+  host: Host; view: Window; settings: Settings; close: () => void; previewing: boolean;
+  onLocalPlayback(playback: CreatorPlayback | undefined): void; manageStoredData(trigger: HTMLElement | null): void;
 }) {
   const view = owner as Window & typeof globalThis;
   const { track, playing } = usePlayback(host);
@@ -243,25 +252,31 @@ export function CreatorSurface({ host, view: owner, settings, close, manageStore
     }
   }, [audioForSong, current?.uri, host, notify]);
 
-  useLayoutEffect(() => {
-    if (!audioForSong) return;
+  const toggle = useCallback(() => {
+    const element = audioForSong && audioElement.current;
+    player({ command: (element ? !element.paused : host.playing()) ? "pause" : "play" });
+  }, [audioForSong, host, player]);
 
+  useLayoutEffect(() => {
+    if (!audioForSong || !current) return;
+    onLocalPlayback({ trackId: current.id, playing: isPlaying, read, toggle,
+      seek: (positionMs) => player({ command: "seek", positionMs }) });
+    return () => onLocalPlayback(undefined);
+  }, [audioForSong, current?.id, isPlaying, onLocalPlayback, player, read, toggle]);
+
+  useLayoutEffect(() => {
     function onSpace(event: KeyboardEvent) {
       if ((event.code !== "Space" && event.key !== " ") || event.altKey || event.ctrlKey ||
-        event.metaKey || event.shiftKey || event.isComposing || event.defaultPrevented) return;
-      const element = audioElement.current;
-      if (!element) return;
+        event.metaKey || event.shiftKey || event.isComposing) return;
 
       const target = event.composedPath()[0];
       event.stopImmediatePropagation();
       if (target instanceof view.Element && target.closest(
-        "button:not(.ttml-unit), input, textarea, select, [contenteditable]:not([contenteditable='false']), .lyrics-settings-backdrop, .ttml-dialog, .ttml-menu, .ttml-recording-popover",
+        "textarea, input:is(:not([type]), [type='text'], [type='search'], [type='number'], [type='password'], [type='email'], [type='url'], [type='tel']), [contenteditable]:not([contenteditable='false'])",
       )) return;
 
       event.preventDefault();
-      if (event.type === "keydown" && !event.repeat) {
-        player({ command: element.paused ? "play" : "pause" });
-      }
+      if (event.type === "keydown" && !event.repeat) toggle();
     }
 
     view.addEventListener("keydown", onSpace, true);
@@ -270,7 +285,7 @@ export function CreatorSurface({ host, view: owner, settings, close, manageStore
       view.removeEventListener("keydown", onSpace, true);
       view.removeEventListener("keyup", onSpace, true);
     };
-  }, [audioForSong, player, view]);
+  }, [toggle, view]);
 
   const playClip = useCallback((uri: string, from: number, end: number) => {
     if (uri !== current?.uri || end <= from) return;
@@ -471,7 +486,7 @@ export function CreatorSurface({ host, view: owner, settings, close, manageStore
         replayAvailable: !deletingRecording && !!saved && saved.frames >= saved.sampleRate / 2, replayCaptured,
         spectrumKey: audio?.buffer ? audio.url : "spotify", spectrumAudioUri: audio?.buffer ? audio.uri : undefined,
         openAudio, playClip, manageStoredData }}>
-        <TtmlCreator state={state} onPlayer={player} onToggle={() => player({ command: isPlaying ? "pause" : "play" })}
+        <TtmlCreator state={state} onPlayer={player} onToggle={toggle} draftPreview={previewing}
           onSpeed={setSpeed} notify={notify} barSlot={playbar?.wave ?? bar} playbar={playbar}
           onClose={close}
           onParse={async (filename, text, song) => {

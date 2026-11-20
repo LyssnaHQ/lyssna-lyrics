@@ -158,6 +158,23 @@ async function deleteRecording(uri: string) {
 
 export const savedAudioCleared = "lyssna-lyrics:saved-audio-cleared";
 
+export async function savedAudioBytes() {
+  const db = await openRecording();
+  const transaction = db.transaction("tiles");
+  const done = complete(transaction);
+  let bytes = 0;
+  const request = transaction.objectStore("tiles").openCursor();
+  request.onsuccess = () => {
+    const cursor = request.result;
+    if (!cursor) return;
+    const tile: Tile = cursor.value;
+    bytes += tile.samples.byteLength;
+    cursor.continue();
+  };
+  await done;
+  return bytes;
+}
+
 export async function clearRecordedAudio() {
   const db = await openRecording();
   const transaction = db.transaction(["tiles", "tracks"], "readwrite");

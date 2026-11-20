@@ -48,6 +48,12 @@ export async function readLiveTiles(uri: string, first: number, last: number): P
 
 export const liveSpectrumCleared = "lyssna-lyrics:spectrograms-cleared";
 
+export async function savedSpectrogramBytes() {
+  const db = await openSpectrum();
+  const count = await result(db.transaction("tiles").objectStore("tiles").count());
+  return count * LIVE_COLUMNS * (LIVE_ROWS * Uint16Array.BYTES_PER_ELEMENT + Uint8Array.BYTES_PER_ELEMENT);
+}
+
 export async function clearLiveSpectrograms() {
   const db = await openSpectrum();
   await new Promise<void>((resolve, reject) => {

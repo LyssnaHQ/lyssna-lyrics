@@ -20,6 +20,12 @@ const conversions = new Map<string, CoverConversion>();
 const noMotion: MotionCover = { state: "idle" };
 const loadingMotion: MotionCover = { state: "loading" };
 
+export function cachedMotionArtworkBytes() {
+  let bytes = 0;
+  for (const cover of convertedCovers.values()) bytes += cover.size;
+  return bytes;
+}
+
 export function clearMotionArtworkCache() {
   upcs.clear();
   covers.clear();

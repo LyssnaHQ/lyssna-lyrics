@@ -260,6 +260,7 @@ export function TtmlCreator({
   barSlot,
   playbar,
   onClose,
+  draftPreview = false,
 }: {
   state: CreatorState;
   onPlayer: (request: PlayerRequest) => void;
@@ -277,6 +278,7 @@ export function TtmlCreator({
   barSlot?: HTMLElement | null;
   playbar?: CreatorPlaybarSlots;
   onClose?: () => void;
+  draftPreview?: boolean;
 }) {
   const { root, view: window, waveform, playClip, recording, playingFullRecording, replayAvailable, replayCaptured, openAudio } = useCreatorEnvironment();
   const document = window.document;
@@ -1175,7 +1177,7 @@ export function TtmlCreator({
   const stateRef = useRef({ lines, cursor });
   stateRef.current = { lines, cursor };
   const wordField = useRef<HTMLInputElement>(null);
-  const editable = !textMode && lines.length > 0 && !previewing;
+  const editable = !draftPreview && !textMode && lines.length > 0 && !previewing;
   useEffect(() => {
     if (!editable || readStorage(TOUR_KEY)) return;
     // Seen once is enough, even if the walkthrough is never finished.
@@ -1201,11 +1203,11 @@ export function TtmlCreator({
   useEffect(() => {
     if (!editable) return;
     const onKey = (event: KeyboardEvent) => {
-      if (state.speedEnabled && event.key === " ") return;
+      if (event.code === "Space" || event.key === " ") return;
       const target = event.composedPath()[0] as HTMLElement | null;
       if (target?.closest(".lyrics-settings-backdrop, .ttml-recording-popover")) return;
       if (root.querySelector(".ttml-menu, .ttml-dialog")) return;
-      if (target?.closest(".ttml-bar button, .ttml-spectrum button") && (event.key === " " || event.key === "Enter")) return;
+      if (target?.closest(".ttml-bar button, .ttml-spectrum button") && event.key === "Enter") return;
       if (
         (IS_MAC ? event.metaKey : event.ctrlKey) &&
         !event.altKey &&
@@ -1368,7 +1370,6 @@ export function TtmlCreator({
     return () => window.removeEventListener("keydown", onKey, true);
   }, [
     editable,
-    state.speedEnabled,
     showSync,
     here,
     tap,

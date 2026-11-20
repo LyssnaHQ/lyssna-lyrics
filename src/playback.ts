@@ -22,13 +22,17 @@ export function usePlayback(host: Host, watchNarration = false) {
   return { track: narrating ? null : track, playing, narrating };
 }
 
-export function usePosition(host: Host, playing: boolean, view: Window = window) {
-  const [position, setPosition] = useState(host.position);
+export function usePosition(host: Host, playing: boolean, view: Window = window, read = host.position) {
+  const [position, setPosition] = useState(read);
   useEffect(() => {
-    const update = () => setPosition(host.position());
+    const update = () => setPosition(read());
     const unwatch = host.watch(update, true);
     update();
-    if (!playing) return unwatch;
+    if (!playing) {
+      if (read === host.position) return unwatch;
+      const timer = view.setInterval(update, 100);
+      return () => { view.clearInterval(timer); unwatch(); };
+    }
     let frame = 0;
     let last = 0;
     function tick(now: number) {
@@ -40,7 +44,7 @@ export function usePosition(host: Host, playing: boolean, view: Window = window)
     }
     frame = view.requestAnimationFrame(tick);
     return () => { view.cancelAnimationFrame(frame); unwatch(); };
-  }, [host, playing, view]);
+  }, [host, playing, view, read]);
   return position;
 }
 
