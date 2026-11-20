@@ -94,6 +94,15 @@
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
 }
+.load-ttml-submit {
+  grid-column: 1 / -1;
+}
+.load-ttml-submit .load-ttml-icon {
+  color: #1ed760;
+}
+.load-ttml-mode.load-ttml-submit:disabled {
+  cursor: not-allowed;
+}
 .load-ttml-mode {
   display: grid;
   grid-template-columns: 28px minmax(0, 1fr);

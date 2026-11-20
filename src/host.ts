@@ -138,7 +138,8 @@ type SpotiKit = {
 export type Root = { render(node: ReactNode): void; unmount(): void };
 export type Track = { id: string; title: string; artists: string; artist?: string; artistUri?: string; cover: string;
   artistLinks?: { name: string; uri?: string }[]; album?: string; albumUri?: string; albumUpc?: string; year?: string; isrc?: string };
-export type TtmlTrack = { uri: string; name: string; artists: { name: string }[]; album?: { name?: string; images?: { url: string }[] } };
+export type TtmlTrack = { uri: string; name: string; artists: { name: string }[]; album?: { name?: string; images?: { url: string }[] };
+  external_ids?: { isrc?: string } };
 
 function isTtmlTrack(value: unknown): value is TtmlTrack {
   const track = value as Partial<TtmlTrack> | null;

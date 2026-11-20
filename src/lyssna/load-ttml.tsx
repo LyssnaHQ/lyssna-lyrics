@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import { BulkTtml } from "./bulk-ttml";
 import type { TtmlTrack } from "../host";
 import type { LoadMode } from "../local-lyrics";
+import { accountChanged, hasLyssnaSession, readLyssnaProfile } from "../lyssna-account";
+import { publishingRoles } from "../lyssna-submission";
 import { importError, type BulkFile, type BulkLyric } from "../ttml-import";
 import type { TransferLyrics } from "./transfer-format";
 import {
@@ -14,6 +16,7 @@ import {
   Play,
   RotateCcw,
   Search,
+  Send,
   Trash2,
   Upload,
   X,
@@ -61,6 +64,7 @@ export function LoadTtml({
   onBulk,
   searchSongs,
   attachSong,
+  onSubmit,
   glass,
   theme,
   style,
@@ -68,6 +72,7 @@ export function LoadTtml({
   onBulk: (files: BulkFile[], signal: AbortSignal) => Promise<BulkLyric[]>;
   searchSongs: (query: string) => Promise<TtmlTrack[]>;
   attachSong: (file: BulkFile, songs: TtmlTrack[]) => Promise<void>;
+  onSubmit: (file: File) => Promise<void>;
   song?: string;
   onLoad: (file: File, mode: LoadMode) => Promise<void>;
   onReset: () => Promise<void>;
@@ -86,6 +91,9 @@ export function LoadTtml({
   const [bulkResults, setBulkResults] = useState<BulkLyric[] | null>(null);
   const many = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
+  const signInRequired = "Sign in to Lyssna in Settings to submit lyrics";
+  const [submitBlock, setSubmitBlock] = useState<string | null>(() => hasLyssnaSession() ? "Checking your Lyssna account…" : signInRequired);
+  const submitBlocked = submitBlock ?? (song ? null : "Play the song you want to submit lyrics for");
   const [saved, setSaved] = useState<TransferLyrics[] | null>(null);
   const [error, setError] = useState("");
   const batch = useRef<AbortController>(null);
@@ -99,7 +107,21 @@ export function LoadTtml({
     );
   }, [saved, filter]);
   const input = useRef<HTMLInputElement>(null);
+  const submitInput = useRef<HTMLInputElement>(null);
+  const pendingSubmit = useRef<(file: File) => Promise<void>>(undefined);
   const pending = useRef<(file: File) => Promise<void>>(undefined);
+  useEffect(() => {
+    let active = true;
+    const updateSession = () => { if (!hasLyssnaSession()) setSubmitBlock(signInRequired); };
+    window.addEventListener(accountChanged, updateSession);
+    if (hasLyssnaSession()) void readLyssnaProfile().catch(() => undefined).then((profile) => {
+      if (!active) return;
+      if (!hasLyssnaSession()) setSubmitBlock(signInRequired);
+      else if (!profile?.role) setSubmitBlock("Couldn’t check your Lyssna account");
+      else setSubmitBlock(publishingRoles.includes(profile.role) ? null : "Only Uploaders and above can submit from here");
+    });
+    return () => { active = false; window.removeEventListener(accountChanged, updateSession); };
+  }, []);
   useEffect(() => {
     if (view !== "database") return;
     let live = true;
@@ -205,7 +227,24 @@ export function LoadTtml({
                   </span>
                 </button>
               ))}
+              <button className="load-ttml-mode load-ttml-submit" title={submitBlocked ?? undefined} disabled={busy || !!submitBlocked}
+                onClick={() => {
+                  if (!submitInput.current || busy || submitBlocked) return;
+                  pendingSubmit.current = onSubmit;
+                  submitInput.current.value = "";
+                  submitInput.current.click();
+                }}>
+                <span className="load-ttml-icon"><Send size={15} /></span>
+                <span><strong>Submit to Lyssna</strong><small>{submitBlocked ?? "Upload a TTML for this song to Lyssna for everyone"}</small></span>
+              </button>
             </div>
+            <input ref={submitInput} type="file" accept=".ttml,.xml" hidden aria-label="TTML file to submit"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                const submit = pendingSubmit.current;
+                pendingSubmit.current = undefined;
+                if (file && submit) act(() => submit(file));
+              }} />
             <input
               ref={many}
               type="file"

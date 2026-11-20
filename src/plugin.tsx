@@ -36,7 +36,8 @@ import { quickEffects } from "./quick-effects";
 import { DJ_COVER, DJInterlude } from "./dj-interlude";
 import { readViewSession, saveViewSession } from "./view-session";
 import { lyssnaApiNotice, lyssnaInstallReady } from "./lyssna-api";
-import { resumeLyssnaRequests } from "./lyssna-provider";
+import { invalidateLyssnaSong, resumeLyssnaRequests } from "./lyssna-provider";
+import { submitLyssnaTtml } from "./lyssna-submission";
 import { trackLyssnaListens, useLyssnaPlay } from "./lyssna-plays";
 import { MotionArtwork, useMotionArtwork } from "./motion-artwork";
 import fontCss from "./fonts/fonts.css?inline";
@@ -588,6 +589,16 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
       {!artworkDock && playback}
     </section>
     {showTtml && <LoadTtml song={track ? track.title || "Unknown song" : undefined} glass={settings.liquid_glass} theme={settings.theme} style={fonts}
+      onSubmit={async (file) => {
+        if (!track) throw new Error("Play the song you want to submit lyrics for.");
+        const result = await submitLyssnaTtml(file, track, host);
+        if (result.approved) {
+          invalidateLyssnaSong(track.id, result.isrc);
+          window.dispatchEvent(new CustomEvent(lyricsChanged, { detail: [track.id] }));
+        }
+        closeTtml();
+        setNotice(result.message);
+      }}
       onLoad={async (file, mode) => {
         if (!track) throw new Error("Play a song first.");
         await importLyricFile(file, track, mode, () => host.track()?.id);

@@ -42,14 +42,14 @@ function diskCache() {
 // response data and validators only, with no install headers or tokens.
 const cacheUrl = (path: string) => new URL(path, "https://api.lyssna.org").href;
 
-async function readCache(path: string) {
+async function readCache(path: string, current: () => boolean) {
   const live = memory.get(path);
   if (live) return live;
   try {
     await writes;
     const stored = await (await diskCache())?.match(cacheUrl(path));
     const entry = await stored?.json() as CacheEntry | undefined;
-    if (entry && Number.isFinite(entry.freshUntil) && Number.isFinite(entry.maxAge)) {
+    if (current() && entry && Number.isFinite(entry.freshUntil) && Number.isFinite(entry.maxAge)) {
       remember(path, entry);
       return entry;
     }
@@ -80,6 +80,20 @@ export function clearLyssnaCache() {
   }).catch(() => {});
 }
 
+export function invalidateLyssnaSong(trackId: string, isrc?: string) {
+  const paths = [`/v1/lyrics/spotify/${trackId}`];
+  if (isrc) paths.push(`/v1/lyrics/isrc/${isrc}`);
+  for (const path of paths) {
+    memory.delete(path);
+    pending.delete(path);
+    cooling.delete(path);
+  }
+  writes = writes.then(async () => {
+    const cache = await diskCache();
+    for (const path of paths) await cache?.delete(cacheUrl(path));
+  }).catch(() => {});
+}
+
 function coolDown(path: string) {
   cooling.set(path, Date.now() + 15_000);
   if (cooling.size > cacheLimit) cooling.delete(cooling.keys().next().value!);
@@ -87,13 +101,14 @@ function coolDown(path: string) {
 
 export function resumeLyssnaRequests() { cooling.clear(); }
 
-async function lookup(path: string, generation: number): Promise<LyricsView | null | undefined> {
-  const cached = await readCache(path);
+async function lookup(path: string, current: () => boolean): Promise<LyricsView | null | undefined> {
+  const cached = await readCache(path, current);
+  if (!current()) return;
   if (cached && Date.now() < cached.freshUntil) return cached.value;
   if (Date.now() < (cooling.get(path) ?? 0)) return cached?.value;
   try {
     const response = await lyssnaRequest(path, { etag: cached?.etag });
-    if (generation !== cacheGeneration) return;
+    if (!current()) return;
     if (!response || response.status === 429 || response.status >= 500) {
       coolDown(path);
       return cached?.value;
@@ -107,6 +122,7 @@ async function lookup(path: string, generation: number): Promise<LyricsView | nu
     const same = response.status === 304 || (response.ok && etag && cached?.etag === etag);
     const value = same ? cached!.value
       : response.status === 404 ? null : await response.json() as LyricsView;
+    if (!current()) return;
     if (value && (!uuid.test(value.song?.id) || typeof value.ttml !== "string" || !Number.isFinite(value.offset_ms))) return;
     const policy = response.headers.get("Cache-Control") ?? "";
     const maxAge = Number(/\bmax-age=(\d+)/i.exec(policy)?.[1] ??
@@ -117,7 +133,7 @@ async function lookup(path: string, generation: number): Promise<LyricsView | nu
     }
     return value;
   } catch {
-    if (generation !== cacheGeneration) return;
+    if (!current()) return;
     coolDown(path);
     return cached?.value;
   }
@@ -127,7 +143,9 @@ function read(platform: "spotify" | "isrc", id: string) {
   const path = `/v1/lyrics/${platform}/${id}`;
   const existing = pending.get(path);
   if (existing) return existing;
-  const request = lookup(path, cacheGeneration).finally(() => {
+  const generation = cacheGeneration;
+  const request: Promise<LyricsView | null | undefined> = lookup(path,
+    () => cacheGeneration === generation && pending.get(path) === request).finally(() => {
     if (pending.get(path) === request) pending.delete(path);
   });
   pending.set(path, request);
