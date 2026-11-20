@@ -41,7 +41,7 @@ import { submitLyssnaTtml } from "./lyssna-submission";
 import { CreatorSurface } from "./creator/surface";
 import { dismissDraft, draftPreview } from "./creator/ttml-working";
 import { trackLyssnaListens, useLyssnaPlay } from "./lyssna-plays";
-import { MotionArtwork, useMotionArtwork } from "./motion-artwork";
+import { MotionArtwork, supportsMotionArtwork, useMotionArtwork } from "./motion-artwork";
 import fontCss from "./fonts/fonts.css?inline";
 import desktopCss from "./lyssna/lyrics.css?inline";
 import settingsCss from "./lyssna/settings.css?inline";
@@ -388,8 +388,9 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
   const artistUri = track?.artistUri;
   const trackId = track?.id;
   const albumUri = track?.albumUri;
+  const canPlayMotion = useMemo(() => supportsMotionArtwork(view), [view]);
   const motionUrl = useMotionArtwork(albumUri, track?.albumUpc,
-    settings.animated_covers && !settings.reduce_motion && !settings.lyrics_hide_artwork && !canvas);
+    canPlayMotion && settings.animated_covers && !settings.reduce_motion && !settings.lyrics_hide_artwork && !canvas);
   const [unavailableMotion, setUnavailableMotion] = useState<string>();
   const motion = motionUrl !== unavailableMotion ? motionUrl : undefined;
   const year = track?.year ?? (albumYear?.uri === albumUri ? albumYear?.year : undefined);
@@ -564,10 +565,10 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
         <div className="lyrics-album">
           {canvas ? <CanvasArtwork key={`${track.id}:${canvas.fileId ?? canvas.url}`} info={canvas} cover={track.cover}
             playing={playing && !settings.reduce_motion} onUnavailable={setUnavailableCanvas} />
-            : (motion || track.cover) && <div className="lyrics-media">{motion
-              ? <MotionArtwork key={motion} url={motion} cover={track.cover} playing={playing} onUnavailable={setUnavailableMotion} />
-              : <img className={`cover${settings.cover_animation && !settings.reduce_motion ? " crossfade" : ""}`}
+            : (motion || track.cover) && <div className="lyrics-media lyrics-motion-stage">
+              {track.cover && <img className={`cover${settings.cover_animation && !settings.reduce_motion ? " crossfade" : ""}`}
                 key={track.cover} src={track.cover} alt="" />}
+              {motion && <MotionArtwork key={motion} url={motion} playing={playing} onUnavailable={setUnavailableMotion} />}
             </div>}
           <TrackMetadata host={host} track={track} year={year} yearPosition={settings.lyrics_year_position}
             reduceMotion={settings.reduce_motion} orderByWidth={!!canvas} />
@@ -893,7 +894,7 @@ export default function start(options: BuildOptions) {
     }),
     () => void open("creator"),
   );
-  const stopEnhancementStartup = startEnhancements();
+  const stopEnhancementStartup = startEnhancements(host);
   keepTemporaryLyricsFor(host.track()?.id);
   const stopTemporaryTrack = host.watch(() => keepTemporaryLyricsFor(host.track()?.id));
   const stopLyssnaListens = trackLyssnaListens(host);

@@ -1,4 +1,5 @@
 import { getSettings, hasLegacyLoader, hasStandaloneSpotifyPlus, SETTINGS_CHANGED_EVENT } from "./config";
+import type { Host } from "../host";
 import { startProfileMenuController } from "./features/profileMenu";
 import { startPlaylistMenuController } from "./features/playlistMenu";
 import { startDisablePeekController } from "./features/disablePeek";
@@ -24,7 +25,7 @@ export function externalEnhancementOwner() {
 }
 
 // Keep only one set of Spotify interface controllers for the life of the page.
-export function startEnhancements() {
+export function startEnhancements(host: Host) {
   function activate() {
     if (runtime.__LYSSNA_REWRITE_ENHANCEMENTS__) return stop();
     if (externalEnhancementOwner()) return;
@@ -45,7 +46,8 @@ export function startEnhancements() {
     }
     window.addEventListener(SETTINGS_CHANGED_EVENT, syncVisibility);
     syncVisibility();
-    for (const start of [startProfileMenuController, startPlaylistMenuController, startDisablePeekController, startDevicePickerController, startShareMenuController]) {
+    for (const start of [startProfileMenuController, startPlaylistMenuController, startDisablePeekController,
+      startDevicePickerController, () => startShareMenuController(host)]) {
       try { start(); } catch (error) { console.warn("[Lyssna Lyrics] Enhancement unavailable:", error); }
     }
   }

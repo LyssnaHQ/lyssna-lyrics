@@ -43,9 +43,10 @@ type LegacyHost = {
   URI?: { fromString(uri: string): { type: string; toURLPath(useNative?: boolean): string } };
   GraphQL?: { Definitions?: Record<string, unknown>; Request(definition: unknown, vars: object): Promise<PlaylistResult> };
   SVGIcons?: { copy?: string };
+  Locale?: { get?(key: string): string };
   ContextMenu?: {
-    Item: new (name: string, click: Callback, when: Predicate, icon?: string, disabled?: boolean) => MenuItem;
-    SubMenu: new (name: string, items: MenuItem[], when: Predicate, disabled?: boolean) => MenuItem;
+    Item: new (name: string, click: Callback, when: Predicate, icon?: string, trailingIcon?: string, disabled?: boolean) => MenuItem;
+    SubMenu: new (name: string, items: MenuItem[], when: Predicate, disabled?: boolean, icon?: string) => MenuItem;
   };
   showNotification?(message: string, error?: boolean): void;
 };

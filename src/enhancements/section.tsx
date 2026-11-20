@@ -22,7 +22,8 @@ const groups: { title: string; settings: ToggleDefinition[] }[] = [
     { key: "hideMiniplayerButton", label: "Hide Miniplayer button" },
     { key: "disablePeek", label: "Disable Peek", description: "Use a regular Now Playing panel instead of Spotify’s floating preview." },
     { key: "restoreOldDevicePicker", label: "Classic device picker", description: "Show devices in a compact popover instead of the sidebar." },
-    { key: "restoreOldShareMenu", label: "Classic share menu", description: "Restore direct copy-link and embed actions." },
+    { key: "restoreOldShareMenu", label: "Refined share menu", description: "Replace Share with Copy Clean URL and Embed." },
+    { key: "showTrackCopyMenu", label: "Track copy menu", description: "Put a Copy submenu at the top of the track menu for the Spotify ID, song and artist names, and ISRC." },
   ] },
   { title: "Playlists", settings: [
     { key: "overridePlaylistFolderBehavior", label: "Choose playlist folders", description: "Replace Add to playlist folders with the folders you choose below." },

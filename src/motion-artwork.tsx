@@ -6,6 +6,10 @@ const digits = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const upcs = new Map<string, Promise<string | null | undefined>>();
 const covers = new Map<string, { expires: number; value: Promise<string | undefined> }>();
 
+export function supportsMotionArtwork(view: Window) {
+  return !!view.document.createElement("video").canPlayType('video/mp4; codecs="avc1.64001f"');
+}
+
 function normalizeUpc(value: unknown) {
   if (typeof value !== "string" || !/^\d{8,14}$/.test(value)) return;
   const upc = value.padStart(14, "0");
@@ -101,22 +105,26 @@ export function useMotionArtwork(albumUri: string | undefined, suppliedUpc: stri
   return enabled && art?.album === albumUri ? art?.url : undefined;
 }
 
-export function MotionArtwork({ url, cover, playing, onUnavailable }: {
-  url: string; cover?: string; playing: boolean; onUnavailable(url: string): void;
+export function MotionArtwork({ url, playing, onUnavailable }: {
+  url: string; playing: boolean; onUnavailable(url: string): void;
 }) {
   const ref = useRef<HTMLVideoElement>(null);
+  const [ready, setReady] = useState(false);
   useEffect(() => {
     const video = ref.current;
     if (!video) return;
     const page = video.ownerDocument;
     function sync() {
-      if (playing && !page.hidden) void video!.play().catch(() => {});
+      if (playing && !page.hidden) void video!.play().catch((error: DOMException) => {
+        if (error.name === "NotSupportedError") onUnavailable(url);
+      });
       else video!.pause();
     }
     page.addEventListener("visibilitychange", sync);
     sync();
     return () => page.removeEventListener("visibilitychange", sync);
-  }, [playing, url]);
-  return <video ref={ref} className="cover" src={url} poster={cover || undefined} preload="metadata"
+  }, [playing, url, onUnavailable]);
+  return <video ref={ref} className="cover" style={ready ? undefined : { visibility: "hidden" }} src={url} preload="auto"
+    onLoadedData={() => setReady(true)}
     muted loop playsInline onError={() => onUnavailable(url)} aria-label="Apple Music animated cover" />;
 }

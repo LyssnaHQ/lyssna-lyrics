@@ -23,7 +23,8 @@ type DisplayOptions = DisplayMediaStreamOptions & {
 };
 type BufferedTile = { tile: LiveTile; revision: number; savedRevision: number };
 type CaptureStatus = "idle" | "selecting" | "live";
-type FrameBatch = { first: number; levels: Uint16Array; signals: Uint8Array };
+type FrameBatch = { first: number; decibels: Float32Array };
+const signalFloor = -120;
 
 function captureError(error: unknown) {
   if (!(error instanceof Error)) return "Spotify couldn’t start audio sharing.";
@@ -218,13 +219,15 @@ export function useLiveSpectrum(uri: string, duration: number, canCapture: boole
       const fftSize = 4096;
       const halfWindowMs = 500 * fftSize / audioContext.sampleRate;
       const frequencies = Array.from({ length: LIVE_ROWS + 1 }, (_, row) => spectrumFrequency(1 - row / LIVE_ROWS));
-      let previousClock: { ms: number; audioMs: number; transportRevision: number } | undefined;
+      let previousClock: { ms: number; audioMs: number; transportRevision: number; volume: number } | undefined;
       let captureFrom = 0;
       let columnOffset: number | undefined;
       let noSignalSince = 0;
       let suspendedSince = 0;
       let heard = false;
       let frames = 0;
+      let referencePeak = signalFloor;
+      const levels = new Uint16Array(LIVE_ROWS);
       setStatus("live");
       setMessage("");
       const captureClock = () => {
@@ -245,10 +248,14 @@ export function useLiveSpectrum(uri: string, duration: number, canCapture: boole
           noSignalSince = 0;
           return;
         }
-        if (!previousClock || playback.transportRevision !== previousClock.transportRevision || playback.ms < previousClock.ms - 40 ||
-          Math.abs(playback.ms - previousClock.ms - (audioMs - previousClock.audioMs)) > 100) {
+        const discontinuity = !previousClock || playback.transportRevision !== previousClock.transportRevision ||
+          playback.ms < previousClock.ms - 40 || Math.abs(playback.ms - previousClock.ms - (audioMs - previousClock.audioMs)) > 100;
+        if (discontinuity) {
           captureFrom = audioMs + 160;
           columnOffset = undefined;
+        }
+        if (discontinuity || playback.volume !== previousClock?.volume) {
+          referencePeak = signalFloor;
         }
         previousClock = { ...playback, audioMs };
         return { ms: playback.ms, now, audioMs };
@@ -263,7 +270,21 @@ export function useLiveSpectrum(uri: string, duration: number, canCapture: boole
         if (!heard) { heard = true; setHasSaved(true); }
         return true;
       };
-      const writeFrame = (frame: number, levels: Uint16Array, start = 0, before?: Uint16Array, weight = 1) => {
+      const normalizeFrame = (decibels: Float32Array, now: number, start = 0) => {
+        let peak = signalFloor;
+        for (let row = 0; row < LIVE_ROWS; row++) peak = Math.max(peak, decibels[start + row]);
+        if (!acceptSignal(peak > signalFloor, now)) return false;
+
+        // Follow the strongest bands without amplifying short dips between syllables.
+        referencePeak = Math.max(peak, referencePeak - 18 * LIVE_SAMPLE_MS / 1000);
+        const gain = Math.min(72, -25 - referencePeak);
+        for (let row = 0; row < LIVE_ROWS; row++) {
+          const db = decibels[start + row];
+          levels[row] = db <= signalFloor ? 0 : Math.round(Math.max(0, Math.min(1, (db + gain + 95) / 70)) * 5400);
+        }
+        return true;
+      };
+      const writeFrame = (frame: number, levels: Uint16Array, before?: Uint16Array, weight = 1) => {
         if (frame < 0 || frame * LIVE_SAMPLE_MS >= duration) return;
         const index = Math.floor(frame / LIVE_COLUMNS);
         const column = frame % LIVE_COLUMNS;
@@ -277,7 +298,7 @@ export function useLiveSpectrum(uri: string, duration: number, canCapture: boole
         }
         if (before && entry.tile.filled[column] === MEASURED_COLUMN) return;
         for (let row = 0; row < LIVE_ROWS; row++) {
-          const level = levels[start + row];
+          const level = levels[row];
           entry.tile.levels[row * LIVE_COLUMNS + column] = before ? Math.round(before[row] + (level - before[row]) * weight) : level;
         }
         entry.tile.filled[column] = before ? INTERPOLATED_COLUMN : MEASURED_COLUMN;
@@ -293,8 +314,8 @@ export function useLiveSpectrum(uri: string, duration: number, canCapture: boole
         source.connect(analyser);
         const bins = new Float32Array(analyser.frequencyBinCount);
         const edges = Uint16Array.from(frequencies, (hz) => Math.min(bins.length, Math.round(hz * fftSize / audioContext.sampleRate)));
-        let levels = new Uint16Array(LIVE_ROWS);
-        let previousLevels = new Uint16Array(LIVE_ROWS);
+        const decibels = new Float32Array(LIVE_ROWS);
+        const previousLevels = new Uint16Array(LIVE_ROWS);
         let previousSample = -1;
         let previousSampleAt = 0;
         timer = view.setInterval(() => {
@@ -305,20 +326,20 @@ export function useLiveSpectrum(uri: string, duration: number, canCapture: boole
             return;
           }
           analyser.getFloatFrequencyData(bins);
-          if (!acceptSignal(bins.some((level) => level > -82), clock.now)) return;
           for (let row = 0; row < LIVE_ROWS; row++) {
             const first = edges[row + 1];
             const last = Math.min(bins.length, Math.max(first + 1, edges[row]));
-            let peak = -95;
+            let peak = -Infinity;
             for (let bin = first; bin < last; bin++) peak = Math.max(peak, bins[bin]);
-            levels[row] = Math.round(Math.min(1, (peak + 95) / 70) * 5400);
+            decibels[row] = peak;
           }
+          if (!normalizeFrame(decibels, clock.now)) return;
           const sample = Math.floor((clock.ms - halfWindowMs) / LIVE_SAMPLE_MS);
           const elapsed = clock.now - previousSampleAt;
           const distance = sample - previousSample;
           if (previousSample >= 0 && distance > 1 && distance <= 4 && elapsed <= 100 &&
             Math.abs(distance * LIVE_SAMPLE_MS - elapsed) < 35) {
-            for (let missing = 1; missing < distance; missing++) writeFrame(previousSample + missing, levels, 0, previousLevels, missing / distance);
+            for (let missing = 1; missing < distance; missing++) writeFrame(previousSample + missing, levels, previousLevels, missing / distance);
           }
           writeFrame(sample, levels);
           previousLevels.set(levels);
@@ -345,11 +366,11 @@ export function useLiveSpectrum(uri: string, duration: number, canCapture: boole
           if (audio.muted) { acceptSignal(false, clock.now); return; }
           // Map the worklet's continuous audio clock to the Spotify playhead once per uninterrupted stretch.
           const offset = columnOffset ??= Math.round((clock.ms - clock.audioMs - halfWindowMs) / LIVE_SAMPLE_MS);
-          for (let i = 0; i < data.signals.length; i++) {
+          for (let i = 0; i < data.decibels.length / LIVE_ROWS; i++) {
             if (session.current !== active) break;
             const sequence = data.first + i;
-            if (sequence * LIVE_SAMPLE_MS < captureFrom || !acceptSignal(!!data.signals[i], clock.now)) continue;
-            writeFrame(sequence + offset, data.levels, i * LIVE_ROWS);
+            if (sequence * LIVE_SAMPLE_MS < captureFrom || !normalizeFrame(data.decibels, clock.now, i * LIVE_ROWS)) continue;
+            writeFrame(sequence + offset, levels);
           }
         };
         node.onprocessorerror = () => {

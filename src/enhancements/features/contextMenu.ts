@@ -16,6 +16,7 @@ type ContextMenuV2 = {
     text: string;
     items: MenuEntry[];
     disabled?: boolean;
+    leadingIcon?: string;
     shouldAdd: (props: unknown, trigger?: string, target?: HTMLElement) => boolean;
   }) => MenuEntry;
 };
@@ -84,7 +85,7 @@ export function createContextMenuItem(
   const api = getContextMenuV2();
   if (!api) {
     if (!Spicetify.ContextMenu) throw new Error("Spotify context menu is unavailable");
-    return new Spicetify.ContextMenu.Item(name, onClick, shouldAdd, icon, disabled);
+    return new Spicetify.ContextMenu.Item(name, onClick, shouldAdd, icon, undefined, disabled);
   }
 
   return new api.Item({
@@ -103,10 +104,11 @@ export function createContextMenuSubMenu(
   name: string,
   items: MenuEntry[],
   shouldAdd: MenuPredicate,
-  disabled = false
+  icon?: string,
 ): MenuEntry {
   if (kit?.ContextMenu) return kitMenu({
-    label: name, disabled, items: items.flatMap((item) => item.kitOptions ? [item.kitOptions] : []),
+    label: name, icon: icon?.startsWith("<") ? icon : undefined,
+    items: items.flatMap((item) => item.kitOptions ? [item.kitOptions] : []),
     when: ({ uris, uids, contextUri }) => shouldAdd(uris, uids, contextUri ?? undefined),
   });
   const api = getContextMenuV2();
@@ -116,14 +118,15 @@ export function createContextMenuSubMenu(
       name,
       items,
       shouldAdd,
-      disabled
+      false,
+      icon,
     );
   }
 
   return new api.ItemSubMenu({
     text: name,
     items,
-    disabled,
+    leadingIcon: icon,
     shouldAdd: withMenuArguments(shouldAdd),
   });
 }

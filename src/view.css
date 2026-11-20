@@ -315,6 +315,14 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   margin-inline: auto;
 }
 
+.lyssna-lyrics-view .lyrics-motion-stage {
+  display: grid;
+}
+
+.lyssna-lyrics-view .lyrics-motion-stage > .cover {
+  grid-area: 1 / 1;
+}
+
 .lyssna-lyrics-view .canvas-lyrics {
   --canvas-direction: to right;
   --canvas-width: 47%;

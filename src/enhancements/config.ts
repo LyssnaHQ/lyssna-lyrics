@@ -19,6 +19,7 @@ const defaults = {
   disablePeek: true,
   restoreOldDevicePicker: true,
   restoreOldShareMenu: true,
+  showTrackCopyMenu: true,
   overridePlaylistFolderBehavior: false,
   showPlaylistMenuCoverArt: false,
   playlistOverrideFolderIds: [] as string[],

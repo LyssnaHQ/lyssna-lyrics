@@ -62,7 +62,7 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
   const isPlaying = audioForSong ? localPlaying : playing;
   const readCapturePosition = useCallback((uri: string) => {
     if (host.playing() && !host.djNarrating() && uri === `spotify:track:${host.track()?.id}`) {
-      return { ms: host.position(), transportRevision: transportRevision.current };
+      return { ms: host.position(), transportRevision: transportRevision.current, volume: host.volume() };
     }
   }, [host]);
   const notify = useCallback((message: string, error = false) => setNotice({ message, error }), []);

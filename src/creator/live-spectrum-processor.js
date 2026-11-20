@@ -27,8 +27,7 @@ class LiveSpectrumProcessor extends AudioWorkletProcessor {
     this.position = 0;
     this.real = new Float32Array(fftSize);
     this.imaginary = new Float32Array(fftSize);
-    this.levels = new Uint16Array(this.rows * batchSize);
-    this.signals = new Uint8Array(batchSize);
+    this.decibels = new Float32Array(this.rows * batchSize);
     this.count = 0;
   }
 
@@ -54,22 +53,16 @@ class LiveSpectrumProcessor extends AudioWorkletProcessor {
         }
       }
     }
-    let heard = false;
     for (let row = 0; row < this.rows; row++) {
       const first = this.edges[row + 1];
       const last = Math.min(fftSize / 2, Math.max(first + 1, this.edges[row]));
       let power = 0;
       for (let bin = first; bin < last; bin++) power = Math.max(power, real[bin] ** 2 + imaginary[bin] ** 2);
-      const db = 10 * Math.log10(power / (fftSize * fftSize));
-      this.levels[this.count * this.rows + row] = Math.round(Math.max(0, Math.min(1, (db + 95) / 70)) * 5400);
-      heard ||= db > -82;
+      this.decibels[this.count * this.rows + row] = 10 * Math.log10(power / (fftSize * fftSize));
     }
-    this.signals[this.count] = Number(heard);
     if (++this.count < batchSize) return;
-    this.port.postMessage({ first: sequence - batchSize + 1, levels: this.levels, signals: this.signals },
-      [this.levels.buffer, this.signals.buffer]);
-    this.levels = new Uint16Array(this.rows * batchSize);
-    this.signals = new Uint8Array(batchSize);
+    this.port.postMessage({ first: sequence - batchSize + 1, decibels: this.decibels }, [this.decibels.buffer]);
+    this.decibels = new Float32Array(this.rows * batchSize);
     this.count = 0;
   }
 
