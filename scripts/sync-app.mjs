@@ -97,6 +97,9 @@ import { LyricCredits } from "../credits";`,
   transport.current = { playing, positionMs, onSeek };
   const selected = !playing && pausedLine && lyrics.lines[pausedLine.index] === pausedLine.line &&
     (positionMs === pausedLine.from || Math.abs(positionMs - pausedLine.target) <= 25) ? pausedLine.index : undefined;
+  const cueLine = selected === undefined ? undefined : lyrics.lines[selected];
+  // The player seeks to the line start. Keep its lyrics unsung until playback resumes.
+  const lyricTime = cueLine ? cueLine.start_ms - 1 : positionMs;
   useEffect(() => {
     if (pausedLine && selected === undefined) setPausedLine(undefined);
   }, [pausedLine, selected]);`)
@@ -104,12 +107,21 @@ import { LyricCredits } from "../credits";`,
             const target = onSeek(line.start_ms);
             if (!playing) setPausedLine({ line, index, from: positionMs, target });`)
     .replace("const gap = lyrics.synced ?", "const gap = lyrics.synced && selected === undefined ?")
+    .replace("  // Early scroll follows the line about to be sung; highlighting still\n  // follows the real song time.", "  // Early scroll follows the line about to be sung independently of the animation.")
+    .replace("  const scrollTime =\n    positionMs +", "  const scrollTime =\n    lyricTime +")
     .replace("(settings.lyrics_early_scroll\n", "(playing && settings.lyrics_early_scroll\n")
     .replace("    active.find((index)", "    selected ?? active.find((index)")
+    .replace("useRef(positionMs),\n    jumped", "useRef(lyricTime),\n    jumped")
+    .replace("Math.abs(positionMs - lastPosition.current)", "Math.abs(lyricTime - lastPosition.current)")
+    .replace("lastPosition.current = positionMs;", "lastPosition.current = lyricTime;")
+    .replace("    if (positionJumped) animator.current?.reset();", "    if (positionJumped || cueLine) animator.current?.reset();")
+    .replace("animator.current?.update(positionMs);", "animator.current?.update(lyricTime);")
+    .replace(/(                time=\{\n                  !highlighter[\s\S]*?\n                \})/, (time) => time.replaceAll("positionMs", "lyricTime"))
+    .replace("positionMs >= Math.max(...lyrics.lines.map(vocalEnd))", "lyricTime >= Math.max(...lyrics.lines.map(vocalEnd))")
     .replace('compact ? "off" : (settings.lyrics_pinned_footer ?? "off")', 'settings.lyrics_pinned_footer ?? "off"')
     .replace("      data-following={following}", "      data-following={following}\n      data-animator={presetOf(settings.lyrics_animator)}")
     .replace("      !!settings.lyrics_simple,\n", "      !!settings.lyrics_simple,\n      scroll.current?.ownerDocument.defaultView ?? window,\n")
-    .replace("}, [positionMs, lyrics, settings.reduce_motion]);", "}, [positionMs, lyrics, settings.reduce_motion, settings.lyrics_simple, tuning]);")
+    .replace("}, [positionMs, lyrics, settings.reduce_motion]);", "}, [lyricTime, cueLine, lyrics, settings.reduce_motion, settings.lyrics_simple, tuning]);")
     .replace("    let frame = 0,\n      last = performance.now();", "    const view = container.ownerDocument.defaultView ?? window;\n    let frame = 0,\n      last = performance.now();")
     .replace("    const tick = (time: number) => {", "    const tick = () => {\n      const time = performance.now();")
     .replaceAll("requestAnimationFrame(tick)", "view.requestAnimationFrame(tick)")

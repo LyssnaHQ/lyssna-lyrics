@@ -108,6 +108,10 @@ export function readSettings(): Settings {
     const { legacy_preferences_migrated: _migrated, desktop_animator_default_applied: _animator,
       lyrics_credit_lyssna: _legacyCredit, ...saved } = readRecord();
     const settings = { ...defaults, ...saved };
+    const yearPosition = saved.lyrics_year_position;
+    if (yearPosition !== "off" && yearPosition !== "left" && yearPosition !== "right") {
+      settings.lyrics_year_position = defaults.lyrics_year_position;
+    }
     const brightness = settings.lyrics_background_brightness;
     settings.lyrics_background_brightness = Number.isFinite(brightness)
       ? Math.max(0, Math.min(maxBackgroundBrightness, Math.round(brightness))) : defaults.lyrics_background_brightness;

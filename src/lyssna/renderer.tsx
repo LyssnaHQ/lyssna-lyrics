@@ -107,6 +107,9 @@ export function LyricsDisplay({
   transport.current = { playing, positionMs, onSeek };
   const selected = !playing && pausedLine && lyrics.lines[pausedLine.index] === pausedLine.line &&
     (positionMs === pausedLine.from || Math.abs(positionMs - pausedLine.target) <= 25) ? pausedLine.index : undefined;
+  const cueLine = selected === undefined ? undefined : lyrics.lines[selected];
+  // The player seeks to the line start. Keep its lyrics unsung until playback resumes.
+  const lyricTime = cueLine ? cueLine.start_ms - 1 : positionMs;
   useEffect(() => {
     if (pausedLine && selected === undefined) setPausedLine(undefined);
   }, [pausedLine, selected]);
@@ -188,10 +191,9 @@ export function LyricsDisplay({
       />
     );
   };
-  // Early scroll follows the line about to be sung; highlighting still
-  // follows the real song time.
+  // Early scroll follows the line about to be sung independently of the animation.
   const scrollTime =
-    positionMs +
+    lyricTime +
     (playing && settings.lyrics_early_scroll
       ? (settings.lyrics_early_scroll_ms ?? 200)
       : 0);
@@ -208,11 +210,11 @@ export function LyricsDisplay({
   }, [lyrics]);
   // A restart, Previous or seek moves song time far in one step. Lyrics then
   // slide straight there instead of springing through the whole song.
-  const lastPosition = useRef(positionMs),
+  const lastPosition = useRef(lyricTime),
     jumped = useRef(false);
-  const positionJumped = Math.abs(positionMs - lastPosition.current) > 1500;
+  const positionJumped = Math.abs(lyricTime - lastPosition.current) > 1500;
   if (positionJumped) jumped.current = true;
-  lastPosition.current = positionMs;
+  lastPosition.current = lyricTime;
   const animator = useRef<LyricAnimator>(undefined);
   // New springs pick up the animator preset's curves and tuning.
   const tuning = JSON.stringify(settings.lyrics_animator ?? {});
@@ -230,9 +232,9 @@ export function LyricsDisplay({
   }, [lyrics, settings.reduce_motion, settings.lyrics_simple, tuning]);
   useLayoutEffect(() => {
     if (!lyrics.synced) return;
-    if (positionJumped) animator.current?.reset();
-    animator.current?.update(positionMs);
-  }, [positionMs, lyrics, settings.reduce_motion, settings.lyrics_simple, tuning]);
+    if (positionJumped || cueLine) animator.current?.reset();
+    animator.current?.update(lyricTime);
+  }, [lyricTime, cueLine, lyrics, settings.reduce_motion, settings.lyrics_simple, tuning]);
   // Romanization, translations or a word filter change only the words: the
   // view stays on the current line instead of sliding to where it rewraps.
   const timing = useMemo(
@@ -495,7 +497,7 @@ export function LyricsDisplay({
     );
   return (
     <div
-      className={`lyrics-display ${compact ? "compact" : ""} ${footerMode !== "off" ? "has-pinned-footer" : ""} ${!lyrics.synced ? "static-lyrics" : ""} ${settings.reduce_motion ? "reduce-motion" : ""} ${settings.lyrics_simple ? "simple-lyrics" : ""} ${settings.lyrics_right_align ? "lyrics-right" : ""} ${settings.lyrics_flip_duet ? "lyrics-flip-duet" : ""} ${settings.lyrics_wide_duet === false ? "" : "lyrics-wide-duet"} ${settings.lyrics_line_hover ? "lyrics-line-hover" : ""} ${lyrics.lines.some((line) => line.opposite) ? "has-duet" : ""} ${settings.lyrics_minimal && !compact ? "minimal" : ""} ${highlighter ? "highlighter" : ""} ${settings.lyrics_keep_overlaps !== false ? "keep-overlaps" : ""} ${lyrics.synced && lyrics.lines.length && positionMs >= Math.max(...lyrics.lines.map(vocalEnd)) ? "all-sung" : ""} ${settings.lyrics_credits_follow && endsOnRight(lyrics.lines, !!(settings.lyrics_flip_duet || settings.lyrics_right_align)) ? "credits-right" : ""}`}
+      className={`lyrics-display ${compact ? "compact" : ""} ${footerMode !== "off" ? "has-pinned-footer" : ""} ${!lyrics.synced ? "static-lyrics" : ""} ${settings.reduce_motion ? "reduce-motion" : ""} ${settings.lyrics_simple ? "simple-lyrics" : ""} ${settings.lyrics_right_align ? "lyrics-right" : ""} ${settings.lyrics_flip_duet ? "lyrics-flip-duet" : ""} ${settings.lyrics_wide_duet === false ? "" : "lyrics-wide-duet"} ${settings.lyrics_line_hover ? "lyrics-line-hover" : ""} ${lyrics.lines.some((line) => line.opposite) ? "has-duet" : ""} ${settings.lyrics_minimal && !compact ? "minimal" : ""} ${highlighter ? "highlighter" : ""} ${settings.lyrics_keep_overlaps !== false ? "keep-overlaps" : ""} ${lyrics.synced && lyrics.lines.length && lyricTime >= Math.max(...lyrics.lines.map(vocalEnd)) ? "all-sung" : ""} ${settings.lyrics_credits_follow && endsOnRight(lyrics.lines, !!(settings.lyrics_flip_duet || settings.lyrics_right_align)) ? "credits-right" : ""}`}
       data-following={following}
       data-animator={presetOf(settings.lyrics_animator)}
       style={
@@ -578,10 +580,10 @@ export function LyricsDisplay({
                   !highlighter
                     ? 0
                     : playing ||
-                        (positionMs >= line.start_ms &&
-                          positionMs < vocalEnd(line))
-                      ? positionMs
-                      : positionMs >= line.start_ms
+                        (lyricTime >= line.start_ms &&
+                          lyricTime < vocalEnd(line))
+                      ? lyricTime
+                      : lyricTime >= line.start_ms
                         ? Infinity
                         : -Infinity
                 }
