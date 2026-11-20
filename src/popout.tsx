@@ -94,7 +94,9 @@ export function LyricsPopout({ host, view, close, track, playing, settings, narr
       <strong>{title ?? "Nothing playing"}</strong>
       {track?.artists && <span>{track.artists}</span>}
     </header>
-    <main className="lyrics-popout-lyrics">{narrating ? <DJInterlude playing={playing} /> : children}</main>
+    <main className="lyrics-popout-lyrics">
+      {narrating ? <DJInterlude playing={playing} reduceMotion={settings.reduce_motion} /> : children}
+    </main>
     <PopoutSeek key={track?.id} host={host} playing={playing} view={view} disabled={narrating} />
     <PopoutControls host={host} track={track} playing={playing} />
   </section>;

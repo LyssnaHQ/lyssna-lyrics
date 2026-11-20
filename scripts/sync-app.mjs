@@ -39,7 +39,10 @@ const lyrics = [
   slice(styles, "\n.lyrics-toolbar {", "/* Layout changes morph between positions"),
   slice(styles, "/* Space Gravity: words float", "/* Dims the app while a creator"),
   slice(styles, "\n.lyrics-page.no-artwork:not(.narrow) {", "/* Community lyrics credit"),
-  slice(styles, "/* Lyrics loading skeleton:", "/* Lyrics popout window"),
+  slice(styles, "/* Lyrics loading skeleton:", "/* Lyrics popout window")
+    .replace(/\n\.lyrics-skeleton p \{[\s\S]*?(?=\n\.reduce-motion \.lyrics-skeleton-lines)/, "")
+    .replace(/\n\.reduce-motion \.lyrics-skeleton-dots i \{[^}]*\}/, "")
+    .replace(/\n@keyframes lyrics-skeleton-dot \{[\s\S]*?\n\}/, ""),
   slice(styles, "/* Lyrics popout window", "\n.album-grid.all {"),
   slice(styles, "/* Liquid Glass seek bar:", "\n.lyrics-fullscreen-times {"),
   slice(styles, "\n.lyrics-display.simple-lyrics .lyric-line {", "\n.ttml-draft-banner {"),
@@ -91,7 +94,10 @@ import { LyricCredits } from "../credits";`,
       if (container.style.getPropertyValue("--lead-top") !== leadTop)
         container.style.setProperty("--lead-top", leadTop);`),
   slice(components, "/** Static lyric markup.", "function TimedLyricsPreview("),
-  slice(components, "const SKELETON_WIDTHS =", "/** Volume beside or below").replace("function LyricsSkeleton()", "export function LyricsSkeleton()"),
+  slice(components, "const SKELETON_WIDTHS =", "/** Volume beside or below")
+    .replace("function LyricsSkeleton()", "export function LyricsSkeleton()")
+    .replace('className="lyrics-skeleton" role="status"', 'className="lyrics-skeleton" role="status" aria-label="Loading lyrics"')
+    .replace(/\n      <p>\n        Loading lyrics[\s\S]*?\n      <\/p>/, ""),
 ];
 const rows = read("frontend/settings-window.tsx");
 const settingsRows = [

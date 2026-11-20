@@ -1,3 +1,5 @@
+import { SpotifyDJAnimation } from "./spotify-dj-animation";
+
 // Lyssna's DJ artwork, shared with the desktop app.
 const DJ_SVG =
   "<svg xmlns='http://www.w3.org/2000/svg' width='512' height='512' viewBox='0 0 100 100'>" +
@@ -11,9 +13,12 @@ const DJ_SVG =
 
 export const DJ_COVER = `data:image/svg+xml,${encodeURIComponent(DJ_SVG)}`;
 
-export function DJInterlude({ playing }: { playing: boolean }) {
+export function DJInterlude({ playing, reduceMotion }: { playing: boolean; reduceMotion: boolean }) {
+  const artwork = <img src={DJ_COVER} alt="" draggable={false} />;
   return <div className="lyssna-dj-interlude" role="status">
-    <img src={DJ_COVER} alt="" draggable={false} />
+    <div className="lyssna-dj-art" aria-hidden="true">
+      {reduceMotion ? artwork : <SpotifyDJAnimation fallback={artwork} />}
+    </div>
     <div>
       <h2>{playing ? "DJ is speaking…" : "DJ paused"}</h2>
       <p>Lyrics return when the next song starts.</p>

@@ -526,7 +526,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
       onError={banner ? () => setArtistHeader((current) => current?.url === banner && current.uri === artistUri ? undefined : current) : undefined} alt="" />}
     <section ref={lyricsPage} className={className} aria-label="Lyssna Lyrics" style={pageStyle}
       onPointerMove={wakeTools} onPointerLeave={sleepTools} onKeyDownCapture={wakeTools}>
-      {narrating && <DJInterlude playing={playing} />}
+      {narrating && <DJInterlude playing={playing} reduceMotion={settings.reduce_motion} />}
       {!narrating && (track ? <>
         <div className="lyrics-album">
           {canvas ? <CanvasArtwork key={`${track.id}:${canvas.fileId ?? canvas.url}`} info={canvas} cover={track.cover}

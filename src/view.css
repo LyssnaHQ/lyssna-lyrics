@@ -215,10 +215,16 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   margin: auto;
 }
 
-.lyssna-lyrics-view .lyssna-dj-interlude img {
+.lyssna-lyrics-view .lyssna-dj-art {
+  --dj-art-size: min(30cqw, 42vh, 320px);
+  width: var(--dj-art-size);
+  height: var(--dj-art-size);
+  flex: none;
+}
+
+.lyssna-lyrics-view .lyssna-dj-art img {
   display: block;
-  width: min(30cqw, 42vh, 320px);
-  aspect-ratio: 1;
+  width: 100%;
   border-radius: 8px;
   box-shadow: 0 18px 50px #0005;
 }
@@ -240,15 +246,15 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   text-align: center;
 }
 
-.lyssna-lyrics-view :is(.lyrics-page.narrow, .lyrics-popout) .lyssna-dj-interlude img {
-  width: min(30cqw, 25vh, 144px);
+.lyssna-lyrics-view :is(.lyrics-page.narrow, .lyrics-popout) .lyssna-dj-art {
+  --dj-art-size: min(30cqw, 25vh, 144px);
 }
 
 .lyssna-lyrics-view .lyrics-popout .lyssna-dj-interlude h2 {
   font-size: 24px;
 }
 
-.lyssna-lyrics-view .lyrics-page.artwork-right:not(.narrow) .lyssna-dj-interlude img {
+.lyssna-lyrics-view .lyrics-page.artwork-right:not(.narrow) .lyssna-dj-art {
   order: 1;
 }
 

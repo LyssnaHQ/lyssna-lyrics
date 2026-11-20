@@ -1395,42 +1395,9 @@
   animation: lyrics-skeleton-sweep 1.6s cubic-bezier(0.45, 0, 0.55, 1)
     calc(var(--line, 0) * 0.06s) infinite;
 }
-.lyrics-skeleton p {
-  position: absolute;
-  left: 20px;
-  bottom: 18px;
-  display: flex;
-  align-items: baseline;
-  font-size: 13px;
-  font-weight: 600;
-  color: light-dark(#000000b8, #ffffffb8);
-}
-.lyrics-skeleton-dots {
-  display: inline-flex;
-  gap: 0.2em;
-  margin-left: 0.3em;
-}
-.lyrics-skeleton-dots i {
-  width: 0.3em;
-  height: 0.3em;
-  border-radius: 50%;
-  background: currentColor;
-  opacity: 0.25;
-  animation: lyrics-skeleton-dot 1.2s ease-in-out infinite;
-}
-.lyrics-skeleton-dots i:nth-child(2) {
-  animation-delay: 0.16s;
-}
-.lyrics-skeleton-dots i:nth-child(3) {
-  animation-delay: 0.32s;
-}
 .reduce-motion .lyrics-skeleton-lines span::after {
   animation: none;
   opacity: 0;
-}
-.reduce-motion .lyrics-skeleton-dots i {
-  animation: none;
-  opacity: 0.6;
 }
 @keyframes lyrics-skeleton-in {
   from {
@@ -1440,17 +1407,6 @@
 @keyframes lyrics-skeleton-sweep {
   to {
     transform: translateX(100%);
-  }
-}
-@keyframes lyrics-skeleton-dot {
-  0%,
-  100% {
-    opacity: 0.25;
-    transform: none;
-  }
-  40% {
-    opacity: 1;
-    transform: translateY(-0.18em);
   }
 }
 /* Credits follow the last singer: a song ending on a line sung from the
