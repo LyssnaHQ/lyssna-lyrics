@@ -58,11 +58,14 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
   const picker = useRef<HTMLInputElement>(null);
   const openAudio = useCallback(() => picker.current?.click(), []);
   const audioLoad = useRef(0);
+  const transportRevision = useRef(0);
   const clip = useRef<{ uri: string; end: number; from: number; expires: number; started: boolean }>(undefined);
   const audioForSong = audio?.uri === current?.uri ? audio : undefined;
   const isPlaying = audioForSong ? localPlaying : playing;
   const readCapturePosition = useCallback((uri: string) => {
-    if (host.playing() && !host.djNarrating() && uri === `spotify:track:${host.track()?.id}`) return host.position();
+    if (host.playing() && !host.djNarrating() && uri === `spotify:track:${host.track()?.id}`) {
+      return { ms: host.position(), transportRevision: transportRevision.current };
+    }
   }, [host]);
   const notify = useCallback((message: string, error = false) => setNotice({ message, error }), []);
 
@@ -134,12 +137,18 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
       case "pause":
         clip.current = undefined;
         if (element) element.pause();
-        else if (host.playing()) host.toggle();
+        else if (host.playing()) {
+          transportRevision.current++;
+          host.toggle();
+        }
         break;
       case "seek":
         clip.current = undefined;
         if (element) element.currentTime = request.positionMs / 1000;
-        else host.seek(Math.min(host.duration(), request.positionMs));
+        else {
+          transportRevision.current++;
+          host.seek(Math.min(host.duration(), request.positionMs));
+        }
         break;
       case "repeat":
         void Promise.resolve(host.setRepeat(request.repeat)).catch(() => {});

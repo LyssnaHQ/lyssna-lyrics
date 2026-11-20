@@ -3,7 +3,7 @@ import { spectrumFrequency } from "./audio";
 import { useCreatorEnvironment } from "./environment";
 import { spotifyWindowMarker } from "./spotify-window";
 import {
-  hasLiveSpectrum, LIVE_COLUMNS, LIVE_ROWS, LIVE_SAMPLE_MS, LIVE_TILE_MS, mergeLiveTile,
+  hasLiveSpectrum, INTERPOLATED_COLUMN, LIVE_COLUMNS, LIVE_ROWS, LIVE_SAMPLE_MS, MEASURED_COLUMN, mergeLiveTile,
   readLiveTiles, saveLiveTiles, type LiveTile,
 } from "./spectrum-storage";
 
@@ -216,8 +216,14 @@ export function useLiveSpectrum(uri: string, duration: number, canCapture: boole
       const edges = Uint16Array.from({ length: LIVE_ROWS + 1 }, (_, row) =>
         Math.min(bins.length, Math.round(spectrumFrequency(1 - row / LIVE_ROWS) / hzPerBin)));
       const halfWindowMs = 500 / hzPerBin;
+      let levels = new Uint16Array(LIVE_ROWS);
+      let previousLevels = new Uint16Array(LIVE_ROWS);
+      let previousSample = -1;
+      let previousSampleAt = 0;
+      let previousSamplePosition = 0;
       let previous = -Infinity;
       let previousAt = 0;
+      let previousTransport: number | undefined;
       let settleUntil = 0;
       let noSignalSince = 0;
       let suspendedSince = 0;
@@ -230,22 +236,36 @@ export function useLiveSpectrum(uri: string, duration: number, canCapture: boole
         if (!isSpotify()) { stop("Spotify audio sharing ended when the source changed."); return; }
         const now = view.performance.now();
         if (audioContext.state !== "running") {
+          previousSample = -1;
           suspendedSince ||= now;
           if (now - suspendedSince > 3000) stop("Spotify couldn’t start the audio analyser.");
           return;
         }
         suspendedSince = 0;
-        const ms = readCapturePosition(uri);
-        if (ms === undefined || !Number.isFinite(ms)) { previous = -Infinity; noSignalSince = 0; return; }
+        const playback = readCapturePosition(uri);
+        if (!playback || !Number.isFinite(playback.ms)) {
+          previous = -Infinity;
+          previousSample = -1;
+          noSignalSince = 0;
+          return;
+        }
+        const { ms, transportRevision } = playback;
         const delta = ms - previous;
-        if (delta < -40 || delta > now - previousAt + 160) settleUntil = now + 160;
+        if (transportRevision !== previousTransport || delta < -40 || delta > now - previousAt + 160) {
+          settleUntil = now + 160;
+          previousSample = -1;
+        }
         previous = ms;
         previousAt = now;
+        previousTransport = transportRevision;
         const position = ms - halfWindowMs;
         if (now < settleUntil || position < 0 || position >= duration) return;
 
-        if (audio.muted) bins.fill(-Infinity);
-        else analyser.getFloatFrequencyData(bins);
+        if (audio.muted) {
+          previousSample = -1;
+          if (heard) return;
+          bins.fill(-Infinity);
+        } else analyser.getFloatFrequencyData(bins);
         const signal = bins.some((level) => level > -82);
         if (signal) noSignalSince = 0;
         else if (!heard) {
@@ -255,26 +275,45 @@ export function useLiveSpectrum(uri: string, duration: number, canCapture: boole
         }
         if (!heard) { heard = true; setHasSaved(true); }
 
-        const index = Math.floor(position / LIVE_TILE_MS);
-        const column = Math.floor((position % LIVE_TILE_MS) / LIVE_SAMPLE_MS);
-        let entry = tiles.current.get(index);
-        if (!entry) {
-          entry = {
-            tile: { uri, index, levels: new Uint16Array(LIVE_ROWS * LIVE_COLUMNS), filled: new Uint8Array(LIVE_COLUMNS) },
-            revision: 0, savedRevision: 0,
-          };
-          tiles.current.set(index, entry);
-        }
         for (let row = 0; row < LIVE_ROWS; row++) {
           const first = edges[row + 1];
           const last = Math.min(bins.length, Math.max(first + 1, edges[row]));
           let peak = -95;
           for (let bin = first; bin < last; bin++) peak = Math.max(peak, bins[bin]);
-          entry.tile.levels[row * LIVE_COLUMNS + column] = Math.round(Math.min(1, (peak + 95) / 70) * 5400);
+          levels[row] = Math.round(Math.min(1, (peak + 95) / 70) * 5400);
         }
-        entry.tile.filled[column] = 1;
-        entry.revision++;
-        dirty.add(index);
+        const sample = Math.floor(position / LIVE_SAMPLE_MS);
+        const elapsed = now - previousSampleAt;
+        const distance = sample - previousSample;
+        // Timer drift can skip columns. Interpolate only between nearby frames on the same stretch of playback.
+        const interpolate = previousSample >= 0 && distance > 1 && distance <= 4 && elapsed <= 100 &&
+          Math.abs(position - previousSamplePosition - elapsed) < 35;
+        for (let frame = interpolate ? previousSample + 1 : sample; frame <= sample; frame++) {
+          const index = Math.floor(frame / LIVE_COLUMNS);
+          const column = frame % LIVE_COLUMNS;
+          let entry = tiles.current.get(index);
+          if (!entry) {
+            entry = {
+              tile: { uri, index, levels: new Uint16Array(LIVE_ROWS * LIVE_COLUMNS), filled: new Uint8Array(LIVE_COLUMNS) },
+              revision: 0, savedRevision: 0,
+            };
+            tiles.current.set(index, entry);
+          }
+          const measured = frame === sample;
+          if (!measured && entry.tile.filled[column] === MEASURED_COLUMN) continue;
+          const weight = measured ? 1 : (frame - previousSample) / distance;
+          for (let row = 0; row < LIVE_ROWS; row++) {
+            entry.tile.levels[row * LIVE_COLUMNS + column] = measured ? levels[row] :
+              Math.round(previousLevels[row] + (levels[row] - previousLevels[row]) * weight);
+          }
+          entry.tile.filled[column] = measured ? MEASURED_COLUMN : INTERPOLATED_COLUMN;
+          entry.revision++;
+          dirty.add(index);
+        }
+        previousSample = sample;
+        previousSampleAt = now;
+        previousSamplePosition = position;
+        [previousLevels, levels] = [levels, previousLevels];
         if (++frames % 4 === 1) redraw((value) => value + 1);
       }, LIVE_SAMPLE_MS);
       saveTimer = view.setInterval(flush, 1000);
@@ -283,5 +322,5 @@ export function useLiveSpectrum(uri: string, duration: number, canCapture: boole
     }
   }
 
-  return { status, message, hasSaved, tiles: tiles.current, load, start, stop: () => session.current?.stop() };
+  return { status, message, sharePrompt, hasSaved, tiles: tiles.current, load, start, stop: () => session.current?.stop() };
 }

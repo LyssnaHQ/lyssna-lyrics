@@ -2,6 +2,8 @@ export const LIVE_TILE_MS = 5_000;
 export const LIVE_SAMPLE_MS = 20;
 export const LIVE_COLUMNS = LIVE_TILE_MS / LIVE_SAMPLE_MS;
 export const LIVE_ROWS = 256;
+export const MEASURED_COLUMN = 1;
+export const INTERPOLATED_COLUMN = 2;
 
 export type LiveTile = {
   uri: string;
@@ -46,8 +48,11 @@ export async function readLiveTiles(uri: string, first: number, last: number): P
 
 export function mergeLiveTile(target: LiveTile, update: LiveTile, overwrite: boolean) {
   for (let column = 0; column < LIVE_COLUMNS; column++) {
-    if (!update.filled[column] || (!overwrite && target.filled[column])) continue;
-    target.filled[column] = 1;
+    const incoming = update.filled[column];
+    const existing = target.filled[column];
+    if (!incoming || (existing === MEASURED_COLUMN && incoming === INTERPOLATED_COLUMN) ||
+      (!overwrite && existing && existing === incoming)) continue;
+    target.filled[column] = incoming;
     for (let row = 0; row < LIVE_ROWS; row++) {
       const offset = row * LIVE_COLUMNS + column;
       target.levels[offset] = update.levels[offset];

@@ -1944,6 +1944,55 @@
   color: #000;
   background: #fff;
 }
+.ttml-spectrum-tool.guide-target {
+  outline: 2px solid #1ed760;
+  outline-offset: 2px;
+}
+.ttml-spectrum-intro:popover-open {
+  position: fixed;
+  inset: auto;
+  display: grid;
+  gap: 8px;
+  box-sizing: border-box;
+  width: min(300px, calc(100vw - 16px));
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid #ffffff30;
+  border-radius: 10px;
+  overflow: visible;
+  background: #202020;
+  color: #f3f3f3;
+  box-shadow: 0 10px 30px #000a;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.ttml-spectrum-intro p {
+  margin: 0;
+}
+.ttml-spectrum-intro > button {
+  justify-self: end;
+  border: 0;
+  border-radius: 6px;
+  padding: 4px 10px;
+  background: #ffffff24;
+  color: inherit;
+  cursor: pointer;
+}
+.ttml-spectrum-intro::after {
+  position: absolute;
+  left: var(--playbar-popover-anchor);
+  translate: -50% 0;
+  border: 8px solid transparent;
+  content: "";
+}
+.ttml-spectrum-intro[data-side="above"]::after {
+  top: 100%;
+  border-top-color: #202020;
+}
+.ttml-spectrum-intro[data-side="below"]::after {
+  bottom: 100%;
+  border-bottom-color: #202020;
+}
 .ttml-spectrum-settings {
   position: relative;
 }

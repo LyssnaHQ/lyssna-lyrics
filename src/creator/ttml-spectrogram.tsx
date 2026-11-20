@@ -1,8 +1,9 @@
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowRightToLine, AudioLines, Eye, EyeOff, FileAudio, Settings2, Square } from "lucide-react";
 import { useCreatorEnvironment } from "./environment";
 import { pitchBands, spectrumFrequency, spectrumFrequencyPosition } from "./audio";
 import { useLiveSpectrum } from "./live-spectrum";
+import { usePlaybarPopover } from "./playbar-popover";
 import { LIVE_COLUMNS, LIVE_ROWS, LIVE_TILE_MS } from "./spectrum-storage";
 import {
   type CreatorLine,
@@ -267,7 +268,24 @@ export function TtmlSpectrogram({
 }) {
   const { view: window, spectrogram, spectrumKey: audioKey, spectrumAudioUri, openAudio } = useCreatorEnvironment();
   const localAudio = spectrumAudioUri === uri;
-  const liveSpectrum = useLiveSpectrum(uri, duration, canOpenAudio && !localAudio && duration > 0);
+  const canShare = canOpenAudio && !localAudio && duration > 0;
+  const liveSpectrum = useLiveSpectrum(uri, duration, canShare);
+  const [introSeen, setIntroSeen] = useStored("lyssna.ttml-live-spectrum-intro", false, isBoolean);
+  const showIntro = canShare && !introSeen && liveSpectrum.status === "idle";
+  const shareButton = useRef<HTMLButtonElement>(null);
+  const intro = useRef<HTMLDivElement>(null);
+  const introId = useId();
+  usePlaybarPopover(window, showIntro, shareButton, intro);
+  useEffect(() => {
+    if (!showIntro) return;
+    const dismiss = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setIntroSeen(true);
+      if (intro.current?.contains(event.composedPath()[0] as Node)) shareButton.current?.focus({ preventScroll: true });
+    };
+    window.addEventListener("keydown", dismiss, true);
+    return () => window.removeEventListener("keydown", dismiss, true);
+  }, [showIntro, window]);
   const liveCapture = !localAudio && (liveSpectrum.hasSaved || liveSpectrum.status === "live");
   const pitch = !localAudio && !liveCapture;
   const spectrumKey = liveCapture ? "live" : pitch ? "spotify-pitch" : audioKey;
@@ -837,13 +855,27 @@ export function TtmlSpectrogram({
         )}
       </div>
       <div className="ttml-spectrum-tools">
-        {canOpenAudio && !localAudio && <button className={`ttml-spectrum-tool${liveSpectrum.status === "live" ? " on" : ""}`}
-          type="button" disabled={liveSpectrum.status === "selecting"}
+        {canShare && <button className={`ttml-spectrum-tool${liveSpectrum.status === "live" ? " on" : ""}${showIntro ? " guide-target" : ""}`}
+          ref={shareButton} type="button" disabled={liveSpectrum.status === "selecting"}
           aria-label={liveSpectrum.status === "live" ? "Stop sharing Spotify audio" : "Share Spotify audio"}
+          aria-describedby={showIntro ? introId : undefined}
           title={liveSpectrum.status === "live" ? "Stop sharing Spotify audio" : "Share Spotify audio"}
-          onClick={() => liveSpectrum.status === "live" ? liveSpectrum.stop() : void liveSpectrum.start()}>
+          onClick={() => {
+            if (showIntro) setIntroSeen(true);
+            if (liveSpectrum.status === "live") liveSpectrum.stop();
+            else void liveSpectrum.start();
+          }}>
           {liveSpectrum.status === "live" ? <Square size={13} /> : <AudioLines size={15} />}
         </button>}
+        {showIntro && <div id={introId} className="ttml-spectrum-intro" ref={intro} popover="manual" aria-label="Live spectrogram guide">
+          <strong>Live spectrogram</strong>
+          <p>Click <b>Share Spotify audio</b>. {liveSpectrum.sharePrompt}</p>
+          <p>Play the sections you want to capture. Click the same button to stop. The spectrogram stays in this Spotify client.</p>
+          <button type="button" onClick={() => {
+            setIntroSeen(true);
+            shareButton.current?.focus({ preventScroll: true });
+          }}>Got it</button>
+        </div>}
         {canOpenAudio && <button className="ttml-spectrum-tool" type="button" onClick={openAudio}
           aria-label="Open local audio" title={localAudio ? "Change the local audio file" : "Open a local audio file for the full spectrogram"}>
           <FileAudio size={15} />
