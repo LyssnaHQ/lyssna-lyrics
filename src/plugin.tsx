@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { MicVocal, Music2, Settings as GearIcon, X } from "lucide-react";
+import { ChevronUp, FoldVertical, MicVocal, Music2, PanelLeftOpen, Settings as GearIcon, UnfoldVertical, X } from "lucide-react";
 import { getHost, type CanvasInfo, type Host, type Track } from "./host";
 import { useArtworkColor } from "./lyssna/artwork-color";
 import { Ambience } from "./lyssna/ambience";
@@ -88,11 +88,19 @@ function useTrackLyrics(track: Track, duration: number, view: Window, settings: 
   return { lyrics, waiting };
 }
 
-function LyricsForTrack({ track, host, playing, settings, compact = false, view = window }: {
-  track: Track; host: Host; playing: boolean; settings: Settings; compact?: boolean; view?: Window;
+function LyricsForTrack({ track, host, playing, settings, view = window }: {
+  track: Track; host: Host; playing: boolean; settings: Settings; view?: Window;
 }) {
   const duration = host.duration();
-  const { lyrics, waiting } = useTrackLyrics(track, duration, view, settings);
+  const data = useTrackLyrics(track, duration, view, settings);
+  return <TrackLyrics track={track} host={host} playing={playing} settings={settings} view={view}
+    duration={duration} {...data} />;
+}
+
+function TrackLyrics({ track, host, playing, settings, compact = false, view = window, duration, lyrics, waiting }: {
+  track: Track; host: Host; playing: boolean; settings: Settings; compact?: boolean; view?: Window;
+  duration: number; lyrics?: Lyrics; waiting: boolean;
+}) {
   const position = usePosition(host, playing, view);
   const time = position + settings.lyric_offset_ms + (settings.lyric_song_offsets[track.id] ?? 0);
   const gravity = view === window && settings.space_gravity && !compact && !!lyrics &&
@@ -145,15 +153,61 @@ function LyricsForTrack({ track, host, playing, settings, compact = false, view 
   </div>;
 }
 
-function NowPlayingCard({ host, open }: { host: Host; open: () => void }) {
+type NowPlayingMode = "preview" | "expanded" | "collapsed";
+const nowPlayingModeKey = "lyssna-lyrics.v1.now-playing-mode";
+
+function NowPlayingCard({ host, open, expand }: { host: Host; open: () => void; expand: (expanded: boolean) => void }) {
   const { track, playing } = usePlayback(host);
   const settings = useLiveSettings();
-  const fonts = useAppFonts(settings);
   if (!track || settings.lyrics_hide_npv) return null;
-  return <aside className={`lyssna-now-playing-card${settings.lyrics_hide_npv_empty ? " hide-empty" : ""}`} aria-label="Lyssna Lyrics preview" style={fonts}>
+  return <NowPlayingLyrics key={track.id} track={track} playing={playing} settings={settings} host={host} open={open} expand={expand} />;
+}
+
+function NowPlayingLyrics({ track, playing, settings, host, open, expand }: {
+  track: Track; playing: boolean; settings: Settings; host: Host; open: () => void; expand: (expanded: boolean) => void;
+}) {
+  const fonts = useAppFonts(settings);
+  const duration = host.duration();
+  const data = useTrackLyrics(track, duration, window, settings);
+  const hasLyrics = !!data.lyrics?.lines.length;
+  const [mode, setMode] = useState<NowPlayingMode>(() => {
+    const saved = localStorage.getItem(nowPlayingModeKey);
+    return saved === "expanded" || saved === "collapsed" ? saved : "preview";
+  });
+  const expanded = mode === "expanded" && hasLyrics;
+  const collapsed = mode === "collapsed";
+
+  useLayoutEffect(() => {
+    if (!expanded) return;
+    expand(true);
+    return () => expand(false);
+  }, [expand, expanded]);
+
+  function change(next: NowPlayingMode) {
+    localStorage.setItem(nowPlayingModeKey, next);
+    setMode(next);
+  }
+
+  if (!hasLyrics && settings.lyrics_hide_npv_empty) return null;
+  const expandLabel = expanded ? "Exit expanded lyrics" : "Expand lyrics";
+  const collapseLabel = collapsed ? "Show lyrics" : "Collapse lyrics";
+  return <aside className={`lyssna-now-playing-card lyric-preview${expanded ? " expanded" : ""}${collapsed ? " collapsed" : ""}${settings.reduce_motion ? " reduce-motion" : ""}`}
+    aria-label="Lyssna Lyrics preview" data-has-lyrics={hasLyrics || undefined} style={fonts}>
     {track.cover && settings.npv_ambience && <Ambience image={track.cover} animate={playing} reduceMotion={settings.reduce_motion} />}
-    <header><h2>Lyrics preview</h2><button className="icon-button" type="button" aria-label="Open lyrics" onClick={open}><MicVocal size={18} /></button></header>
-    <div className="lyssna-now-playing-lines" data-scroll-size-contained=""><LyricsForTrack key={track.id} track={track} host={host} playing={playing} settings={settings} compact /></div>
+    <header>
+      <h2>Lyrics</h2>
+      <div className="lyssna-now-playing-actions">
+        <button type="button" className="lyric-card-control" aria-label="Open lyrics" title="Open lyrics" onClick={open}><PanelLeftOpen size={18} /></button>
+        <button type="button" className="lyric-card-control" aria-label={expandLabel} title={expandLabel} aria-pressed={expanded}
+          disabled={!hasLyrics} onClick={() => change(expanded ? "preview" : "expanded")}>
+          {expanded ? <FoldVertical size={18} /> : <UnfoldVertical size={18} />}
+        </button>
+        <button type="button" className="lyric-card-control lyric-card-toggle" aria-label={collapseLabel} title={collapseLabel}
+          aria-expanded={!collapsed} onClick={() => change(collapsed ? "preview" : "collapsed")}><ChevronUp size={18} /></button>
+      </div>
+    </header>
+    {!collapsed && <div className="lyssna-now-playing-lines" data-scroll-size-contained=""><TrackLyrics track={track} host={host}
+      playing={playing} settings={settings} compact duration={duration} {...data} /></div>}
   </aside>;
 }
 
@@ -505,6 +559,7 @@ export default function start(options: BuildOptions) {
   let removeCard: (() => void) | undefined;
   let card: HTMLElement | undefined;
   let cardPanel: HTMLElement | undefined;
+  let mutedPreviewPanel: HTMLElement | undefined;
   let sidebarCover: string | undefined;
   let closePopout: (() => void) | undefined;
   let opening = false;
@@ -537,11 +592,13 @@ export default function start(options: BuildOptions) {
           closePopout = undefined;
           playbarButtons?.setPopoutActive(false);
           root.unmount();
+          syncNowPlaying();
         }
         const dismiss = () => { release(); view.close(); };
         view.addEventListener("pagehide", release);
         closePopout = dismiss;
         playbarButtons?.setPopoutActive(true);
+        syncNowPlaying();
         root.render(<PopoutView host={host} view={view} close={dismiss} />);
       } catch (error) {
         if (closePopout) closePopout();
@@ -587,10 +644,12 @@ export default function start(options: BuildOptions) {
       root.unmount();
       shadowHost.remove();
       setSidebarCover();
+      syncNowPlaying();
       if (forget) sessionStorage.removeItem(activeViewKey);
     };
     close = dismiss;
     mainContainer = shadowHost;
+    syncNowPlaying();
     button?.setActive(true);
     sessionStorage.setItem(activeViewKey, "open");
     let fullscreenRequest = 0;
@@ -638,16 +697,42 @@ export default function start(options: BuildOptions) {
       card = container;
       placeNowPlayingPreview(panel, container);
       const root = host.mount(container);
-      root.render(<NowPlayingCard host={host} open={() => { if (!close) void open(); }} />);
-      removeCard = () => { root.unmount(); container.remove(); };
+      let mounted = true;
+      const expand = (expanded: boolean) => {
+        if (!mounted || container.classList.contains("lyssna-npv-expanded") === expanded) return;
+        container.classList.toggle("lyssna-npv-expanded", expanded);
+        panel.classList.toggle("lyssna-npv-expanded-panel", expanded);
+        if (expanded) panel.append(container);
+        else placeNowPlayingPreview(panel, container);
+      };
+      root.render(<NowPlayingCard host={host} open={() => { if (!close) void open(); }} expand={expand} />);
+      removeCard = () => {
+        mounted = false;
+        panel.classList.remove("lyssna-npv-expanded-panel");
+        root.unmount();
+        container.remove();
+      };
+    } else if (card.classList.contains("lyssna-npv-expanded")) {
+      if (card.parentElement !== panel) panel.append(card);
     } else placeNowPlayingPreview(panel, card);
+  }
+  function syncNowPlaying(panel = findNowPlaying()) {
+    if (disposed) return;
+    const lyricsOpen = !!(mainContainer || closePopout);
+    const mute = lyricsOpen ? panel ?? undefined : undefined;
+    if (mute !== mutedPreviewPanel) {
+      mutedPreviewPanel?.classList.remove("lyssna-npv-hide-lyrics");
+      mute?.classList.add("lyssna-npv-hide-lyrics");
+      mutedPreviewPanel = mute;
+    }
+    attachCard(lyricsOpen ? null : panel);
   }
   function syncHost() {
     viewButtons.sync(showPlaybarPopout);
     if (restorePending && host.mainView()) void open();
     if (mainContainer && !mainContainer.isConnected) close?.();
     const panel = findNowPlaying();
-    attachCard(panel);
+    syncNowPlaying(panel);
     sidebarArtwork.sync(panel, sidebarCover);
   }
   const observer = new MutationObserver(syncHost);
@@ -659,6 +744,7 @@ export default function start(options: BuildOptions) {
       observer.disconnect();
       stopViewSwitch();
       removeCard?.();
+      mutedPreviewPanel?.classList.remove("lyssna-npv-hide-lyrics");
       closePopout?.();
       close?.(false);
       button?.remove();
