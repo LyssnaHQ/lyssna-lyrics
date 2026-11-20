@@ -7,6 +7,7 @@ import noticeCss from "./release-notices.css?inline";
 const discord = "https://discord.gg/qfYAsFQawp";
 const guide = "https://lyssna.org/guides";
 const lastBuildKey = "lyssna-lyrics.v1.last-public-build";
+const integrationEvent = "lyssna-lyrics:integration-state";
 const checkInterval = 120_000;
 const ease = "cubic-bezier(0.23, 1, 0.32, 1)";
 const openExternal = (url: string) => window.open(url, "_blank", "noopener,noreferrer");
@@ -170,6 +171,27 @@ function ReleaseToast({ title, description, action, dismiss, warning }: {
   title: string; description: string; action: { label: string; run(origin?: DOMRect): void }; dismiss(): void; warning?: boolean;
 }) {
   const toast = useRef<HTMLElement>(null);
+  useLayoutEffect(() => {
+    const element = toast.current;
+    const bar = document.querySelector(".Root__now-playing-bar") ?? document.querySelector('[data-testid="now-playing-bar"]');
+    if (!element || !bar) return;
+    const place = () => {
+      const bounds = bar.getBoundingClientRect();
+      if (bounds.height > 0) {
+        element.style.setProperty("--release-playbar-offset", `${Math.max(0, window.innerHeight - bounds.top)}px`);
+      } else {
+        element.style.removeProperty("--release-playbar-offset");
+      }
+    };
+    place();
+    const observer = new ResizeObserver(place);
+    observer.observe(bar);
+    window.addEventListener("resize", place);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", place);
+    };
+  }, []);
   return <aside className="release-toast" ref={toast} aria-label="Lyssna Lyrics update">
     {warning && <TriangleAlert size={18} aria-hidden="true" />}
     <div className="release-toast-copy" role="status"><strong>{title}</strong><p>{description}</p></div>
@@ -184,7 +206,7 @@ export function startReleaseNotices(host: Host, options: BuildOptions) {
   const version = installed;
   const patchNotes = options.patchNotesUrl;
   const controller = new AbortController();
-  const previewWindow = window as Window & { LyssnaLyricsRewrite?: object };
+  const previewWindow = window as Window & { LyssnaLyrics?: Record<string, unknown> };
   const mount = document.createElement("div");
   mount.className = "lyssna-rewrite-release-notices";
   const shadow = mount.attachShadow({ mode: "open" });
@@ -274,7 +296,13 @@ export function startReleaseNotices(host: Host, options: BuildOptions) {
     },
     showUpdatedDialog(from = version, to = demoVersion) { showUpdatedDialog(from, to); },
   };
-  previewWindow.LyssnaLyricsRewrite = previews;
+  function exposePreviews() {
+    const api = previewWindow.LyssnaLyrics;
+    if (api?.showStartup !== previews.showStartup) previewWindow.LyssnaLyrics = { ...api, ...previews };
+  }
+  // Legacy exposes its own console tools before reporting that it loaded.
+  window.addEventListener(integrationEvent, exposePreviews);
+  exposePreviews();
 
   if (!options.hiddenVersion) {
     try {
@@ -309,7 +337,16 @@ export function startReleaseNotices(host: Host, options: BuildOptions) {
     clearTimeout(toastTimer);
     clearTimeout(loadingTimer);
     stopLoading?.();
-    if (previewWindow.LyssnaLyricsRewrite === previews) delete previewWindow.LyssnaLyricsRewrite;
+    window.removeEventListener(integrationEvent, exposePreviews);
+    const api = previewWindow.LyssnaLyrics;
+    if (api?.showStartup === previews.showStartup) {
+      const remaining = { ...api };
+      for (const [name, command] of Object.entries(previews)) {
+        if (remaining[name] === command) delete remaining[name];
+      }
+      if (Object.keys(remaining).length) previewWindow.LyssnaLyrics = remaining;
+      else delete previewWindow.LyssnaLyrics;
+    }
     root?.unmount();
     mount.remove();
   };

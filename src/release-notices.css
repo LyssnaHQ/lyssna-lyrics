@@ -126,7 +126,7 @@
 .release-actions { margin-top: 8px; }
 .release-discord { margin-inline-end: auto; }
 
-.release-actions button, .release-toast button:not(.release-toast-dismiss) {
+.release-actions button, .release-toast .release-primary {
   appearance: none;
   box-sizing: border-box;
   min-height: 44px;
@@ -176,7 +176,7 @@
 
 .release-toast {
   position: fixed;
-  inset: auto 24px 24px auto;
+  inset: auto 24px calc(var(--release-playbar-offset, 88px) + 12px) auto;
   z-index: 10510;
   display: flex;
   align-items: center;
@@ -195,7 +195,7 @@
 .release-toast-copy strong { font-weight: 600; overflow-wrap: anywhere; }
 .release-toast-copy p { margin: 3px 0 0; color: var(--muted); font-size: .8rem; line-height: 1.45; }
 .release-toast > svg { flex: 0 0 18px; }
-.release-toast button:not(.release-toast-dismiss) {
+.release-toast .release-primary {
   min-height: 32px;
   padding: 0 14px;
   border-radius: 8px;

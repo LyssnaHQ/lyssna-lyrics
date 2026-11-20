@@ -24,10 +24,10 @@ Public builds check their selected channel for updates. Add release notes to `PA
 Preview the notices from Spotify’s DevTools console after Lyssna loads. These previews leave version history unchanged.
 
 ```js
-LyssnaLyricsRewrite.showStartup()
-LyssnaLyricsRewrite.showFirstLoad()
-LyssnaLyricsRewrite.showUpdateAvailable()
-LyssnaLyricsRewrite.showUpdatedDialog()
+LyssnaLyrics.showStartup()
+LyssnaLyrics.showFirstLoad()
+LyssnaLyrics.showUpdateAvailable()
+LyssnaLyrics.showUpdatedDialog()
 ```
 
 **Cinema Lyrics Window** opens the full lyrics view in a separate, resizable window and follows Spotify playback. Run `spicetify enable-devtools` with Spicetify, then turn on **Enable Cinema Lyrics Window** in Lyssna’s **Layout** settings. Click **Cinema Lyrics Window** in the playbar to open it. The separate window requires Spotify DevTools to be enabled.
