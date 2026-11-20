@@ -734,15 +734,17 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
       attachSong={attachBulkLyrics} onClose={closeTtml} />}
     {settingsPage && <SettingsPanel key={settingsPage} settings={preferences} change={change} close={closeSettings}
       initialSubmenu={settingsPage === "storage" ? "storage" : undefined}
+      onEnableAutoRecord={externalCinema ? undefined : () => void capture.start("auto")}
       options={options} track={track ?? undefined} notice={notice} setNotice={setNotice} view={view} developerMode={host.developerMode} />}
   </>;
 }
 
-function ProfileSettings({ host, options, close }: { host: Host; options: BuildOptions; close(): void }) {
+function ProfileSettings({ host, options, close, capture }: { host: Host; options: BuildOptions; close(): void; capture: SpotifyCapture }) {
   const settings = useLiveSettings();
   const { track } = usePlayback(host);
   const [notice, setNotice] = useState("");
   return <SettingsPanel settings={settings} change={(patch) => saveSettings({ ...readSettings(), ...patch })}
+    onEnableAutoRecord={() => void capture.start("auto")}
     close={close} options={options} track={track ?? undefined} notice={notice} setNotice={setNotice} developerMode={host.developerMode} />;
 }
 
@@ -777,6 +779,7 @@ export default function start(options: BuildOptions) {
     const autoRecord = settings.ttml_creator && settings.auto_record;
     if (autoRecord && !removeAutoRecord) {
       const container = document.createElement("div");
+      container.className = "lyssna-auto-record-host";
       document.body.append(container);
       const root = host.mount(container);
       root.render(<AutoRecordPrompt capture={capture} />);
@@ -852,7 +855,7 @@ export default function start(options: BuildOptions) {
       parent.remove();
     };
     closeProfileSettings = dismiss;
-    root.render(<ProfileSettings host={host} options={options} close={dismiss} />);
+    root.render(<ProfileSettings host={host} options={options} close={dismiss} capture={capture} />);
   }
 
   function rememberView(lyrics: boolean) {

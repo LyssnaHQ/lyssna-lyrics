@@ -69,7 +69,7 @@ function visualRowKey(row: ReactNode) {
   return isValidElement(row) && row.key !== null ? String(row.key) : "";
 }
 
-export function SettingsPanel({ settings, change, close, options, track, notice, setNotice, view = window, developerMode, initialSubmenu }: {
+export function SettingsPanel({ settings, change, close, options, track, notice, setNotice, view = window, developerMode, initialSubmenu, onEnableAutoRecord }: {
   settings: Settings;
   change: (patch: Partial<Settings>) => void;
   close: () => void;
@@ -80,6 +80,7 @@ export function SettingsPanel({ settings, change, close, options, track, notice,
   view?: Window;
   developerMode?: boolean;
   initialSubmenu?: "storage";
+  onEnableAutoRecord?: () => void;
 }) {
   const trackId = track?.id;
   const [initial] = useState<Place>(() => initialSubmenu
@@ -295,8 +296,14 @@ export function SettingsPanel({ settings, change, close, options, track, notice,
       </SettingRow>,
       flag("ttml_creator", "TTML Creator", "Add an editor button beside fullscreen in the playbar to write and time lyrics for the playing song.",
         "ttml creator maker editor sync timing word by word karaoke amll make lyrics"),
-      settings.ttml_creator && flag("auto_record", "Auto Record", "Ask to share Spotify audio when Lyssna Lyrics loads. Save songs and spectrograms on this device while sharing is active.",
-        "automatic recording capture audio spectrogram startup"),
+      settings.ttml_creator && <SettingRow key="auto_record" label="Auto Record"
+        help="Ask to share Spotify audio when Lyssna Lyrics loads. Save songs and spectrograms on this device while sharing is active."
+        keywords="automatic recording capture audio spectrogram startup">
+        <Toggle label="Auto Record" checked={settings.auto_record} onChange={(auto_record) => {
+          change({ auto_record });
+          if (auto_record) onEnableAutoRecord?.();
+        }} />
+      </SettingRow>,
       <SettingRow key="channel" label="Build Channel" help={`${channelLabels[options.channel]}${version ? ` · v${version}` : ""}`} keywords="version canary stable beta">
         {submenuButton("builds", "Manage")}
       </SettingRow>,
