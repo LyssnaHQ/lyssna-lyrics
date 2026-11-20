@@ -7,17 +7,13 @@ const defaultKeys = [
   "lyrics_early_scroll", "lyrics_early_scroll_ms", "lyrics_smooth_scroll", "lyrics_simple",
   "lyrics_minimal", "lyrics_keep_overlaps", "lyrics_line_hover", "lyrics_wide_duet", "lyrics_credits_follow",
   "space_gravity", "lyrics_highlighter", "lyrics_word_filter", "lyrics_animator", "experimental_word_sync",
-  "lyrics_background_blur", "lyrics_background_brightness", "romanized", "lyrics_translations",
+  "romanized", "lyrics_translations",
 ] as const satisfies readonly (keyof Settings)[];
 
 const profile: Partial<Settings> = {
   ...Object.fromEntries(defaultKeys.map((key) => [key, defaults[key]])),
   lyrics_seek_compensation: false,
-  lyrics_background: "color",
-  canvas_lyrics: false,
-  animated_covers: false,
   lyrics_visualiser: false,
-  npv_ambience: false,
   lyrics_up_next: false,
 };
 
@@ -26,9 +22,9 @@ function subscribe(update: () => void) {
   return () => window.removeEventListener(lyricsChanged, update);
 }
 
-export function useReviewerSettings(settings: Settings, trackId?: string): Settings {
+export function useReviewerSettings(settings: Settings, trackId?: string, draftReviewer?: boolean): Settings {
   const temporary = useSyncExternalStore(subscribe, () => hasTemporaryTtml(trackId));
-  const active = settings.ttml_reviewer === "always" ||
-    (settings.ttml_reviewer === "temporary" && temporary && !settings.lyrics_sources_disabled.includes("local"));
+  const active = draftReviewer ?? (settings.ttml_reviewer === "always" ||
+    (settings.ttml_reviewer === "temporary" && temporary && !settings.lyrics_sources_disabled.includes("local")));
   return active ? { ...settings, ...profile } : settings;
 }

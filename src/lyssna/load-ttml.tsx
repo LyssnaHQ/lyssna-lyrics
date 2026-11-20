@@ -206,7 +206,7 @@ export function LoadTtml({
             <label className="load-ttml-reviewer">
               <span>
                 <strong>TTML Reviewer</strong>
-                <small>Use default lyric timing and rendering with a still background while reviewing.</small>
+                <small>Use default lyric timing and rendering while reviewing.</small>
               </span>
               <select className="settings-select" value={reviewer} disabled={busy}
                 onChange={(event) => onReviewer(event.currentTarget.value as Settings["ttml_reviewer"])}>

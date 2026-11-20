@@ -18,7 +18,7 @@ import { readSettings, saveSettings, settingsEvent, type Settings } from "./sett
 import { channelLabels, SettingsPanel, type BuildOptions } from "./settings-panel";
 import { startSpicyProvider } from "./spicy";
 import { appFontStyles, copySpotifyFonts, selectedFont } from "./font-settings";
-import { downloadTtml, hasTemporaryTtml, keepTemporaryLyricsFor, listLocalLyrics, lyricsChanged, removeLocalLyrics } from "./local-lyrics";
+import { downloadTtml, keepTemporaryLyricsFor, listLocalLyrics, lyricsChanged, removeLocalLyrics } from "./local-lyrics";
 import { LoadTtml } from "./lyssna/load-ttml";
 import { useReviewerSettings } from "./ttml-reviewer";
 import { attachBulkLyrics, importLyricFile, loadBulkLyrics } from "./ttml-import";
@@ -117,10 +117,11 @@ function useTrackLyrics(track: Track, duration: number, view: Window, settings: 
   return { lyrics, waiting };
 }
 
-function LyricsForTrack({ track, host, playing, settings, view = window, fullView = false, openCreator, draft, showOriginal, localPlayback }: {
+function LyricsForTrack({ track, host, playing, settings, view = window, fullView = false, openCreator, draft, showOriginal, draftReviewer, toggleReviewer, localPlayback }: {
   track: Track; host: Host; playing: boolean; settings: Settings; view?: Window; fullView?: boolean;
   openCreator?(): void;
   draft?: Lyrics | null; showOriginal?(): void; localPlayback?: CreatorPlayback;
+  draftReviewer?: boolean; toggleReviewer?(): void;
 }) {
   const duration = host.duration();
   const data = useTrackLyrics(track, duration, view, settings, host);
@@ -133,6 +134,7 @@ function LyricsForTrack({ track, host, playing, settings, view = window, fullVie
       <span role="status">Showing your TTML draft</span>
       {openCreator && <button type="button" onClick={openCreator}>Back to Creator</button>}
       <button type="button" onClick={showOriginal}>Original lyrics</button>
+      <button type="button" aria-pressed={draftReviewer} onClick={toggleReviewer}>Reviewer mode</button>
     </div>}
   </>;
 }
@@ -405,7 +407,6 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
   const externalCinema = view !== window;
   const { track, playing: spotifyPlaying, narrating } = usePlayback(host, true);
   const preferences = useLiveSettings();
-  const settings = useReviewerSettings(preferences, track?.id);
   const [settingsPage, setSettingsPage] = useState<"settings" | "storage">();
   const showSettings = !!settingsPage;
   const [showTtml, setShowTtml] = useState(false);
@@ -416,12 +417,13 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
   const [draftRevision, refreshDraft] = useState(0);
   const draftUri = trackId && !showCreator ? `spotify:track:${trackId}` : undefined;
   const draft = useMemo(() => draftPreview(draftUri), [draftUri, draftRevision]);
-  const reviewing = trackId && settings.ttml_reviewer !== "off" && hasTemporaryTtml(trackId) &&
-    !settings.lyrics_sources_disabled.includes("local");
-  const visibleDraft = reviewing ? null : draft;
-  const keepCreator = !!visibleDraft && preferences.ttml_creator && !!trackId && creatorTrackId === trackId;
+  const [reviewerOverride, setReviewerOverride] = useState<boolean>();
+  const draftReviewer = draft ? reviewerOverride ?? (preferences.ttml_reviewer !== "off") : undefined;
+  const settings = useReviewerSettings(preferences, trackId, draftReviewer);
+  const keepCreator = !!draft && preferences.ttml_creator && !!trackId && creatorTrackId === trackId;
   const localPlayback = keepCreator && creatorPlayback?.trackId === trackId ? creatorPlayback : undefined;
   const playing = localPlayback?.playing ?? spotifyPlaying;
+  useLayoutEffect(() => setReviewerOverride(undefined), [draftUri, preferences.ttml_reviewer]);
   useEffect(() => {
     if (!draftUri) return;
     const update = (event: Event) => {
@@ -674,7 +676,8 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
           {artworkDock && playback}
         </div>
         <LyricsForTrack key={track.id} track={track} host={host} playing={playing} settings={settings} view={view} fullView
-          draft={visibleDraft} localPlayback={localPlayback} showOriginal={() => {
+          draft={draft} localPlayback={localPlayback} draftReviewer={draftReviewer} toggleReviewer={() => setReviewerOverride(!draftReviewer)}
+          showOriginal={() => {
             if (draftUri) dismissDraft(draftUri);
             refreshDraft((revision) => revision + 1);
           }}

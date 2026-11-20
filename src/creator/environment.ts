@@ -36,10 +36,11 @@ export const useCreatorEnvironment = () => useContext(CreatorEnvironment);
 export const IS_MAC = /Mac/i.test(navigator.platform);
 export const MODIFIER = IS_MAC ? "Cmd" : "Ctrl";
 
-export function useCreatorClock(playing: boolean) {
+export function useCreatorClock(playing: boolean, enabled = true) {
   const { view, read } = useCreatorEnvironment();
   const [position, setPosition] = useState(read);
   useEffect(() => {
+    if (!enabled) return;
     if (!playing) {
       const update = () => setPosition(read());
       update();
@@ -57,6 +58,6 @@ export function useCreatorClock(playing: boolean) {
     };
     tick(view.performance.now());
     return () => view.cancelAnimationFrame(frame);
-  }, [playing, view, read]);
+  }, [playing, enabled, view, read]);
   return { position, read };
 }

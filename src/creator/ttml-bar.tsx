@@ -6,8 +6,9 @@ import { recordingExportEnabled, recordingFormats, type RecordingFormat } from "
 import { formatTime } from "./ttml-creator-model";
 import type { Track } from "./types";
 
-export function CreatorSpeed({ speed, min, max, disabled, onChange, openAudio }: {
+export function CreatorSpeed({ speed, min, max, disabled, onChange, openAudio, showAudioPicker = true }: {
   speed: number; min: number; max: number; disabled: boolean; onChange(value: number): void; openAudio?: () => void;
+  showAudioPicker?: boolean;
 }) {
   return <div className="lyssna-editor-audio-controls">
     <label className="lyssna-editor-speed" title={disabled ? "Share Spotify audio or open a local file to change speed" : "Playback speed"}>
@@ -16,10 +17,10 @@ export function CreatorSpeed({ speed, min, max, disabled, onChange, openAudio }:
         value={speed} disabled={disabled} onChange={(event) => onChange(event.currentTarget.valueAsNumber)} />
       <output>{speed.toFixed(2)}×</output>
     </label>
-    <button type="button" className="lyssna-playbar-view-button" aria-label="Open local audio"
+    {showAudioPicker && <button type="button" className="lyssna-playbar-view-button" aria-label="Open local audio"
       title="Open local audio for speed and spectrogram" disabled={!openAudio} onClick={openAudio}>
       <Headphones size={17} />
-    </button>
+    </button>}
   </div>;
 }
 

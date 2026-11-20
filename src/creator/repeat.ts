@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import type { Host, Track } from "../host";
 
 const sessions = new WeakMap<Host, symbol>();
+const pendingRestores = new WeakMap<Host, Promise<void>>();
 
 function waitForPlayer(host: Host, ready: () => boolean, timeout: number): Promise<boolean> {
   if (ready()) return Promise.resolve(true);
@@ -22,10 +23,11 @@ function waitForPlayer(host: Host, ready: () => boolean, timeout: number): Promi
   });
 }
 
-export function useCreatorRepeat(host: Host, notify: (message: string, error?: boolean) => void) {
+export function useCreatorRepeat(host: Host, notify: (message: string, error?: boolean) => void, enabled: boolean) {
   useEffect(() => {
+    if (!enabled) return;
     const session = Symbol();
-    sessions.set(host, session);
+    const previousRestore = pendingRestores.get(host);
     const ownsSession = () => sessions.get(host) === session;
     let open = true;
     let prepared: Promise<void> | undefined;
@@ -96,17 +98,28 @@ export function useCreatorRepeat(host: Host, notify: (message: string, error?: b
         if (open && ownsSession() && host.track()?.id === track.id) notify("Spotify couldn’t restart this track for Repeat One.", true);
       });
     }
-    start();
-    if (!prepared) stopWaiting = host.watchControls(start);
-    if (prepared) stopWaiting?.();
+    function begin() {
+      if (!open) return;
+      sessions.set(host, session);
+      start();
+      if (!prepared) stopWaiting = host.watchControls(start);
+      if (prepared) stopWaiting?.();
+    }
+    // A fast return to Creator must read the original repeat mode after it is restored.
+    if (previousRestore) void previousRestore.then(begin);
+    else begin();
     return () => {
       open = false;
       stopWaiting?.();
-      void Promise.resolve(prepared).then(async () => {
+      const restored = Promise.resolve(previousRestore).then(() => prepared).then(async () => {
         if (!ownsSession()) return;
         try { await restoreRepeat?.(); } catch { /* Spotify can reject the old mode. */ }
         if (ownsSession()) await restoreContext?.();
-      }).catch(() => {}).finally(() => { if (ownsSession()) sessions.delete(host); });
+      }).catch(() => {}).finally(() => {
+        if (ownsSession()) sessions.delete(host);
+        if (pendingRestores.get(host) === restored) pendingRestores.delete(host);
+      });
+      pendingRestores.set(host, restored);
     };
-  }, [host, notify]);
+  }, [host, notify, enabled]);
 }

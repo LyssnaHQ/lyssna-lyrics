@@ -300,7 +300,7 @@ export function TtmlCreator({
     () => Number(readStorage(OFFSET_KEY)) || 0,
   );
   const isPlaying = state.playback.is_playing;
-  const clock = useCreatorClock(isPlaying);
+  const clock = useCreatorClock(isPlaying, !draftPreview);
   const here = !!track && playing?.uri === track.uri;
   const heard = state.settings.lyric_offset_ms;
   const position = clock.position + heard;
@@ -427,6 +427,7 @@ export function TtmlCreator({
 
   const lastPosition = useRef(0);
   useEffect(() => {
+    if (draftPreview) { lastPosition.current = 0; return; }
     const duration = track?.duration_ms ?? 0;
     const wrapped =
       here &&
@@ -438,7 +439,7 @@ export function TtmlCreator({
     if (!wrapped) return;
     onPlayer({ command: "pause" });
     onPlayer({ command: "seek", positionMs: 0 });
-  }, [position, here, isPlaying, track, onPlayer]);
+  }, [draftPreview, position, here, isPlaying, track, onPlayer]);
 
   const setLines = useCallback(
     (next: CreatorLine[] | ((previous: CreatorLine[]) => CreatorLine[])) =>
@@ -622,6 +623,7 @@ export function TtmlCreator({
   }, [focusLine, lines]);
   // Word and line drags cancel the press, which would leave the box focused.
   useEffect(() => {
+    if (draftPreview) return;
     const away = (event: PointerEvent) => {
       const box = focused();
       if (
@@ -633,7 +635,7 @@ export function TtmlCreator({
     };
     window.addEventListener("pointerdown", away, true);
     return () => window.removeEventListener("pointerdown", away, true);
-  }, []);
+  }, [draftPreview]);
   const applyText = () => {
     const parsed = keepTimings(lines, parseText(text));
     setLines(parsed);
@@ -1626,6 +1628,7 @@ export function TtmlCreator({
   const importRef = useRef(importFile);
   importRef.current = importFile;
   useEffect(() => {
+    if (draftPreview) return;
     const carriesFile = (event: DragEvent) =>
       !!event.dataTransfer?.types.includes("Files");
     const over = (event: DragEvent) => {
@@ -1646,7 +1649,7 @@ export function TtmlCreator({
       window.removeEventListener("dragover", over, true);
       window.removeEventListener("drop", drop, true);
     };
-  }, []);
+  }, [draftPreview]);
   const importPicker = useRef<HTMLInputElement>(null);
   const pickImport = () => importPicker.current?.click();
   const importInput = (
@@ -1832,6 +1835,12 @@ export function TtmlCreator({
       </div>
     </div>
   );
+
+  const speedControl = (showAudioPicker: boolean) => <CreatorSpeed speed={shownSpeed} min={MIN_SPEED} max={MAX_SPEED}
+    disabled={!here || (!state.speedEnabled && !replayAvailable)} showAudioPicker={showAudioPicker}
+    openAudio={here ? openAudio : undefined} onChange={(value) => slideSpeed(clampSpeed(value))} />;
+
+  if (draftPreview) return playbar?.speed && here ? createPortal(speedControl(false), playbar.speed) : null;
 
   if (!track)
     return (
@@ -2951,11 +2960,7 @@ export function TtmlCreator({
         <TtmlBar position={position} duration={track.duration_ms}
           peaks={peaks?.uri === track.uri ? peaks.values : null} spans={barSpans} onSeek={seek}
           track={playing?.uri === track.uri ? playing : track} recording={here ? recording : undefined} />, barSlot)}
-      {barSlot && createPortal(
-        <CreatorSpeed speed={shownSpeed} min={MIN_SPEED} max={MAX_SPEED}
-          disabled={!here || (!state.speedEnabled && !replayAvailable)}
-          openAudio={here ? openAudio : undefined}
-          onChange={(value) => slideSpeed(clampSpeed(value))} />, playbar?.speed ?? barSlot)}
+      {barSlot && createPortal(speedControl(true), playbar?.speed ?? barSlot)}
       {playbar?.play && here && state.speedEnabled && createPortal(
         <CreatorPlay playing={isPlaying} onToggle={onToggle} />, playbar.play)}
       {barSlot && createPortal(

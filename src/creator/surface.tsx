@@ -18,7 +18,7 @@ import { couldBeComplete, recordedCoverage, recordingPercent, savedAudioCleared,
 import { recordedAudioSaved, type SpotifyCapture } from "./spotify-capture";
 import { downloadRecording, recordingExportEnabled, type RecordingFormat } from "./recording-export";
 import { readRecordingMetadata } from "./recording-metadata";
-import { useCreatorPlaybar } from "./playbar";
+import { useCreatorPlaybar, usePreviewTransport } from "./playbar";
 import { useCreatorRepeat } from "./repeat";
 import { creatorPitchSpectrum, creatorSpectrum, creatorWaveform } from "./audio";
 import { TtmlCreator } from "./ttml-creator";
@@ -71,7 +71,7 @@ export function CreatorSurface({ host, view: owner, settings, close, previewing,
   const [root, setRoot] = useState<HTMLDivElement | null>(null);
   const [portal, setPortal] = useState<HTMLDivElement | null>(null);
   const [bar, setBar] = useState<HTMLDivElement | null>(null);
-  const playbar = useCreatorPlaybar(view, !!current, settings.reduce_motion);
+  const playbar = useCreatorPlaybar(view, !!current, settings.reduce_motion, previewing);
   const [seed, setSeed] = useState<{ uri: string; lyrics?: Lyrics }>();
   const [notice, setNotice] = useState<{ message: string; error: boolean }>();
   const [audio, setAudio] = useState<EditorAudio>();
@@ -140,7 +140,8 @@ export function CreatorSurface({ host, view: owner, settings, close, previewing,
     return () => { live = false; };
   }, [captured, current?.uri, deletingRecording, duration, fullRecording, notify, saved?.frames, saved?.sampleRate]);
 
-  useCreatorRepeat(host, notify);
+  useCreatorRepeat(host, notify, !previewing);
+  useLayoutEffect(() => { if (previewing) clip.current = undefined; }, [previewing]);
 
   const sourceKey = enabledSources(settings).join(",");
   useEffect(() => {
@@ -249,19 +250,31 @@ export function CreatorSurface({ host, view: owner, settings, close, previewing,
     player({ command: (element ? !element.paused : host.playing()) ? "pause" : "play" });
   }, [audioForSong, host, player]);
 
+  const playback = useMemo<CreatorPlayback | undefined>(() => audioForSong && current ? {
+    trackId: current.id, playing: isPlaying, read, toggle,
+    seek: (positionMs) => player({ command: "seek", positionMs }),
+  } : undefined, [audioForSong, current?.id, isPlaying, player, read, toggle]);
   useLayoutEffect(() => {
-    if (!audioForSong || !current) return;
-    onLocalPlayback({ trackId: current.id, playing: isPlaying, read, toggle,
-      seek: (positionMs) => player({ command: "seek", positionMs }) });
+    if (!playback) return;
+    onLocalPlayback(playback);
     return () => onLocalPlayback(undefined);
-  }, [audioForSong, current?.id, isPlaying, onLocalPlayback, player, read, toggle]);
+  }, [playback, onLocalPlayback]);
+  const stopLocalForSpotify = useCallback(() => {
+    audioLoad.current++;
+    audioElement.current?.pause();
+    setSpotifyOnly(current?.uri);
+    setAudio(undefined);
+  }, [current?.uri]);
+  usePreviewTransport(view, host, previewing ? playback : undefined, stopLocalForSpotify);
 
   useLayoutEffect(() => {
+    if (previewing && !audioForSong) return;
     function onSpace(event: KeyboardEvent) {
       if ((event.code !== "Space" && event.key !== " ") || event.altKey || event.ctrlKey ||
         event.metaKey || event.shiftKey || event.isComposing) return;
 
       const target = event.composedPath()[0];
+      if (previewing && target instanceof view.Element && target.closest("button, a[href], input, select, textarea, [contenteditable]")) return;
       event.stopImmediatePropagation();
       if (target instanceof view.Element && target.closest(
         "textarea, input:is(:not([type]), [type='text'], [type='search'], [type='number'], [type='password'], [type='email'], [type='url'], [type='tel']), [contenteditable]:not([contenteditable='false'])",
@@ -277,7 +290,7 @@ export function CreatorSurface({ host, view: owner, settings, close, previewing,
       view.removeEventListener("keydown", onSpace, true);
       view.removeEventListener("keyup", onSpace, true);
     };
-  }, [toggle, view]);
+  }, [audioForSong, previewing, toggle, view]);
 
   const playClip = useCallback((uri: string, from: number, end: number) => {
     if (uri !== current?.uri || end <= from) return;
@@ -293,6 +306,7 @@ export function CreatorSurface({ host, view: owner, settings, close, previewing,
   }, [audioForSong?.replay, current?.uri, notify, player, rate]);
 
   useEffect(() => {
+    if (previewing) return;
     const timer = view.setInterval(() => {
       const active = clip.current;
       if (!active) return;
@@ -306,7 +320,7 @@ export function CreatorSurface({ host, view: owner, settings, close, previewing,
       }
     }, 20);
     return () => view.clearInterval(timer);
-  }, [current?.uri, player, read, view]);
+  }, [current?.uri, player, previewing, read, view]);
   const returnToSpotify = useCallback(() => {
     const element = audioElement.current;
     const uri = `spotify:track:${host.track()?.id}`;
@@ -342,26 +356,27 @@ export function CreatorSurface({ host, view: owner, settings, close, previewing,
 
   useEffect(() => {
     const uri = current?.uri;
-    if (!uri || !fullRecording || spotifyOnly === uri || audioForSong || deletingRecording ||
+    if (previewing || !uri || !fullRecording || spotifyOnly === uri || audioForSong || deletingRecording ||
       activeUri.current !== uri || uri !== `spotify:track:${host.track()?.id}`) return;
     const position = host.position();
     const resume = host.playing() && position < fullRecording.endMs - 100;
     activateRecording(uri, fullRecording, 1, resume, position);
-  }, [activateRecording, audioForSong, current?.uri, deletingRecording, fullRecording, host, spotifyOnly]);
+  }, [activateRecording, audioForSong, current?.uri, deletingRecording, fullRecording, host, previewing, spotifyOnly]);
 
   async function replayCaptured(speed: number) {
     if (!current || current.id !== host.track()?.id) return;
     const generation = ++audioLoad.current;
     const position = host.position();
+    const reportError = previewing ? host.notifyError : (message: string) => notify(message, true);
     let replay: Awaited<ReturnType<typeof captured.read>>;
     try { replay = await captured.read(current.uri, position, duration); }
     catch {
-      if (generation === audioLoad.current && activeUri.current === current.uri) notify("Couldn’t open the saved recording.", true);
+      if (generation === audioLoad.current && activeUri.current === current.uri) reportError("Couldn’t open the saved recording.");
       return;
     }
     if (generation !== audioLoad.current || activeUri.current !== current.uri || current.id !== host.track()?.id) return;
-    if (!replay) { notify("Share Spotify audio and play the section first.", true); return; }
-    activateRecording(current.uri, replay, speed, true, position);
+    if (!replay) { reportError("Share Spotify audio and play the section first."); return; }
+    activateRecording(current.uri, replay, speed, !previewing || host.playing(), position);
   }
 
   async function removeRecording() {
@@ -462,7 +477,14 @@ export function CreatorSurface({ host, view: owner, settings, close, previewing,
       data-full-recording={audioForSong.replay?.full ? "" : undefined}
       onPlay={() => setLocalPlaying(true)} onPause={() => setLocalPlaying(false)} onEnded={(event) => {
         setLocalPlaying(false);
-        if (audioForSong.replay?.full && host.repeat() === "track") event.currentTarget.currentTime = 0;
+        if (!audioForSong.replay?.full) return;
+        if (host.repeat() === "track") {
+          event.currentTarget.currentTime = 0;
+          if (previewing) void event.currentTarget.play().catch(() => {});
+        } else if (previewing && current?.id === host.track()?.id) {
+          stopLocalForSpotify();
+          host.next();
+        }
       }} />}
     <div className="lyssna-creator-body">
       {root && portal && <CreatorEnvironment.Provider value={{ root, portal, view, read, capture, waveform, spectrogram,
@@ -475,7 +497,7 @@ export function CreatorSurface({ host, view: owner, settings, close, previewing,
         spectrumKey: audio?.buffer ? audio.url : "spotify", spectrumAudioUri: audio?.buffer ? audio.uri : undefined,
         openAudio, playClip, manageStoredData }}>
         <TtmlCreator state={state} onPlayer={player} onToggle={toggle} draftPreview={previewing}
-          onSpeed={setSpeed} notify={notify} barSlot={playbar?.wave ?? bar} playbar={playbar}
+          onSpeed={setSpeed} notify={notify} barSlot={previewing ? undefined : playbar?.wave ?? bar} playbar={playbar}
           onClose={close}
           onParse={async (filename, text, song) => {
             const ms = song?.duration_ms ?? 0;
@@ -527,7 +549,7 @@ export function CreatorSurface({ host, view: owner, settings, close, previewing,
           }} />
       </CreatorEnvironment.Provider>}
     </div>
-    {!playbar && <div className="lyssna-creator-transport" ref={setBar} />}
+    {!previewing && !playbar && <div className="lyssna-creator-transport" ref={setBar} />}
     <div className="lyssna-creator-portals" ref={setPortal} />
     {notice && <p className="lyssna-creator-notice" role={notice.error ? "alert" : "status"}>{notice.message}</p>}
   </div>;
