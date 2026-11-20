@@ -31,6 +31,7 @@ import { startEnhancements } from "./enhancements";
 import { startPreferenceSync } from "./preference-sync";
 import { playbarViewButtons } from "./playbar-fullscreen";
 import { quickEffects } from "./quick-effects";
+import { DJ_COVER, DJInterlude } from "./dj-interlude";
 import fontCss from "./fonts/fonts.css?inline";
 import desktopCss from "./lyssna/lyrics.css?inline";
 import settingsCss from "./lyssna/settings.css?inline";
@@ -193,7 +194,8 @@ function NowPlayingLyrics({ track, playing, settings, host, open, expand }: {
   const expandLabel = expanded ? "Exit expanded lyrics" : "Expand lyrics";
   const collapseLabel = collapsed ? "Show lyrics" : "Collapse lyrics";
   return <aside className={`lyssna-now-playing-card lyric-preview${expanded ? " expanded" : ""}${collapsed ? " collapsed" : ""}${settings.reduce_motion ? " reduce-motion" : ""}`}
-    aria-label="Lyssna Lyrics preview" data-has-lyrics={hasLyrics || undefined} style={fonts}>
+    aria-label="Lyssna Lyrics preview" data-has-lyrics={hasLyrics || undefined}
+    style={{ ...fonts, "--lyric-size": `${settings.lyric_size}px` } as CSSProperties}>
     <header>
       <h2>Lyrics</h2>
       <div className="lyssna-now-playing-actions">
@@ -227,9 +229,9 @@ function NowPlayingBackdrop({ host, panel }: { host: Host; panel: HTMLElement })
 }
 
 function PopoutView({ host, view, close }: { host: Host; view: Window; close: () => void }) {
-  const { track, playing } = usePlayback(host);
+  const { track, playing, narrating } = usePlayback(host, true);
   const settings = useLiveSettings();
-  return <LyricsPopout host={host} view={view} close={close} track={track} playing={playing} settings={settings}>
+  return <LyricsPopout host={host} view={view} close={close} track={track} playing={playing} settings={settings} narrating={narrating}>
     {track && <LyricsForTrack key={track.id} track={track} host={host} playing={playing} settings={settings} view={view} />}
   </LyricsPopout>;
 }
@@ -244,8 +246,8 @@ const rangeFocus = {
   onBlur: clearPointerFocus,
 };
 
-function FullscreenControls({ host, playing, settings, view, trackId }: {
-  host: Host; playing: boolean; settings: Settings; view: Window; trackId?: string;
+function FullscreenControls({ host, playing, settings, view, trackId, narrating }: {
+  host: Host; playing: boolean; settings: Settings; view: Window; trackId?: string; narrating: boolean;
 }) {
   const position = usePosition(host, playing, view);
   const { liked, shuffle, repeat, canJumpDJ, activate, cycleRepeat } = usePlaybackControls(host, trackId, true);
@@ -278,7 +280,7 @@ function FullscreenControls({ host, playing, settings, view, trackId }: {
       <div className="lyrics-glass-seek" style={{ "--range": `${elapsed / Math.max(1, duration) * 100}%` } as CSSProperties}>
         <span className="lyrics-glass-fill" aria-hidden="true" />
         <input aria-label="Seek position" type="range" min={0} max={duration || 1} {...rangeFocus}
-          value={elapsed} onChange={(event) => host.seek(event.target.valueAsNumber)} />
+          disabled={narrating || !duration} value={elapsed} onChange={(event) => host.seek(event.target.valueAsNumber)} />
       </div>
       <time>{total}</time>
     </div>
@@ -320,7 +322,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
   onSidebarCover?(cover?: string): void;
 }) {
   const externalCinema = view !== window;
-  const { track, playing } = usePlayback(host);
+  const { track, playing, narrating } = usePlayback(host, true);
   const settings = useLiveSettings();
   const [showSettings, setShowSettings] = useState(false);
   const [fullscreen, setFullscreen] = useState(fullscreenRequest > 0);
@@ -336,7 +338,8 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
   const fileInput = useRef<HTMLInputElement>(null);
   const importTrack = useRef<Track | null>(null);
   const fonts = useAppFonts(settings, view.document);
-  const coverColour = useArtworkColor(track?.cover);
+  const artwork = narrating ? DJ_COVER : track?.cover;
+  const coverColour = useArtworkColor(artwork);
   const canvasEnabled = settings.canvas_lyrics && !settings.lyrics_hide_artwork;
   const canvasInfo = useCanvas(host, track?.id, canvasEnabled);
   const [unavailableCanvas, setUnavailableCanvas] = useState<CanvasInfo>();
@@ -496,24 +499,29 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
     return () => view.document.removeEventListener("keydown", keyboard);
   });
 
-  const hasAmbience = track?.cover && (background === "animated" || background === "static");
+  const hasAmbience = artwork && (background === "animated" || background === "static");
   const banner = background === "artist" && artistHeader?.uri === artistUri ? artistHeader?.url : undefined;
-  const backgroundImage = background === "cover" || background === "artist" ? banner || track?.cover : undefined;
-  const className = `lyrics-page ${canvas ? "canvas-lyrics" : ""} ${narrow || settings.lyrics_compact ? "narrow" : ""}
+  const backgroundImage = background === "cover" || background === "artist" ? banner || artwork : undefined;
+  const compact = narrow || settings.lyrics_compact;
+  const className = `lyrics-page ${narrating ? "dj-narration" : ""} ${canvas ? "canvas-lyrics" : ""} ${compact ? "narrow" : ""}
     ${settings.lyrics_hide_artwork ? "no-artwork" : ""} ${settings.lyrics_artwork_right ? "artwork-right" : ""}
     ${background === "color" ? "colour-background" : ""} ${settings.lyrics_toolbar_bottom ? "toolbar-bottom" : ""}
     ${settings.reduce_motion ? "reduce-motion" : ""} ${settings.glass_seek ? "" : "flat-seek"}`;
   const pageStyle = { ...fonts, "--lyric-size": `${Math.round(settings.lyric_size * 1.6)}px`,
     "--lyrics-cover-color": coverColour, "--hero": coverColour } as CSSProperties;
+  const artworkDock = !!track && !canvas && !compact && !settings.lyrics_hide_artwork;
+  const playback = (fullscreen || externalCinema) && <FullscreenControls host={host} playing={playing} settings={settings}
+    view={view} trackId={track?.id} narrating={narrating} />;
   return <>
-    {hasAmbience && <Ambience image={track.cover} animate={playing && background === "animated"}
+    {hasAmbience && <Ambience image={artwork} animate={playing && background === "animated"}
       reduceMotion={settings.reduce_motion} followCanvas={canvas ? "window" : false} />}
     {backgroundImage && <img className="lyrics-background" src={backgroundImage}
       style={{ "--artwork-blur": `${settings.lyrics_background_blur}px` } as CSSProperties}
       onError={banner ? () => setArtistHeader((current) => current?.url === banner && current.uri === artistUri ? undefined : current) : undefined} alt="" />}
     <section ref={lyricsPage} className={className} aria-label="Lyssna Lyrics" style={pageStyle}
       onPointerMove={wakeTools} onPointerLeave={sleepTools} onKeyDownCapture={wakeTools}>
-      {track ? <>
+      {narrating && <DJInterlude playing={playing} />}
+      {!narrating && (track ? <>
         <div className="lyrics-album">
           {canvas ? <CanvasArtwork key={`${track.id}:${canvas.fileId ?? canvas.url}`} info={canvas} cover={track.cover}
             playing={playing && !settings.reduce_motion} onUnavailable={setUnavailableCanvas} />
@@ -521,9 +529,10 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
               key={track.cover} src={track.cover} alt="" /></div>}
           <TrackMetadata host={host} track={track} year={year} yearPosition={settings.lyrics_year_position}
             reduceMotion={settings.reduce_motion} artistFirst={!!canvas} />
+          {artworkDock && playback}
         </div>
         <div className="lyrics-body"><LyricsForTrack key={track.id} track={track} host={host} playing={playing} settings={settings} view={view} fullView /></div>
-      </> : <div className="lyrics-message"><Music2 /><h2>Play something you love</h2><p>Your lyrics will appear here.</p></div>}
+      </> : <div className="lyrics-message"><Music2 /><h2>Play something you love</h2><p>Your lyrics will appear here.</p></div>)}
       {track && settings.lyrics_visualiser && <SpotifyVisualiser key={track.id} host={host} trackId={track.id}
         opacity={settings.lyrics_visualiser_opacity} playing={playing && !settings.reduce_motion} />}
       <div className="lyrics-toolbar" role="toolbar" aria-label="View controls">
@@ -554,7 +563,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
         <button type="button" className="icon-button" title="Close lyrics" aria-label="Close lyrics" onClick={close}><X size={18} /></button>
       </div>
       {!showSettings && notice && <div className="lyssna-popout-error" role="status">{notice}</div>}
-      {(fullscreen || externalCinema) && <FullscreenControls host={host} playing={playing} settings={settings} view={view} trackId={track?.id} />}
+      {!artworkDock && playback}
     </section>
     <input ref={fileInput} type="file" hidden accept=".ttml,.xml,application/ttml+xml" onChange={(event) => {
       const file = event.currentTarget.files?.[0];

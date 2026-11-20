@@ -30,6 +30,8 @@ export type CanvasInfo = { fileId?: string; type?: string; url?: string };
 type SpotifyTrack = {
   uri?: string;
   name?: string;
+  provider?: string;
+  type?: string;
   artists?: Array<{ name?: string; uri?: string; id?: string }>;
   images?: Array<{ url?: string }>;
   album?: { uri?: string; name?: string; images?: Array<{ url?: string }>; release_date?: string; releaseDate?: string };
@@ -39,6 +41,7 @@ type PlayerState = {
   item?: SpotifyTrack;
   isPaused?: boolean;
   context?: { uri?: string; metadata?: Record<string, string> };
+  restrictions?: { disallowSeekingReasons?: string[] };
   signals?: string[];
   nextItems?: SpotifyTrack[];
 };
@@ -153,6 +156,17 @@ const djContexts = new Set([
   "spotify:playlist:37i9dQZF1EYkqdzjmSSxKE",
   "spotify:playlist:37i9dQZF1EYkqdzjrzxMWI",
 ]);
+function isDJContext(context?: PlayerState["context"]) {
+  return context?.metadata?.lexicon_set_type === "your_dj" || djContexts.has(context?.uri ?? "");
+}
+
+function isDJNarration(state?: PlayerState | null) {
+  if (!state?.item) return false;
+  const { item } = state;
+  if (item.provider?.startsWith("narration") ||
+    state.restrictions?.disallowSeekingReasons?.some((reason) => reason.includes("narration"))) return true;
+  return isDJContext(state.context) && (item.metadata?.is_narration === "true" || item.type === "unknown");
+}
 const nativeLyricsButton = 'button[data-testid="lyrics-button"]';
 const otherLyricsButtons = `${nativeLyricsButton}, #LyssnaLyrics_PageButton, #LyssnaLyrics_FullscreenButton`;
 const lyricsRoute = (location?: HistoryLocation) => /^\/(?:lyrics|spicylyrics|lyssnalyrics)(?:\/|$)/i.test(location?.pathname ?? "");
@@ -199,14 +213,14 @@ export function getHost() {
   const canvases = new Map<string, Promise<CanvasInfo | null | undefined>>();
   const analyses = new Map<string, Promise<AudioAnalysis | null>>();
   const currentTrack = () => kit?.Player.state?.item ?? kit?.Player.track ?? spice?.Player.data?.item;
+  const playerAPI = () => (kit?.Platform.PlayerAPI as PlayerAPI | undefined) ?? spice?.Player.origin;
+  const playerState = (player = playerAPI()) => player?._state ?? kit?.Player.state ?? spice?.Player.data;
   function djAction() {
-    const player = (kit?.Platform.PlayerAPI as PlayerAPI | undefined) ?? spice?.Player.origin;
-    const state = player?._state ?? kit?.Player.state ?? spice?.Player.data;
+    const player = playerAPI();
+    const state = playerState(player);
     if (!player || !state) return;
     if (player.sendSignal && state.signals?.includes("jump")) return () => player.sendSignal?.("jump");
-    const context = state.context;
-    if (!player.skipTo || !state.item || !context || state.item.metadata?.is_narration === "true" ||
-      (context.metadata?.lexicon_set_type !== "your_dj" && !djContexts.has(context.uri ?? ""))) return;
+    if (!player.skipTo || !state.item || !isDJContext(state.context) || isDJNarration(state)) return;
     const queue = state.nextItems;
     const jump = queue?.find((item) => item.metadata?.jump_track) ??
       queue?.find((item) => item.metadata?.["narration.intro.ssml"] || item.metadata?.["narration.jump.ssml"]);
@@ -336,6 +350,7 @@ export function getHost() {
     toggleLiked: () => kit ? kit.Player.setLiked?.(!kit.Player.liked) : spice?.Player.toggleHeart?.(),
     canJumpDJ: () => !!djAction(),
     jumpDJ: () => djAction()?.(),
+    djNarrating: () => isDJNarration(playerState()),
     artistHeader,
     releaseYear,
     trackCanvas,

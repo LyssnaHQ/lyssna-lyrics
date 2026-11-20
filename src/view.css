@@ -176,6 +176,82 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   text-align: center;
 }
 
+.lyssna-popout-view .lyrics-popout > .lyssna-popout-grab {
+  position: absolute;
+  inset: 0 60px auto;
+  height: 24px;
+  z-index: 3;
+  -webkit-app-region: drag;
+  app-region: drag;
+  user-select: none;
+  cursor: grab;
+}
+
+.lyssna-popout-view .lyssna-popout-grab::before {
+  content: "";
+  display: block;
+  width: 40px;
+  height: 4px;
+  margin: 9px auto 0;
+  border-radius: 4px;
+  background: #fff6;
+  pointer-events: none;
+}
+
+.lyssna-lyrics-view:has(> .dj-narration) > .ambience,
+.lyssna-popout-view .dj-narration > .ambience {
+  background: radial-gradient(ellipse at 30% 40%, #1360a9, #0c2035 72%);
+}
+
+.lyssna-lyrics-view .lyssna-dj-interlude {
+  grid-column: 1 / -1;
+  grid-row: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: min(5cqw, 56px);
+  width: 100%;
+  min-width: 0;
+  margin: auto;
+}
+
+.lyssna-lyrics-view .lyssna-dj-interlude img {
+  display: block;
+  width: min(30cqw, 42vh, 320px);
+  aspect-ratio: 1;
+  border-radius: 8px;
+  box-shadow: 0 18px 50px #0005;
+}
+
+.lyssna-lyrics-view .lyssna-dj-interlude h2 {
+  margin: 0 0 8px;
+  font-size: 32px;
+  line-height: 1.15;
+}
+
+.lyssna-lyrics-view .lyssna-dj-interlude p {
+  margin: 0;
+  font-size: 16px;
+  color: #ffffffbf;
+}
+
+.lyssna-lyrics-view :is(.lyrics-page.narrow, .lyrics-popout) .lyssna-dj-interlude {
+  flex-direction: column;
+  text-align: center;
+}
+
+.lyssna-lyrics-view :is(.lyrics-page.narrow, .lyrics-popout) .lyssna-dj-interlude img {
+  width: min(30cqw, 25vh, 144px);
+}
+
+.lyssna-lyrics-view .lyrics-popout .lyssna-dj-interlude h2 {
+  font-size: 24px;
+}
+
+.lyssna-lyrics-view .lyrics-page.artwork-right:not(.narrow) .lyssna-dj-interlude img {
+  order: 1;
+}
+
 .lyssna-popout-view .lyrics-popout:focus-within :is(.lyrics-popout-close, .lyrics-popout-controls) {
   opacity: 1;
   pointer-events: auto;
@@ -360,7 +436,7 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
 }
 
 .lyssna-lyrics-view.immersive .canvas-lyrics:not(.narrow):has(> .lyssna-playback:is(:hover, :focus-within, [data-always="both"], [data-always="time"], [data-always="controls"])) {
-  --canvas-playback-offset: 78px;
+  --canvas-playback-offset: 100px;
 }
 
 .lyssna-lyrics-view .lyrics-visualiser {
@@ -571,7 +647,6 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
 }
 
 .lyssna-npv .compact .lyric-scroll {
-  --lyric-size: clamp(26px, 8.5cqw, 34px);
   padding-inline: 10px;
   mask-image: linear-gradient(transparent, #000 min(var(--scrolled), 9%), #000 80%, transparent);
 }
@@ -669,6 +744,14 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   margin-inline: 0.35em;
 }
 
+.lyssna-lyrics-view .lyrics-page .lyrics-album .lyrics-details .lyrics-title .song-title {
+  font-size: 36px;
+}
+
+.lyssna-lyrics-view .lyrics-page .lyrics-album .lyrics-details .lyrics-artists {
+  font-size: 20px;
+}
+
 .lyssna-lyrics-view .lyrics-artist-names .marquee-content {
   padding-inline: 0.15em;
 }
@@ -696,7 +779,7 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
 }
 
 .lyssna-lyrics-view .lyrics-display {
-  --lyrics-credit-size: clamp(15px, calc(min(var(--lyric-size), 4.6cqw) * 0.34), 26px);
+  --lyrics-credit-size: clamp(15px, calc(var(--lyric-size) * 0.34), 26px);
 }
 
 .lyssna-lyrics-view .lyrics-display.compact {
@@ -1252,15 +1335,45 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
 }
 
 .lyssna-lyrics-view .lyssna-playback {
+  container-type: inline-size;
   position: absolute;
   z-index: 9;
   bottom: 20px;
   left: 50%;
-  width: min(420px, 80%);
+  width: min(520px, 92%);
   transform: translateX(-50%);
   display: grid;
   justify-items: center;
   gap: 6px;
+}
+
+.lyssna-lyrics-view .lyrics-album:has(> .lyssna-playback) {
+  --lyrics-art: min(100%, 46vh, max(64px, calc(100vh - 235px)));
+}
+
+.lyssna-lyrics-view .lyrics-album > .lyssna-playback {
+  position: relative;
+  inset: auto;
+  margin: 18px auto 0;
+  transform: none;
+}
+
+.lyssna-lyrics-view.immersive .lyrics-page.narrow:not(.canvas-lyrics, .no-artwork, .dj-narration):has(> .lyssna-playback) {
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+.lyssna-lyrics-view.immersive .lyrics-page.no-artwork:not(.dj-narration):has(> .lyssna-playback) {
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+.lyssna-lyrics-view.immersive .lyrics-page:is(.no-artwork, .narrow:not(.canvas-lyrics)):not(.dj-narration) > .lyssna-playback {
+  position: relative;
+  inset: auto;
+  grid-row: 2;
+  grid-column: 1 / -1;
+  justify-self: center;
+  margin-block: 8px;
+  transform: none;
 }
 
 .lyssna-lyrics-view.immersive .canvas-lyrics:not(.narrow) > .lyssna-playback {
@@ -1285,8 +1398,9 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   transition: opacity 180ms;
 }
 
-.lyssna-lyrics-view .lyssna-seek .lyrics-glass-seek {
+.lyssna-lyrics-view.immersive .lyssna-playback .lyssna-seek .lyrics-glass-seek {
   flex: 1;
+  height: 12px;
 }
 
 .lyssna-lyrics-view .lyssna-seek time {
@@ -1295,18 +1409,19 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   text-align: center;
 }
 
-.lyssna-lyrics-view .lyssna-transport svg {
-  width: 18px;
-  height: 18px;
+.lyssna-lyrics-view .lyssna-transport > .icon-button svg {
+  width: clamp(20px, 5cqw, 26px);
+  height: clamp(20px, 5cqw, 26px);
 }
 
 .lyssna-lyrics-view .lyssna-transport {
-  gap: clamp(3px, 1cqw, 12px);
+  gap: clamp(3px, 1.6cqw, 10px);
 }
 
 .lyssna-lyrics-view .lyssna-transport > .icon-button {
-  flex: 0 1 34px;
+  flex: 0 1 48px;
   min-width: 22px;
+  height: clamp(36px, 9.2cqw, 48px);
 }
 
 .lyssna-lyrics-view .lyssna-transport > .icon-button[aria-pressed="true"],
@@ -1315,8 +1430,8 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
 }
 
 .lyssna-lyrics-view .lyssna-playback .lyrics-volume-pill.lyssna-volume {
-  --pill: 24px;
-  width: min(116px, 35%);
+  --pill: 30px;
+  width: min(146px, 35%);
   min-width: 42px;
   height: var(--pill);
   position: relative;
@@ -1358,7 +1473,7 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
 .lyssna-lyrics-view .lyssna-volume .lyrics-volume-icon {
   position: absolute;
   inset: 0 auto 0 0;
-  width: 26px;
+  width: 30px;
   height: auto;
   display: grid;
   place-items: center;
@@ -1368,6 +1483,11 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   background: transparent;
   mix-blend-mode: difference;
   cursor: pointer;
+}
+
+.lyssna-lyrics-view .lyssna-volume .lyrics-volume-icon svg {
+  width: 20px;
+  height: 20px;
 }
 
 .lyssna-lyrics-view .lyssna-volume:has(:focus-visible:not([data-pointer-focus])) {

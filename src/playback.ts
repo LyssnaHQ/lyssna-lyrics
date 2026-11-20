@@ -2,9 +2,10 @@ import { useEffect, useState } from "react";
 import type { Host } from "./host";
 import { frameDue } from "./lyssna/frame-cap";
 
-export function usePlayback(host: Host) {
+export function usePlayback(host: Host, watchNarration = false) {
   const [track, setTrack] = useState(host.track);
   const [playing, setPlaying] = useState(host.playing);
+  const [narrating, setNarrating] = useState(() => watchNarration && host.djNarrating());
   useEffect(() => {
     const update = () => {
       const next = host.track();
@@ -12,12 +13,13 @@ export function usePlayback(host: Host) {
         next?.artistUri === old?.artistUri && next?.year === old?.year &&
         next?.isrc === old?.isrc && next?.albumUri === old?.albumUri ? old : next);
       setPlaying(host.playing());
+      if (watchNarration) setNarrating(host.djNarrating());
     };
-    const unwatch = host.watch(update);
+    const unwatch = watchNarration ? host.watchControls(update) : host.watch(update);
     update();
     return unwatch;
-  }, [host]);
-  return { track, playing };
+  }, [host, watchNarration]);
+  return { track: narrating ? null : track, playing, narrating };
 }
 
 export function usePosition(host: Host, playing: boolean, view: Window = window) {

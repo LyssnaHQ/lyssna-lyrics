@@ -45,6 +45,12 @@ const lyrics = [
   slice(styles, "\n.lyrics-display.simple-lyrics .lyric-line {", "\n.ttml-draft-banner {"),
 ].map((css) => css
   .replaceAll(':root:not([data-animator="Legacy"])', ':is(.lyrics-display, .gravity-lyrics):not([data-animator="Legacy"])')
+  .replaceAll("min(var(--lyric-size, 58px), 4.6cqw)", "var(--lyric-size, 58px)")
+  .replace("clamp(23px, 3.6cqw, var(--lyric-size))", "var(--lyric-size)")
+  .replace(/\/\* Stacked \(narrow\) layouts give lyrics[^\n]*\n\.lyrics-page\.narrow \.lyric-line,\n\.lyrics-page\.narrow \.lyric-wait \{[^}]*\}\n/, "")
+  .replace("  font-size: clamp(22px, 4.2cqw, var(--lyric-size));",
+    "  --lead-lyric-size: calc(var(--lyric-size) * 0.625);\n  font-size: var(--lead-lyric-size);")
+  .replace("calc(clamp(22px, 4.2cqw, var(--lyric-size)) * 0.58)", "calc(var(--lead-lyric-size) * 0.58)")
   .replace(/(\.gravity-word \.lyric-paint \{\n)  --glyph-bleed: 0em;\n  --sweep-edge: [^\n]+\n  padding: 0;\n  margin: 0;/, `$1  /* The mask needs room for italic overhang without widening the word. */
   --glyph-bleed: 0.45em;
   --sweep-width: calc(100% - 2 * var(--glyph-bleed));

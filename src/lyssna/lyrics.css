@@ -372,7 +372,7 @@
     clamp(32px, 4.5vh, 64px);
   font-size: clamp(
     15px,
-    calc(min(var(--lyric-size, 58px), 4.6cqw) * 0.3),
+    calc(var(--lyric-size, 58px) * 0.3),
     24px
   );
 }
@@ -466,16 +466,11 @@
 }
 .lyrics-page .lyric-line,
 .lyrics-page .lyric-wait {
-  --lead-lyric-size: clamp(23px, 3.6cqw, var(--lyric-size));
+  --lead-lyric-size: var(--lyric-size);
   font-size: var(--lead-lyric-size);
 }
 .lyrics-page .lyric-line.background-vocal {
   font-size: calc(var(--lead-lyric-size) * 0.58);
-}
-/* Stacked (narrow) layouts give lyrics the full width, so size them from it. */
-.lyrics-page.narrow .lyric-line,
-.lyrics-page.narrow .lyric-wait {
-  --lead-lyric-size: clamp(30px, 6.2cqw, var(--lyric-size));
 }
 .lyric-line:focus,
 .lyric-line:focus-visible {
@@ -1240,7 +1235,7 @@
   color: light-dark(#0000008c, #ffffff8c);
   font-size: clamp(
     15px,
-    calc(min(var(--lyric-size, 58px), 4.6cqw) * 0.34),
+    calc(var(--lyric-size, 58px) * 0.34),
     26px
   );
   line-height: 1.35;
@@ -1860,10 +1855,11 @@
 }
 .lyrics-popout .lyric-line,
 .lyrics-popout .lyric-wait {
-  font-size: clamp(22px, 4.2cqw, var(--lyric-size));
+  --lead-lyric-size: calc(var(--lyric-size) * 0.625);
+  font-size: var(--lead-lyric-size);
 }
 .lyrics-popout .lyric-line.background-vocal {
-  font-size: calc(clamp(22px, 4.2cqw, var(--lyric-size)) * 0.58);
+  font-size: calc(var(--lead-lyric-size) * 0.58);
 }
 .lyrics-popout-message {
   margin: auto;

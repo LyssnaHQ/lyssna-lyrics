@@ -6,6 +6,7 @@ import { NextIcon, PauseIcon, PlayIcon, PreviousIcon, RepeatIcon, ShuffleIcon } 
 import { clock, usePlaybackControls, usePosition } from "./playback";
 import { useAppFonts } from "./lyssna/custom-fonts";
 import type { Settings } from "./settings";
+import { DJ_COVER, DJInterlude } from "./dj-interlude";
 
 export const pictureInPicture = (window as Window & {
   documentPictureInPicture?: {
@@ -13,17 +14,17 @@ export const pictureInPicture = (window as Window & {
   };
 }).documentPictureInPicture;
 
-function PopoutSeek({ host, playing, view }: { host: Host; playing: boolean; view: Window }) {
+function PopoutSeek({ host, playing, view, disabled }: { host: Host; playing: boolean; view: Window; disabled: boolean }) {
   const duration = host.duration();
   const position = usePosition(host, playing, view);
   const [seeking, setSeeking] = useState<number | null>(null);
   const shown = Math.max(0, Math.min(seeking ?? position, duration));
   function commit() {
-    if (seeking !== null) host.seek(seeking);
+    if (!disabled && seeking !== null) host.seek(seeking);
     setSeeking(null);
   }
   return <footer className="lyrics-popout-seek">
-    <input type="range" aria-label="Seek position" min={0} max={duration || 1} value={shown} disabled={!duration}
+    <input type="range" aria-label="Seek position" min={0} max={duration || 1} value={shown} disabled={disabled || !duration}
       style={{ "--range": `${100 * shown / (duration || 1)}%` } as CSSProperties}
       onChange={(event) => setSeeking(event.target.valueAsNumber)} onPointerUp={commit}
       onKeyUp={commit} onBlur={commit} onPointerCancel={() => setSeeking(null)} />
@@ -54,10 +55,13 @@ function PopoutControls({ host, track, playing }: { host: Host; track: Track | n
   </div>;
 }
 
-export function LyricsPopout({ host, view, close, track, playing, settings, children }: {
-  host: Host; view: Window; close: () => void; track: Track | null; playing: boolean; settings: Settings; children: ReactNode;
+export function LyricsPopout({ host, view, close, track, playing, settings, narrating, children }: {
+  host: Host; view: Window; close: () => void; track: Track | null; playing: boolean;
+  settings: Settings; narrating: boolean; children: ReactNode;
 }) {
   const fonts = useAppFonts(settings, view.document);
+  const artwork = narrating ? DJ_COVER : track?.cover;
+  const title = narrating ? "DJ" : track?.title;
   const [awake, setAwake] = useState(false);
   const sleep = useRef(0);
   function hide() {
@@ -71,8 +75,8 @@ export function LyricsPopout({ host, view, close, track, playing, settings, chil
   }
   useEffect(() => () => view.clearTimeout(sleep.current), [view]);
   useEffect(() => {
-    view.document.title = track ? `${track.title} · Lyrics` : "Lyssna Lyrics";
-  }, [track?.title, view]);
+    view.document.title = title ? `${title} · Lyrics` : "Lyssna Lyrics";
+  }, [title, view]);
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {
       if (event.key === "Escape") close();
@@ -80,17 +84,18 @@ export function LyricsPopout({ host, view, close, track, playing, settings, chil
     view.addEventListener("keydown", keydown);
     return () => view.removeEventListener("keydown", keydown);
   }, [view, close]);
-  return <section className="lyrics-popout" aria-label="Lyrics pop-out" data-awake={awake || undefined}
+  return <section className={`lyrics-popout${narrating ? " dj-narration" : ""}`} aria-label="Lyrics pop-out" data-awake={awake || undefined}
     onPointerMove={wake} onPointerLeave={hide}
     style={{ ...fonts, "--lyric-size": `${Math.round(settings.lyric_size * 1.6)}px` } as CSSProperties}>
-    {track?.cover && <Ambience image={track.cover} animate={playing} reduceMotion={settings.reduce_motion} />}
+    {artwork && <Ambience image={artwork} animate={playing} reduceMotion={settings.reduce_motion} />}
+    <div className="lyssna-popout-grab" aria-hidden="true" />
     <button type="button" className="icon-button lyrics-popout-close" aria-label="Close lyrics pop-out" onClick={close}><X size={18} /></button>
     <header className="lyrics-popout-title">
-      <strong>{track?.title ?? "Nothing playing"}</strong>
+      <strong>{title ?? "Nothing playing"}</strong>
       {track?.artists && <span>{track.artists}</span>}
     </header>
-    <main className="lyrics-popout-lyrics">{children}</main>
-    <PopoutSeek key={track?.id} host={host} playing={playing} view={view} />
+    <main className="lyrics-popout-lyrics">{narrating ? <DJInterlude playing={playing} /> : children}</main>
+    <PopoutSeek key={track?.id} host={host} playing={playing} view={view} disabled={narrating} />
     <PopoutControls host={host} track={track} playing={playing} />
   </section>;
 }
