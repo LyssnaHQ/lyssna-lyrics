@@ -34,7 +34,7 @@ export function LyricCredits({ lyrics, expanded = false, discord = false }: {
   discord?: boolean;
 }) {
   const { maker, uploader } = lyrics.attribution ?? {};
-  const source = lyrics.source === "Spicy Lyrics" && (maker || uploader) ? "Spicy Lyrics Community" : lyrics.source;
+  const source = lyrics.source;
   const timing = lyrics.estimated_words ? (lyrics.estimated_lines ? "(+ estimated line and word timing)" : "(+ estimated word timing)")
     : lyrics.split_words ? "(+ extra splits)" : "";
   return (

@@ -81,7 +81,7 @@
   background-color: light-dark(#0000000f, #ffffff0f);
 }
 
-.lyssna-lyrics-view :is(.lyrics-title, .lyrics-artists, .lyrics-popout-title, .lyric-source, .lyric-end-credits, .writer-credits) {
+.lyssna-lyrics-view :is(.lyrics-title, .lyrics-artists, .lyrics-popout-title, .lyric-source, .lyric-end-credits, .gravity-credits, .writer-credits) {
   font-family: var(--lyric-detail-font, inherit);
 }
 
@@ -443,6 +443,7 @@
 .lyssna-lyrics-view :is(.lyric-end-credits, .gravity-credits) :is(.writer-credits, .lyssna-provider-credits) {
   font-size: var(--lyrics-credit-size, 1em);
   line-height: 1.35;
+  overflow-wrap: anywhere;
 }
 
 .lyssna-lyrics-view :is(.lyric-end-credits, .gravity-credits) .writer-credits {
@@ -451,6 +452,10 @@
 
 .lyssna-lyrics-view .lyric-credits-row {
   align-items: start;
+}
+
+.lyssna-lyrics-view .lyric-credits-row .lyrics-up-next-text {
+  overflow-wrap: anywhere;
 }
 
 .lyssna-lyrics-view .has-pinned-footer > .lyric-scroll:has(> .lyric-end-credits),
@@ -464,6 +469,15 @@
 
 .lyssna-lyrics-view .lyric-pinned-footer {
   padding-top: 0.3em;
+}
+
+.lyssna-lyrics-view :is(.gravity-credits, .lyric-pinned-footer) {
+  max-height: none;
+  overflow: visible;
+}
+
+.lyssna-lyrics-view .gravity-credits {
+  padding-block: 0.25em;
 }
 
 .lyssna-lyrics-view .lyssna-provider-credits > div:first-child a {
@@ -513,11 +527,9 @@
 }
 
 .lyssna-lyrics-view .lyssna-credit-name {
+  min-width: 0;
   padding: 0.2em 0.3em;
   margin: -0.2em -0.3em;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   text-decoration: underline;
   text-underline-offset: 0.18em;
 }
