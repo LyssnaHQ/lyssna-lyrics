@@ -56,6 +56,27 @@
   background-color: var(--spice-button, #1ed760);
 }
 
+button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
+  display: none !important;
+}
+
+.lyssna-playbar-fullscreen {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  color: var(--spice-subtext, #b3b3b3);
+  background: transparent;
+  cursor: pointer;
+}
+
+.lyssna-playbar-fullscreen:is(:hover, :focus-visible) {
+  color: var(--spice-text, #fff);
+}
+
 .spotify-plus-disable-peek button[data-spotify-plus-disable-peek="true"] ~ button[data-spotify-plus-disable-peek="true"],
 .spotify-plus-disable-peek .main-nowPlayingBar-extraControls > button[data-spotify-plus-disable-peek="true"]:nth-child(n+2 of [data-spotify-plus-disable-peek="true"], :has(button[data-spotify-plus-disable-peek="true"])),
 .spotify-plus-disable-peek .main-nowPlayingBar-extraControls > :nth-child(n+2 of [data-spotify-plus-disable-peek="true"], :has(button[data-spotify-plus-disable-peek="true"])) button[data-spotify-plus-disable-peek="true"] {
@@ -95,6 +116,12 @@
 
 .lyssna-lyrics-view:is(.immersive, .lyssna-full-window) {
   position: fixed;
+}
+
+.lyssna-lyrics-view:fullscreen {
+  inset: 0;
+  width: 100%;
+  height: 100%;
 }
 
 .lyssna-lyrics-view.lyssna-slide-away > .lyrics-page {
@@ -445,11 +472,6 @@
   opacity: 0.75;
 }
 
-.lyssna-lyrics-view .lyssna-provider-credits a:is(:hover, :focus-visible) {
-  text-decoration: underline;
-  text-underline-offset: 0.18em;
-}
-
 .lyssna-lyrics-view .lyssna-provider-credits {
   position: static;
   font-weight: 500;
@@ -554,6 +576,7 @@
 
 .lyssna-lyrics-view .lyssna-provider-credits .lyssna-credit-profile {
   color: #fffc;
+  text-decoration: none;
 }
 
 .lyssna-lyrics-view .lyssna-credit-profile img {
@@ -569,7 +592,7 @@
   padding: 0.2em 0.3em;
   margin: -0.2em -0.3em;
   text-decoration: underline;
-  text-underline-offset: 0.18em;
+  text-underline-offset: 0.1em;
 }
 
 .lyssna-lyrics-view a.lyssna-credit-profile .lyssna-credit-name {
@@ -610,6 +633,20 @@
 .lyssna-lyrics-view .lyrics-toolbar {
   align-items: center;
   max-width: calc(100% - 32px);
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+.lyssna-lyrics-view.immersive:not(:fullscreen) .lyrics-page:not(.toolbar-bottom) > .lyrics-toolbar {
+  top: 64px;
+}
+
+.lyssna-lyrics-view.immersive .lyrics-page > .lyrics-toolbar {
+  pointer-events: auto;
+}
+
+.lyssna-lyrics-view.immersive .lyrics-page > .lyrics-toolbar:is(:hover, :focus-within) {
+  opacity: 1;
 }
 
 .lyssna-lyrics-view .lyrics-toolbar > .icon-button {
@@ -949,8 +986,14 @@
   transition: opacity 180ms;
 }
 
-.lyssna-lyrics-view .lyssna-seek input {
+.lyssna-lyrics-view .lyssna-seek .lyrics-glass-seek {
   flex: 1;
+}
+
+.lyssna-lyrics-view .lyssna-seek time {
+  min-inline-size: calc(var(--time-chars) * 1ch);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
 }
 
 .lyssna-lyrics-view .lyssna-transport svg {
@@ -958,13 +1001,41 @@
   height: 18px;
 }
 
-.lyssna-lyrics-view .lyssna-playback.glass input {
-  accent-color: #e6e6e6;
-  filter: drop-shadow(0 0 6px #fff6);
+.lyssna-lyrics-view .lyssna-playback .lyrics-volume-pill.lyssna-volume {
+  --pill: 24px;
+  width: min(116px, 35%);
+  height: var(--pill);
+}
+
+.lyssna-lyrics-view .lyssna-playback .lyrics-volume-pill.lyssna-volume.below {
+  width: min(82%, 340px);
+  transition: opacity 180ms;
+}
+
+.lyssna-lyrics-view .lyssna-volume .lyrics-volume-fill {
+  inset: 0 auto 0 0;
+  width: var(--range);
+  height: auto;
+}
+
+.lyssna-lyrics-view .lyssna-volume input {
+  writing-mode: horizontal-tb;
+  direction: ltr;
+}
+
+.lyssna-lyrics-view .lyssna-volume .lyrics-volume-icon {
+  inset: 0 auto 0 0;
+  width: 26px;
+  height: auto;
+}
+
+.lyssna-lyrics-view .lyssna-volume:has(:focus-visible) {
+  outline: 2px solid #ffffffb3;
+  outline-offset: 3px;
 }
 
 .lyssna-lyrics-view .lyssna-playback:not(:hover, :focus-within):not([data-always="both"], [data-always="time"]) .lyssna-seek,
-.lyssna-lyrics-view .lyssna-playback:not(:hover, :focus-within):not([data-always="both"], [data-always="controls"]) .lyssna-transport {
+.lyssna-lyrics-view .lyssna-playback:not(:hover, :focus-within):not([data-always="both"], [data-always="controls"]) :is(.lyssna-transport, .lyssna-volume.below) {
   opacity: 0;
 }
 

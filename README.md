@@ -11,7 +11,7 @@ With Node.js LTS installed, run `npm ci` and `npm run build`. `dist/` contains t
 - **Spicetify** accepts `loader/lyssna-lyrics.mjs` in its Extensions folder. Enable `lyssna-lyrics.mjs` and apply the configuration.
 - **SpotiKit** accepts the `dist/spotikit` folder in its Extensions folder.
 
-Open Lyssna from the microphone button in Spotify’s playbar. Older SpotiKit versions use the top bar. Use the full screen button or F11 to expand the main view. On clients that expose Document Picture-in-Picture, the pop-out button opens a floating lyrics window with playback controls. The gear opens Lyssna settings, where changes apply immediately and persist across Spotify restarts. The Build channel selector is under Advanced. Stable takes precedence on first launch, followed by Beta and Canary.
+Open Lyssna from the microphone button in Spotify’s playbar. Older SpotiKit versions use the top bar. Use the playbar’s fullscreen button to open lyrics across the display. In the lyrics view, the fullscreen button and F11 do the same. Hold Shift for cinema mode inside the Spotify window. On clients that expose Document Picture-in-Picture, the pop-out button opens a floating lyrics window with playback controls. The gear opens Lyssna settings, where changes apply immediately and persist across Spotify restarts. The Build channel selector is under Advanced. Stable takes precedence on first launch, followed by Beta and Canary.
 
 Artist Header uses the lead artist’s Spotify banner and falls back to the album cover. The Canvas setting uses the video Spotify exposes in Now playing. The visualiser uses Spotify’s track analysis. The host supplies these features when it has data for the current track.
 

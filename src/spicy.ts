@@ -73,6 +73,7 @@ function nativeProviderHost(): ProviderHost | undefined {
 }
 
 function makeBackground(host: ProviderHost) {
+  const lifetime = new AbortController();
   const frame = document.createElement("iframe");
   frame.title = "Spicy Lyrics provider";
   frame.inert = true;
@@ -83,6 +84,7 @@ function makeBackground(host: ProviderHost) {
 
   const subscriptions = new Map<string, Set<(event: unknown) => void>>();
   function stop() {
+    lifetime.abort();
     for (const [event, callbacks] of subscriptions) {
       for (const callback of callbacks) host.Player.removeEventListener(event, callback);
     }
@@ -121,9 +123,12 @@ function makeBackground(host: ProviderHost) {
     showNpvDynamicBg: false, showNoLyricsNotice: false, popupLyricsAllowed: false,
   })]]);
   const player = host.Player;
-  const history = { location: { pathname: "/" }, listen: () => noop, push: noop, goBack: noop };
+  // The official plugin opens its lyrics page only on this route.
+  const history = { location: { pathname: "/SpicyLyrics" }, listen: () => noop, push: noop, goBack: noop };
+  const tooltip = { setContent: noop, setProps: noop, destroy: noop };
   const noButton = class {
     element = doc!.createElement("button");
+    tippy = tooltip;
     register() {}
     deregister() {}
   };
@@ -163,12 +168,38 @@ function makeBackground(host: ProviderHost) {
       remove: (key: string) => store.delete(key),
     },
     Menu: { Item: noButton }, Topbar: { Button: noButton }, Playbar: { Button: noButton, Widget: noButton },
-    Keyboard: { ...(host as { Keyboard?: object }).Keyboard, registerImportantShortcut: noop },
+    Keyboard: { KEYS: (host as { Keyboard?: { KEYS?: object } }).Keyboard?.KEYS ?? {}, registerImportantShortcut: noop },
     PopupModal: { display: noop, hide: noop },
-    Tippy: () => ({ setContent: noop, setProps: noop, destroy: noop }),
+    Tippy: () => tooltip,
     showNotification: noop,
   };
-  return { doc, sandbox, stop };
+  return { doc, sandbox, stop, signal: lifetime.signal };
+}
+
+function mountProvider(doc: Document, signal: AbortSignal) {
+  const deadline = AbortSignal.any([signal, AbortSignal.timeout(12_000)]);
+  return new Promise<void>((resolve, reject) => {
+    const script = doc.createElement("script");
+    script.type = "module";
+    script.src = api + "grabPluginFile";
+    const observer = new MutationObserver(() => {
+      if (doc.querySelector("#SpicyLyricsPage .LyricsContent")) finish();
+    });
+    const onError = () => finish(new Error("Could not load the Spicy Lyrics provider module"));
+    const onAbort = () => finish(deadline.reason);
+    function finish(error?: unknown) {
+      observer.disconnect();
+      script.removeEventListener("error", onError);
+      deadline.removeEventListener("abort", onAbort);
+      if (error) reject(error);
+      else resolve();
+    }
+    deadline.throwIfAborted();
+    observer.observe(doc.body, { childList: true, subtree: true });
+    deadline.addEventListener("abort", onAbort, { once: true });
+    script.addEventListener("error", onError, { once: true });
+    doc.head.append(script);
+  });
 }
 
 export function startSpicyProvider() {
@@ -200,18 +231,12 @@ export function startSpicyProvider() {
       if (controller.signal.aborted || externalProviderAvailable()) return;
       const instance = background = makeBackground(host);
       instance.sandbox._spicy_lyrics_metadata = { LoadedVersion: version };
-      const script = instance.doc.createElement("script");
-      script.type = "module";
-      script.src = api + "grabPluginFile";
-      script.addEventListener("error", () => {
-        if (background !== instance) return;
-        instance.stop();
-        background = undefined;
-        console.warn("[Lyssna Lyrics] Could not load the Spicy Lyrics provider");
-      }, { once: true });
-      instance.doc.head.append(script);
+      await mountProvider(instance.doc, instance.signal);
     } catch (error) {
-      if (!controller.signal.aborted) console.warn("[Lyssna Lyrics] Spicy Lyrics provider unavailable", error);
+      background?.stop();
+      background = undefined;
+      if (!controller.signal.aborted && !externalProviderAvailable())
+        console.warn("[Lyssna Lyrics] Spicy Lyrics provider unavailable", error);
     } finally {
       pending = false;
     }

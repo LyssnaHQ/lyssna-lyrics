@@ -41,6 +41,7 @@ const lyrics = [
   slice(styles, "\n.lyrics-page.no-artwork:not(.narrow) {", "/* Community lyrics credit"),
   slice(styles, "/* Lyrics loading skeleton:", "/* Lyrics popout window"),
   slice(styles, "/* Lyrics popout window", "\n.album-grid.all {"),
+  slice(styles, "/* Liquid Glass seek bar:", "\n.lyrics-fullscreen-times {"),
   slice(styles, "\n.lyrics-display.simple-lyrics .lyric-line {", "\n.ttml-draft-banner {"),
 ].map((css) => css
   .replaceAll(':root:not([data-animator="Legacy"])', ':is(.lyrics-display, .gravity-lyrics):not([data-animator="Legacy"])')

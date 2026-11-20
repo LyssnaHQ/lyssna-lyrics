@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { MicVocal, Music2, Settings as GearIcon, X } from "lucide-react";
 import { getHost, type CanvasInfo, type Host, type Track } from "./host";
 import { useArtworkColor } from "./lyssna/artwork-color";
 import { Ambience } from "./lyssna/ambience";
 import { setFrameCap } from "./lyssna/frame-cap";
-import { FullscreenPauseIcon, FullscreenPlayIcon, SkipNextIcon, SkipPreviousIcon } from "./lyssna/fullscreen-icons";
+import { FullscreenPauseIcon, FullscreenPlayIcon, FullscreenVolumeIcon, SkipNextIcon, SkipPreviousIcon } from "./lyssna/fullscreen-icons";
 import { LyricsDisplay, LyricsSkeleton, WriterCredits } from "./lyssna/renderer";
 import { markerColour } from "./lyssna/highlighter";
 import { SpaceGravityLyrics } from "./lyssna/space-gravity-lyrics";
@@ -28,6 +28,7 @@ import { clock, usePlayback, usePosition } from "./playback";
 import { LyricsPopout, pictureInPicture } from "./popout";
 import { startEnhancements } from "./enhancements";
 import { startPreferenceSync } from "./preference-sync";
+import { playbarFullscreen } from "./playbar-fullscreen";
 import fontCss from "./fonts/fonts.css?inline";
 import desktopCss from "./lyssna/lyrics.css?inline";
 import settingsCss from "./lyssna/settings.css?inline";
@@ -167,12 +168,36 @@ function FullscreenControls({ host, playing, settings }: { host: Host; playing: 
   const position = usePosition(host, playing);
   const duration = host.duration();
   const [volume, setVolume] = useState(host.volume);
-  const volumeSlider = settings.fullscreen_volume !== "off" && <input aria-label="Volume" type="range" min={0} max={1} step={0.01}
-    value={volume} onChange={(event) => { setVolume(event.target.valueAsNumber); host.setVolume(event.target.valueAsNumber); }} />;
+  const audible = useRef(volume || 0.5);
+  function changeVolume(level: number) {
+    if (level > 0) audible.current = level;
+    setVolume(level);
+    host.setVolume(level);
+  }
+  const volumeSlider = settings.fullscreen_volume !== "off" && (
+    <div className={`lyrics-volume-pill lyssna-volume ${settings.fullscreen_volume}`}
+      data-level={volume <= 0 ? "muted" : volume < 0.5 ? "low" : "high"}
+      style={{ "--range": `${volume * 100}%` } as CSSProperties}>
+      <span className="lyrics-volume-fill" aria-hidden="true" />
+      <input aria-label="Volume" type="range" min={0} max={1} step={0.01}
+        value={volume} onChange={(event) => changeVolume(event.target.valueAsNumber)} />
+      <button className="lyrics-volume-icon" type="button" aria-label={volume ? "Mute" : "Unmute"}
+        onClick={() => changeVolume(volume ? 0 : audible.current)}><FullscreenVolumeIcon /></button>
+    </div>
+  );
   const always = settings.fullscreen_always_show;
-  return <div className={`lyssna-playback${settings.glass_seek ? " glass" : ""}`} data-always={always}>
-    <div className="lyssna-seek"><span>{clock(position)}</span><input aria-label="Seek" type="range" min={0} max={duration || 1}
-      value={Math.min(position, duration)} onChange={(event) => host.seek(event.target.valueAsNumber)} /><span>{clock(duration)}</span></div>
+  const elapsed = Math.min(position, duration);
+  const total = clock(duration);
+  return <div className="lyssna-playback" data-always={always}>
+    <div className="lyssna-seek" style={{ "--time-chars": total.length } as CSSProperties}>
+      <time>{clock(elapsed)}</time>
+      <div className="lyrics-glass-seek" style={{ "--range": `${elapsed / Math.max(1, duration) * 100}%` } as CSSProperties}>
+        <span className="lyrics-glass-fill" aria-hidden="true" />
+        <input aria-label="Seek position" type="range" min={0} max={duration || 1}
+          value={elapsed} onChange={(event) => host.seek(event.target.valueAsNumber)} />
+      </div>
+      <time>{total}</time>
+    </div>
     <div className="lyssna-transport">
       {settings.fullscreen_volume === "left" && volumeSlider}
       <button type="button" className="icon-button" aria-label="Previous" onClick={host.previous}><SkipPreviousIcon /></button>
@@ -186,13 +211,24 @@ function FullscreenControls({ host, playing, settings }: { host: Host; playing: 
   </div>;
 }
 
-function LyricsView({ host, options, close, parent, openPopout }: {
+type FullscreenMode = "display" | "cinema";
+const activeViewKey = "lyssna-lyrics.v1.active-view";
+
+function requestDisplayFullscreen(parent: HTMLElement) {
+  if (!parent.ownerDocument.fullscreenEnabled || parent.matches(":fullscreen")) return;
+  parent.tabIndex = -1;
+  // The immersive layout also works when the client rejects the request.
+  void parent.requestFullscreen().then(() => parent.focus({ preventScroll: true })).catch(() => {});
+}
+
+function LyricsView({ host, options, close, parent, openPopout, fullscreenRequest }: {
   host: Host; options: BuildOptions; close: () => void; parent: HTMLElement; openPopout: () => Promise<void>;
+  fullscreenRequest: number;
 }) {
   const { track, playing } = usePlayback(host);
   const settings = useLiveSettings();
   const [showSettings, setShowSettings] = useState(false);
-  const [fullscreen, setFullscreen] = useState(false);
+  const [fullscreen, setFullscreen] = useState(fullscreenRequest > 0);
   const [leaving, setLeaving] = useState(false);
   const [narrow, setNarrow] = useState(false);
   const [popoutError, setPopoutError] = useState(false);
@@ -200,6 +236,7 @@ function LyricsView({ host, options, close, parent, openPopout }: {
   const [artistHeader, setArtistHeader] = useState<{ uri: string; url: string }>();
   const [albumYear, setAlbumYear] = useState<{ uri: string; year: string }>();
   const timer = useRef<number>(0);
+  const exitingDisplay = useRef(false);
   const toolsTimer = useRef<number>(0);
   const lyricsPage = useRef<HTMLElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -276,16 +313,54 @@ function LyricsView({ host, options, close, parent, openPopout }: {
     saveSettings({ ...readSettings(), ...patch });
   }
 
-  function toggleFullscreen() {
-    if (!fullscreen || !settings.fullscreen_animate_close || settings.reduce_motion) {
-      setFullscreen(!fullscreen);
+  function toggleFullscreen(cinema = false) {
+    if (!fullscreen) {
+      setFullscreen(true);
+      if (!cinema) requestDisplayFullscreen(parent);
       return;
     }
     if (leaving) return;
-    setLeaving(true);
-    timer.current = window.setTimeout(() => { setLeaving(false); setFullscreen(false); }, 180);
+    const finish = () => {
+      setLeaving(false);
+      setFullscreen(false);
+      if (parent.matches(":fullscreen")) {
+        exitingDisplay.current = true;
+        void parent.ownerDocument.exitFullscreen().catch(() => {
+          exitingDisplay.current = false;
+          setFullscreen(parent.matches(":fullscreen"));
+        });
+      }
+    };
+    if (settings.fullscreen_animate_close && !settings.reduce_motion) {
+      setLeaving(true);
+      timer.current = window.setTimeout(finish, 180);
+    } else finish();
   }
 
+  useLayoutEffect(() => {
+    if (!fullscreenRequest) return;
+    window.clearTimeout(timer.current);
+    setLeaving(false);
+    setFullscreen(true);
+  }, [fullscreenRequest]);
+  useLayoutEffect(() => {
+    const page = parent.ownerDocument;
+    let wasFullscreen = parent.matches(":fullscreen");
+    const sync = () => {
+      const active = parent.matches(":fullscreen");
+      if (wasFullscreen && !active) {
+        const exitedByView = exitingDisplay.current;
+        exitingDisplay.current = false;
+        window.clearTimeout(timer.current);
+        setLeaving(false);
+        setFullscreen(false);
+        if (!exitedByView && readSettings().lyrics_escape_exits) close();
+      }
+      wasFullscreen = active;
+    };
+    page.addEventListener("fullscreenchange", sync);
+    return () => page.removeEventListener("fullscreenchange", sync);
+  }, [parent, close]);
   useEffect(() => () => clearTimeout(timer.current), []);
   useEffect(() => {
     const observer = new ResizeObserver(([entry]) => setNarrow(entry.contentRect.width < 650));
@@ -315,7 +390,7 @@ function LyricsView({ host, options, close, parent, openPopout }: {
       event.preventDefault();
       event.stopImmediatePropagation();
       if (showSettings) setShowSettings(false);
-      else if (event.key === "F11" || (fullscreen && !settings.lyrics_escape_exits)) toggleFullscreen();
+      else if (event.key === "F11" || (fullscreen && !settings.lyrics_escape_exits)) toggleFullscreen(event.shiftKey);
       else close();
     };
     document.addEventListener("keydown", keyboard);
@@ -327,7 +402,8 @@ function LyricsView({ host, options, close, parent, openPopout }: {
   const backgroundImage = background === "cover" || background === "artist" ? banner || track?.cover : undefined;
   const className = `lyrics-page ${canvas ? "canvas-lyrics" : ""} ${narrow || settings.lyrics_compact ? "narrow" : ""}
     ${settings.lyrics_hide_artwork ? "no-artwork" : ""} ${settings.lyrics_artwork_right ? "artwork-right" : ""}
-    ${background === "color" ? "colour-background" : ""} ${settings.lyrics_toolbar_bottom ? "toolbar-bottom" : ""} ${settings.reduce_motion ? "reduce-motion" : ""}`;
+    ${background === "color" ? "colour-background" : ""} ${settings.lyrics_toolbar_bottom ? "toolbar-bottom" : ""}
+    ${settings.reduce_motion ? "reduce-motion" : ""} ${settings.glass_seek ? "" : "flat-seek"}`;
   const pageStyle = { ...fonts, "--lyric-size": `${Math.round(settings.lyric_size * 1.6)}px`,
     "--lyrics-cover-color": coverColour, "--hero": coverColour } as CSSProperties;
   return <>
@@ -365,9 +441,9 @@ function LyricsView({ host, options, close, parent, openPopout }: {
           disabled={!track} onClick={importTtml}><UploadIcon /></button>
         {settings.lyrics_cache_button && <button type="button" className="icon-button" data-icon="retry" title="Refresh lyrics" aria-label="Refresh lyrics"
           disabled={!track} onClick={() => { refreshLyrics(track?.id, settings.lyrics_cache_action); setNotice("Refreshing lyrics…"); }}><RetryIcon /></button>}
-        <button type="button" className="icon-button" data-icon="fullscreen" title={fullscreen ? "Exit full screen" : "Full screen"}
+        <button type="button" className="icon-button" data-icon="fullscreen" title={fullscreen ? "Exit full screen" : "Full screen (Shift for cinema)"}
           aria-label={fullscreen ? "Exit full screen" : "Full screen"}
-          aria-pressed={fullscreen} onClick={toggleFullscreen}><FullScreenIcon /></button>
+          aria-pressed={fullscreen} onClick={(event) => toggleFullscreen(event.shiftKey)}><FullScreenIcon /></button>
         {pictureInPicture && settings.cinema_lyrics && <button type="button" className="icon-button" title="Pop out lyrics" aria-label="Pop out lyrics" onClick={() => {
           setPopoutError(false);
           void openPopout().catch(() => setPopoutError(true));
@@ -415,7 +491,8 @@ export default function start(options: BuildOptions) {
     window.removeEventListener(settingsEvent, applyRuntimeSettings);
     stopProvider?.();
   }
-  let close: (() => void) | undefined;
+  let close: ((forget?: boolean) => void) | undefined;
+  let enterFullscreen: ((mode: FullscreenMode) => void) | undefined;
   let mainContainer: HTMLElement | undefined;
   let button: ReturnType<Host["button"]> | undefined;
   let removeCard: (() => void) | undefined;
@@ -424,6 +501,7 @@ export default function start(options: BuildOptions) {
   let opening = false;
   let switchingLyricsView = false;
   let disposed = false;
+  let restorePending = sessionStorage.getItem(activeViewKey) === "open";
 
   async function openPopout() {
     if (!pictureInPicture || opening || disposed) return;
@@ -457,8 +535,13 @@ export default function start(options: BuildOptions) {
     }
   }
 
-  async function open() {
-    if (close) { close(); return; }
+  async function open(mode?: FullscreenMode) {
+    restorePending = false;
+    if (close) {
+      if (mode) enterFullscreen?.(mode);
+      else close();
+      return;
+    }
     if (switchingLyricsView || disposed) return;
     switchingLyricsView = true;
     try { await host.leaveOtherLyricsView(); }
@@ -478,22 +561,35 @@ export default function start(options: BuildOptions) {
     shadow.append(stylesheet.cloneNode(true), parent);
     (main ?? document.body).append(shadowHost);
     const root = host.mount(parent);
-    const dismiss = () => {
+    const dismiss = (forget = true) => {
       close = undefined;
+      enterFullscreen = undefined;
       mainContainer = undefined;
       button?.setActive(false);
       root.unmount();
       shadowHost.remove();
+      if (forget) sessionStorage.removeItem(activeViewKey);
     };
     close = dismiss;
     mainContainer = shadowHost;
     button?.setActive(true);
-    root.render(<LyricsView host={host} options={options} close={dismiss} parent={parent} openPopout={openPopout} />);
+    sessionStorage.setItem(activeViewKey, "open");
+    let fullscreenRequest = 0;
+    const closeView = () => dismiss();
+    const render = () => root.render(<LyricsView host={host} options={options} close={closeView} parent={parent}
+      openPopout={openPopout} fullscreenRequest={fullscreenRequest} />);
+    enterFullscreen = (next) => {
+      fullscreenRequest++;
+      render();
+      if (next === "display") requestDisplayFullscreen(parent);
+    };
+    if (mode) enterFullscreen(mode);
+    else render();
   }
 
   let stopViewSwitch: () => void;
   try {
-    button = host.button(`Lyssna Lyrics (${channelLabels[options.channel]})`, open);
+    button = host.button(`Lyssna Lyrics (${channelLabels[options.channel]})`, () => void open());
     stopViewSwitch = host.watchViewSwitch(() => close?.());
   } catch (error) {
     button?.remove();
@@ -502,6 +598,7 @@ export default function start(options: BuildOptions) {
     stylesheet.remove();
     throw error;
   }
+  const fullscreenButton = playbarFullscreen(host, (event) => void open(event.shiftKey ? "cinema" : "display"));
   const stopEnhancementStartup = startEnhancements();
 
   function attachCard() {
@@ -519,9 +616,14 @@ export default function start(options: BuildOptions) {
     root.render(<NowPlayingCard host={host} open={() => { if (!close) open(); }} />);
     removeCard = () => { root.unmount(); container.remove(); };
   }
-  const observer = new MutationObserver(attachCard);
+  function syncHost() {
+    fullscreenButton.sync();
+    if (restorePending && host.mainView()) void open();
+    attachCard();
+  }
+  const observer = new MutationObserver(syncHost);
   observer.observe(document.body, { childList: true, subtree: true });
-  attachCard();
+  syncHost();
   return {
     dispose() {
       disposed = true;
@@ -529,13 +631,14 @@ export default function start(options: BuildOptions) {
       stopViewSwitch();
       removeCard?.();
       closePopout?.();
-      close?.();
+      close?.(false);
       button?.remove();
+      fullscreenButton.dispose();
       disposeProvider();
       stopPreferenceSync();
       stopEnhancementStartup();
       stylesheet.remove();
     },
-    open,
+    open: () => { if (!close) void open(); },
   };
 }
