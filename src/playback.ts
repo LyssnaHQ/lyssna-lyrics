@@ -8,7 +8,9 @@ export function usePlayback(host: Host) {
   useEffect(() => {
     const update = () => {
       const next = host.track();
-      setTrack((old) => next?.id === old?.id && next?.cover === old?.cover && next?.artistUri === old?.artistUri ? old : next);
+      setTrack((old) => next?.id === old?.id && next?.cover === old?.cover &&
+        next?.artistUri === old?.artistUri && next?.year === old?.year &&
+        next?.isrc === old?.isrc && next?.albumUri === old?.albumUri ? old : next);
       setPlaying(host.playing());
     };
     const unwatch = host.watch(update);

@@ -9,7 +9,7 @@ export const hostReact = hosts.SpotiKit?.React ?? hosts.Spicetify?.React;
 if (!hostReact) throw new Error("Spotify React is unavailable");
 
 export const {
-  createContext, createElement, forwardRef, Fragment, memo, useCallback, useContext,
+  cloneElement, createContext, createElement, forwardRef, Fragment, isValidElement, memo, useCallback, useContext,
   useEffect, useId, useLayoutEffect, useMemo, useRef, useState,
 } = hostReact;
 export default hostReact;

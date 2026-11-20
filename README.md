@@ -15,7 +15,7 @@ Open Lyssna from the microphone button in Spotify’s playbar. Older SpotiKit ve
 
 Artist Header uses the lead artist’s Spotify banner and falls back to the album cover. The Canvas setting uses the video Spotify exposes in Now playing. The visualiser uses Spotify’s track analysis. The host supplies these features when it has data for the current track.
 
-Lyssna reads track-keyed lyrics from the Spicy Lyrics plugin’s cache. When Spicy Lyrics is installed separately, Lyssna reads from its cache and lets that installation run normally. Otherwise Lyssna starts the official plugin in a hidden frame. Lyrics that bypass the provider’s cache are outside this draft’s integration.
+Lyssna reads track-keyed lyrics from the Spicy Lyrics plugin’s cache. When Spicy Lyrics is installed separately, Lyssna reads from its cache and lets that installation run normally. Otherwise Lyssna starts the official plugin in a hidden frame. Use Sources to choose between imported TTML, Spicy Lyrics, and optional online sources. The Library tab manages saved TTML. Clearing Lyssna’s cache keeps imported files and the Spicy Lyrics cache.
 
 ## Sync the desktop renderer
 

@@ -2,6 +2,9 @@ import { cleanAnimatorValues, cleanSavedPresets, type AnimatorSettings } from ".
 import type { WordFilter } from "./lyssna/word-filter";
 
 export const defaults = {
+  theme: "dark" as "dark" | "light" | "system",
+  liquid_glass: false,
+  ui_font: "",
   lyric_size: 36,
   lyric_font: "",
   lyric_offset_ms: 0,
@@ -22,6 +25,7 @@ export const defaults = {
   lyrics_background: "animated" as "animated" | "static" | "cover" | "artist" | "color" | "none",
   lyrics_background_blur: 0,
   lyrics_pinned_footer: "off" as "off" | "no_writers" | "full",
+  lyrics_year_position: "left" as "off" | "left" | "right",
   lyrics_seek_compensation: true,
   lyrics_simple: false,
   lyrics_minimal: false,
@@ -45,6 +49,7 @@ export const defaults = {
   gravity_links: true,
   gravity_link_width: 100,
   lyrics_compact: false,
+  cinema_lyrics: true,
   lyrics_hide_artwork: false,
   lyrics_artwork_right: false,
   lyrics_up_next: true,
@@ -55,6 +60,16 @@ export const defaults = {
   lyrics_escape_exits: false,
   lyrics_hide_npv: false,
   lyrics_hide_npv_empty: false,
+  npv_ambience: true,
+  lyrics_cache_button: true,
+  lyrics_cache_action: "song" as "song" | "reload" | "all",
+  lyrics_source_order: ["local", "spicy", "apple", "lrcred", "lrclib", "netease"] as string[],
+  lyrics_sources_disabled: ["lrcred", "lrclib", "netease"] as string[],
+  lyrics_prefer_apple: true,
+  settings_remember_place: true,
+  settings_allow_hiding: false,
+  settings_hide_buttons: true,
+  hidden_settings: [] as string[],
 };
 
 export type Settings = typeof defaults;

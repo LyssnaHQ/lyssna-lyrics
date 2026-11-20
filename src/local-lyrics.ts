@@ -1,0 +1,166 @@
+import type { Line, Lyrics, Word } from "./lyssna/types";
+import type { TransferLyrics } from "./lyssna/transfer-format";
+
+export const lyricsChanged = "lyssna-lyrics:lyrics";
+const trackUri = /^spotify:track:[A-Za-z0-9]{22}$/;
+let database: Promise<IDBDatabase> | undefined;
+
+function openDatabase() {
+  return database ??= new Promise<IDBDatabase>((resolve, reject) => {
+    const request = indexedDB.open("lyssna-lyrics-local", 1);
+    request.onupgradeneeded = () => request.result.createObjectStore("ttml", { keyPath: "uri" });
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => { database = undefined; reject(request.error); };
+  });
+}
+
+async function read<T>(get: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> {
+  const db = await openDatabase();
+  return new Promise((resolve, reject) => {
+    const request = get(db.transaction("ttml").objectStore("ttml"));
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function write(change: (store: IDBObjectStore) => void) {
+  const db = await openDatabase();
+  await new Promise<void>((resolve, reject) => {
+    const transaction = db.transaction("ttml", "readwrite");
+    transaction.oncomplete = () => resolve();
+    transaction.onabort = () => reject(transaction.error ?? new Error("Could not save lyrics."));
+    change(transaction.objectStore("ttml"));
+  });
+  window.dispatchEvent(new Event(lyricsChanged));
+}
+
+function timestamp(value: string | null): number | undefined {
+  value = value?.trim() || null;
+  if (!value) return;
+  const unit = /^(\d+(?:\.\d+)?)(ms|s|m|h)?$/.exec(value);
+  if (unit) {
+    const factors = { ms: 1, s: 1000, m: 60_000, h: 3_600_000 };
+    const time = Number(unit[1]) * factors[(unit[2] as keyof typeof factors) || "s"];
+    return time <= 604_800_000 ? Math.round(time) : undefined;
+  }
+  const clock = /^(?:(\d+):)?(\d{1,2}):(\d{2}(?:\.\d+)?)$/.exec(value);
+  if (clock) {
+    const time = (Number(clock[1] ?? 0) * 3600 + Number(clock[2]) * 60 + Number(clock[3])) * 1000;
+    return time <= 604_800_000 ? Math.round(time) : undefined;
+  }
+}
+
+const attribute = (element: Element, name: string) => Array.from(element.attributes).find((attribute) => attribute.localName === name)?.value;
+const role = (element: Element) => attribute(element, "role") ?? "";
+
+function lyricLine(element: Element, start: number, end: number, background: boolean, opposite: boolean): Line {
+  let text = "";
+  let translation = "";
+  let romanization = "";
+  const words: Word[] = [];
+  function collect(node: Node) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const value = (node.nodeValue ?? "").replace(/\s+/g, " ");
+      text += value;
+      if (words.length) words[words.length - 1].text += value;
+    } else if (node instanceof Element && role(node) !== "x-bg") {
+      const annotation = role(node);
+      if (annotation.includes("translation") && !annotation.includes("transliteration")) {
+        translation = node.textContent?.trim() ?? "";
+        return;
+      }
+      if (annotation.includes("roman") || annotation.includes("transliteration")) {
+        romanization = node.textContent?.trim() ?? "";
+        return;
+      }
+      const begin = timestamp(node.getAttribute("begin"));
+      if (begin !== undefined && node.localName === "span" && !node.querySelector("[begin]")) {
+        const value = node.textContent ?? "";
+        text += value;
+        words.push({ text: value, start_ms: begin, end_ms: Math.max(begin, timestamp(node.getAttribute("end")) ?? end) });
+      } else if (node.localName === "br") {
+        text += " ";
+        if (words.length) words[words.length - 1].text += " ";
+      } else node.childNodes.forEach(collect);
+    }
+  }
+  element.childNodes.forEach(collect);
+  return {
+    text: text.trim(), words, start_ms: start, end_ms: Math.max(start, end, words.at(-1)?.end_ms ?? 0),
+    background, opposite, translation, romanization,
+  };
+}
+
+export function parseLocalTtml(text: string): Lyrics {
+  if (/<!DOCTYPE/i.test(text)) throw new Error("TTML document types are unsupported.");
+  const xml = new DOMParser().parseFromString(text, "application/xml");
+  const body = xml.getElementsByTagNameNS("*", "body")[0];
+  if (xml.documentElement.localName !== "tt" || !body || xml.querySelector("parsererror")) {
+    throw new Error("Choose a valid TTML lyrics file.");
+  }
+  const paragraphs = Array.from(body.getElementsByTagNameNS("*", "p"));
+  const lead = Array.from(xml.getElementsByTagNameNS("*", "agent"))
+    .find((agent) => attribute(agent, "type") === "person");
+  const leadId = lead ? attribute(lead, "id") ?? "v1" : "v1";
+  const annotations = new Map<string, { translation?: string; romanization?: string }>();
+  for (const entry of Array.from(xml.getElementsByTagNameNS("*", "text"))) {
+    const key = attribute(entry, "for");
+    const kind = entry.parentElement?.localName;
+    if (!key || (kind !== "translation" && kind !== "transliteration")) continue;
+    const data = annotations.get(key) ?? {};
+    data[kind === "translation" ? "translation" : "romanization"] = entry.textContent?.trim() ?? "";
+    annotations.set(key, data);
+  }
+  const lines = paragraphs.flatMap((element, index) => {
+    const firstWord = element.querySelector("span[begin]");
+    const start = timestamp(element.getAttribute("begin")) ?? timestamp(firstWord?.getAttribute("begin") ?? null) ?? 0;
+    const next = paragraphs[index + 1]?.getAttribute("begin") ?? null;
+    const duration = timestamp(element.getAttribute("dur"));
+    const end = timestamp(element.getAttribute("end")) ?? (duration === undefined ? timestamp(next) ?? start + 2_000 : start + duration);
+    const agent = attribute(element, "agent");
+    const opposite = Boolean(agent && agent !== leadId && !agent.endsWith("000"));
+    const main = lyricLine(element, start, end, role(element) === "x-bg", opposite);
+    const data = annotations.get(attribute(element, "key") ?? "");
+    main.translation ||= data?.translation ?? "";
+    main.romanization ||= data?.romanization ?? "";
+    const background = Array.from(element.getElementsByTagNameNS("*", "span"))
+      .filter((vocal) => role(vocal) === "x-bg")
+      .map((vocal) => lyricLine(vocal, timestamp(vocal.getAttribute("begin")) ?? start, timestamp(vocal.getAttribute("end")) ?? end, true, opposite));
+    return [main, ...background].filter((line) => line.text);
+  });
+  if (!lines.length) throw new Error("No lyric lines found in this TTML file.");
+  const songwriters = Array.from(xml.getElementsByTagNameNS("*", "songwriter")).map((writer) => writer.textContent?.trim() ?? "").filter(Boolean).slice(0, 100);
+  return { lines, songwriters, source: "Imported TTML", synced: paragraphs.some((line) => line.hasAttribute("begin") || line.querySelector("[begin]")), instrumental: false };
+}
+
+export function listLocalLyrics(): Promise<TransferLyrics[]> {
+  return read((store) => store.getAll());
+}
+
+export async function readLocalLyrics(trackId: string) {
+  const entry = await read<TransferLyrics | undefined>((store) => store.get(`spotify:track:${trackId}`));
+  return entry && parseLocalTtml(entry.text);
+}
+
+export function saveLocalLyrics(entries: TransferLyrics[]) {
+  for (const entry of entries) {
+    if (!trackUri.test(entry.uri) || entry.kind !== "ttml" || new TextEncoder().encode(entry.text).length > 2_000_000) {
+      throw new Error("Choose a TTML file under 2 MB for a Spotify track.");
+    }
+    parseLocalTtml(entry.text);
+  }
+  return write((store) => { for (const entry of entries) store.put(entry); });
+}
+
+export function removeLocalLyrics(uri: string) {
+  return write((store) => { store.delete(uri); });
+}
+
+export function downloadTtml(entry: TransferLyrics) {
+  const url = URL.createObjectURL(new Blob([entry.text], { type: "application/ttml+xml" }));
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `${(entry.name || entry.uri).replace(/[<>:"/\\|?*]/g, "_")}.ttml`;
+  anchor.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+}

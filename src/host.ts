@@ -18,8 +18,8 @@ export type AudioSegment = { start: number; duration: number; pitches: number[];
 type AudioAnalysis = { segments?: AudioSegment[] };
 type ImageSource = { url?: string; width?: number; maxWidth?: number };
 type HeaderImages = { sources?: ImageSource[] };
-type ArtistHeaderResult = {
-  data?: { artistUnion?: {
+type CatalogueResult = {
+  data?: { albumUnion?: { date?: { isoString?: string; year?: number } }; artistUnion?: {
     headerImage?: { data?: HeaderImages };
     visuals?: { headerImage?: HeaderImages };
   } };
@@ -29,7 +29,7 @@ type SpotifyTrack = {
   name?: string;
   artists?: Array<{ name?: string; uri?: string; id?: string }>;
   images?: Array<{ url?: string }>;
-  album?: { images?: Array<{ url?: string }> };
+  album?: { uri?: string; name?: string; images?: Array<{ url?: string }>; release_date?: string; releaseDate?: string };
   metadata?: Record<string, string>;
 };
 
@@ -39,7 +39,7 @@ export type Spicetify = {
   CosmosAsync?: unknown;
   GraphQL?: {
     Definitions: Record<string, unknown>;
-    Request(definition: unknown, variables: Record<string, unknown>): Promise<ArtistHeaderResult>;
+    Request(definition: unknown, variables: Record<string, unknown>): Promise<CatalogueResult>;
   };
   getAudioData?(uri: string): Promise<AudioAnalysis | null>;
   Queue?: { nextTracks?: { contextTrack?: SpotifyTrack; uri?: string }[] };
@@ -76,7 +76,7 @@ type SpotiKit = {
   Audio?: { analysis(uri: string): Promise<AudioAnalysis | null> };
   GraphQL?: {
     definitions?: Record<string, unknown>;
-    request?(definition: unknown, variables: Record<string, unknown>): Promise<ArtistHeaderResult>;
+    request?(definition: unknown, variables: Record<string, unknown>): Promise<CatalogueResult>;
   };
   URI?: object;
   Queue?: { next: { title: string; artist: string; image: string }[] };
@@ -105,7 +105,8 @@ type SpotiKit = {
 };
 
 export type Root = { render(node: ReactNode): void; unmount(): void };
-export type Track = { id: string; title: string; artists: string; artistUri?: string; cover: string };
+export type Track = { id: string; title: string; artists: string; artist?: string; artistUri?: string; cover: string;
+  album?: string; albumUri?: string; year?: string; isrc?: string };
 
 export const spicetify = () => hosts.Spicetify as (typeof hosts.Spicetify & Spicetify) | undefined;
 export const spotikit = () => hosts.SpotiKit as (typeof hosts.SpotiKit & SpotiKit) | undefined;
@@ -122,7 +123,7 @@ const nativeLyricsButton = 'button[data-testid="lyrics-button"]';
 const otherLyricsButtons = `${nativeLyricsButton}, #LyssnaLyrics_PageButton, #LyssnaLyrics_FullscreenButton`;
 const lyricsRoute = (location?: HistoryLocation) => /^\/(?:lyrics|spicylyrics|lyssnalyrics)(?:\/|$)/i.test(location?.pathname ?? "");
 
-function headerImage(result: ArtistHeaderResult) {
+function headerImage(result: CatalogueResult) {
   const artist = result?.data?.artistUnion;
   const images = artist?.headerImage?.data?.sources ?? artist?.visuals?.headerImage?.sources ?? [];
   let preferred: { url: string; width: number } | undefined;
@@ -150,11 +151,17 @@ export function getHost() {
   const spiceGraph = spice?.GraphQL;
   const kitGraph = kit?.GraphQL;
   const artistHeaders = new Map<string, Promise<string | undefined>>();
+  const releaseYears = new Map<string, Promise<string | undefined>>();
+  function graph() {
+    return {
+      definitions: kitGraph?.definitions ?? spiceGraph?.Definitions,
+      request: kitGraph?.request?.bind(kitGraph) ?? spiceGraph?.Request?.bind(spiceGraph),
+    };
+  }
   function artistHeader(artistUri: string, trackId: string) {
     const cached = artistHeaders.get(artistUri);
     if (cached) return cached;
-    const definitions = kitGraph?.definitions ?? spiceGraph?.Definitions;
-    const request = kitGraph?.request?.bind(kitGraph) ?? spiceGraph?.Request.bind(spiceGraph);
+    const { definitions, request } = graph();
     if (!definitions || !request) return;
     const npv = definitions.queryNpvArtist;
     const overview = definitions.queryArtistOverview;
@@ -178,6 +185,22 @@ export function getHost() {
     return pending;
   }
 
+  function releaseYear(uri: string) {
+    const cached = releaseYears.get(uri);
+    if (cached) return cached;
+    const { definitions, request } = graph();
+    if (!definitions?.getAlbum || !request) return;
+    const pending = request(definitions.getAlbum, { uri, locale: "", offset: 0, limit: 1 }).then((result) => {
+      const date = result.data?.albumUnion?.date;
+      return /^(\d{4})(?:-|$)/.exec(date?.isoString ?? String(date?.year ?? ""))?.[1];
+    }).catch(() => {
+      releaseYears.delete(uri);
+      return undefined;
+    });
+    releaseYears.set(uri, pending);
+    return pending;
+  }
+
   return {
     track(): Track | null {
       const track = kit ? kit.Player.track : spice?.Player.data?.item;
@@ -191,6 +214,11 @@ export function getHost() {
         title: track.name ?? track.metadata?.title ?? "",
         artists: track.artists?.map((artist) => artist.name).filter(Boolean).join(", ") || track.metadata?.artist_name || "",
         artistUri,
+        artist: artist?.name || track.metadata?.artist_name,
+        album: track.album?.name ?? track.metadata?.album_title,
+        albumUri: track.album?.uri || track.metadata?.album_uri,
+        isrc: track.metadata?.isrc?.toUpperCase(),
+        year: /^(\d{4})(?:-|$)/.exec(track.album?.release_date ?? track.album?.releaseDate ?? track.metadata?.album_release_date ?? "")?.[1],
         cover: artwork(track.images?.[0]?.url ?? track.album?.images?.[0]?.url ?? track.metadata?.image_url ?? ""),
       };
     },
@@ -210,6 +238,7 @@ export function getHost() {
     liked: () => kit ? kit.Player.liked : spice?.Player.getHeart?.() ?? false,
     toggleLiked: () => kit ? kit.Player.setLiked?.(!kit.Player.liked) : spice?.Player.toggleHeart?.(),
     artistHeader,
+    releaseYear,
     upcoming() {
       const next = kit?.Queue?.next[0];
       if (next) return { title: next.title, artist: next.artist, image: artwork(next.image ?? "") };

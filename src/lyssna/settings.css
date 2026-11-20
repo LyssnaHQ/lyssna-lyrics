@@ -322,15 +322,15 @@
   mask-composite: exclude;
 }
 /* Without Liquid Glass, Settings is a solid window like other dialogs. */
-.application:not(.liquid-glass) .lyrics-settings {
+.lyrics-settings-backdrop:not(.liquid-glass) .lyrics-settings {
   border-color: light-dark(#00000015, #ffffff15);
   background: light-dark(#e6e6e6, #191919);
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
   box-shadow: 0 25px 120px #0007;
 }
-.application:not(.liquid-glass) .lyrics-settings::before,
-.application:not(.liquid-glass) .lyrics-settings::after {
+.lyrics-settings-backdrop:not(.liquid-glass) .lyrics-settings::before,
+.lyrics-settings-backdrop:not(.liquid-glass) .lyrics-settings::after {
   content: none;
 }
 @media (prefers-reduced-transparency: reduce) {
@@ -1211,4 +1211,43 @@
   color: light-dark(#6a6a6a, #8f8f8f);
 }
 
+/* Lyrics settings → Sources: ordered source list. */
+.lyric-sources {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.lyric-sources li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: light-dark(#0000000d, #ffffff0d);
+}
+.lyric-sources li.off .lyric-source-name {
+  opacity: 0.5;
+}
+.lyric-source-name {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+.lyric-source-name strong {
+  font-size: 14px;
+  font-weight: 600;
+}
+.lyric-source-name small {
+  font-size: 12px;
+  color: light-dark(#0009, #ffffff99);
+}
+.lyric-sources-reset {
+  margin-top: 8px;
+  font-size: 13px;
+  color: light-dark(#000000b3, #ffffffb3);
+}
 }

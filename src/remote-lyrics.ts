@@ -1,0 +1,83 @@
+import type { Track } from "./host";
+import { parseLocalTtml } from "./local-lyrics";
+import type { Line, Lyrics } from "./lyssna/types";
+
+async function request(url: URL, signal: AbortSignal) {
+  const response = await fetch(url, { credentials: "omit", referrerPolicy: "no-referrer", signal });
+  return response.ok ? response : undefined;
+}
+
+function line(text: string, start_ms = 0, end_ms = 0): Line {
+  return { text, start_ms, end_ms, words: [], translation: "", romanization: "", background: false, opposite: false };
+}
+
+function fromLrc(source: string, synced: string, plain: string, duration: number): Lyrics | undefined {
+  const offset = Number(/^\[offset:([+-]?\d+)\]/im.exec(synced)?.[1] ?? 0);
+  const timed = synced.split(/\r?\n/).flatMap((raw) => {
+    const tags = [...raw.matchAll(/\[(\d+):(\d{2})(?:\.(\d+))?\]/g)];
+    const text = raw.replace(/^(?:\[\d+:\d{2}(?:\.\d+)?\])+/g, "").trim();
+    if (!text) return [];
+    return tags.map((tag) => {
+      const start = (60 * Number(tag[1]) + Number(tag[2]) + Number(`0.${tag[3] ?? "0"}`)) * 1000;
+      return line(text, Math.max(0, Math.round(start + offset)));
+    });
+  }).sort((left, right) => left.start_ms - right.start_ms);
+  if (timed.length) {
+    timed.forEach((item, index) => {
+      item.end_ms = timed[index + 1]?.start_ms ?? (duration > item.start_ms ? duration : item.start_ms + 5_000);
+    });
+    return { source, lines: timed, synced: true, instrumental: false };
+  }
+  const lines = plain.split(/\r?\n/).map((text) => text.trim()).filter(Boolean).map((text) => line(text));
+  if (lines.length) return { source, lines, synced: false, instrumental: false };
+}
+
+export async function readLrcRed(track: Track, _duration: number, signal: AbortSignal) {
+  if (!track.isrc || !/^[A-Z]{2}[A-Z0-9]{3}\d{7}$/.test(track.isrc)) return;
+  const response = await request(new URL(`https://lrc.red/s/${track.isrc}.ttml`), signal);
+  if (!response) return;
+  const lyrics = parseLocalTtml(await response.text());
+  return { ...lyrics, source: "lrc.red" };
+}
+
+export async function readLrcLib(track: Track, duration: number, signal: AbortSignal) {
+  if (!track.title || !track.artist) return;
+  const url = new URL("https://lrclib.net/api/get");
+  url.searchParams.set("track_name", track.title);
+  url.searchParams.set("artist_name", track.artist);
+  if (track.album) url.searchParams.set("album_name", track.album);
+  if (duration > 0) url.searchParams.set("duration", String(Math.floor(duration / 1000)));
+  const response = await request(url, signal);
+  if (!response) return;
+  const result = await response.json() as { instrumental?: boolean; syncedLyrics?: string; plainLyrics?: string };
+  if (result.instrumental === true) return { source: "LRCLIB", lines: [], synced: false, instrumental: true };
+  return fromLrc("LRCLIB", result.syncedLyrics ?? "", result.plainLyrics ?? "", duration);
+}
+
+const neteaseBase = "https://music.xianqiao.wang/neteaseapiv2/";
+const titleKey = (value = "") => value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+
+export async function readNetease(track: Track, duration: number, signal: AbortSignal) {
+  if (!track.title || !track.artist) return;
+  const lookup = new URL("search", neteaseBase);
+  lookup.search = new URLSearchParams({ limit: "10", type: "1", keywords: `${track.title} ${track.artist}` }).toString();
+  const response = await request(lookup, signal);
+  if (!response) return;
+  type Song = { id?: number; name?: string; duration?: number; album?: { name?: string } };
+  const data = await response.json() as { result?: { songs?: Song[] } };
+  const candidates = data.result?.songs?.filter((song) => titleKey(song.name) === titleKey(track.title)) ?? [];
+  const match = candidates.find((song) => track.album && titleKey(song.album?.name) === titleKey(track.album))
+    ?? candidates.find((song) => Math.abs((song.duration ?? 0) - duration) < 3000) ?? candidates[0];
+  if (!match || !Number.isSafeInteger(match.id)) return;
+  const url = new URL("lyric", neteaseBase);
+  url.searchParams.set("id", String(match.id));
+  const reply = await request(url, signal);
+  if (!reply) return;
+  const result = await reply.json() as { lrc?: { lyric?: string }; tlyric?: { lyric?: string } };
+  const lyrics = fromLrc("Netease", result.lrc?.lyric ?? "", "", duration);
+  if (!lyrics || !result.tlyric?.lyric) return lyrics;
+  const translation = fromLrc("Netease", result.tlyric.lyric, "", duration);
+  const aligned = new Map(translation?.lines.map((line) => [line.start_ms, line.text]));
+  for (const line of lyrics.lines) line.translation = aligned.get(line.start_ms) ?? "";
+  return lyrics;
+}

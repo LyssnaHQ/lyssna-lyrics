@@ -22,7 +22,7 @@ const files = [
   "animator-tuning.ts", "frame-cap.ts", "lyric-animator.ts", "lyric-motion.ts", "lyric-word.tsx",
   "lyric-countdown.tsx", "space-gravity.ts", "space-gravity-lyrics.tsx", "highlighter.tsx",
   "window-activity.ts", "word-sync.ts", "word-filter.ts", "gibberish.ts", "gibberish-dictionary.ts",
-  "setting-row.tsx", "animator-settings.tsx", "toolbar-icons.tsx", "fullscreen-icons.tsx", "player-icons.tsx", "artwork-color.ts",
+  "setting-row.tsx", "animator-settings.tsx", "toolbar-icons.tsx", "fullscreen-icons.tsx", "player-icons.tsx", "artwork-color.ts", "transfer-format.ts",
 ];
 const styles = read("frontend/styles.css");
 const components = read("frontend/components.tsx");
@@ -36,6 +36,7 @@ const lyrics = [
   slice(styles, "\n.lyric-credits-row {", "/* Only carries the song menu"),
   slice(styles, "\n.lyrics-details {", "\n.compact .lyric-end-credits p {"),
   slice(styles, "\n.static-lyrics .lyric-line {", "\n.player-bar {"),
+  slice(styles, "\n.lyrics-toolbar {", "/* Layout changes morph between positions"),
   slice(styles, "/* Space Gravity: words float", "/* Dims the app while a creator"),
   slice(styles, "\n.lyrics-page.no-artwork:not(.narrow) {", "/* Community lyrics credit"),
   slice(styles, "/* Lyrics loading skeleton:", "/* Lyrics popout window"),
@@ -43,7 +44,9 @@ const lyrics = [
   slice(styles, "\n.lyrics-display.simple-lyrics .lyric-line {", "\n.ttml-draft-banner {"),
 ];
 const snapshot = files.map((file) => [file, read(`frontend/${file}`)]);
-const settingsCss = read("frontend/settings.css");
+const settingsCss = read("frontend/settings.css")
+  .replaceAll(".application:not(.liquid-glass) .lyrics-settings", ".lyrics-settings-backdrop:not(.liquid-glass) .lyrics-settings")
+  + "\n" + slice(read("frontend/pages.css"), "/* Lyrics settings → Sources", "/* Help → About Lyssna");
 const fullscreenCss = read("frontend/fullscreen-lyrics.css");
 const renderer = [
   `import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
@@ -81,9 +84,9 @@ type Flag = KeysOf<boolean>;
 type Amount = KeysOf<number>;
 export function visualRows(settings: Settings, onSettings: (patch: Partial<Settings>) => void, onManageAnimator: () => void) {`,
   slice(rows, "  const flag = (", "  const order ="),
-  "return { Look: [",
+  "return { flag, range, Look: [",
   slice(rows, '        <SettingRow\n          key="size"', "        <FontSettings"),
-  slice(rows, '        <SettingRow\n          key="background"', '        <SettingRow\n          key="year"'),
+  slice(rows, '        <SettingRow\n          key="background"', '      ],\n    ],\n    [\n      "Lyrics",\n      "Display"'),
   "], Display: [",
   slice(rows, '        flag(\n          "lyrics_seek_compensation"', '        flag(\n          "romaji_as_written"'),
   slice(rows, '        flag(\n          "lyrics_translations"', '        flag(\n          "lyrics_visualiser"'),
@@ -91,9 +94,18 @@ export function visualRows(settings: Settings, onSettings: (patch: Partial<Setti
     .replace(" && !soloistPlays", "").replace("          soloistPlays,\n", ""),
   slice(rows, '        flag(\n          "lyrics_keep_overlaps"', '        flag(\n          "canvas_lyrics"')
     .replace('      ],\n    ],\n    [\n      "Effects",\n      "Lyric effects",\n      [', '], Effects: ['),
+  slice(rows, '        flag(\n          "canvas_lyrics"', '        flag(\n          "animated_covers"')
+    .replace("Play the track's Canvas video behind the lyrics page.", "Play the track's Canvas when Spotify makes it available."),
+  `<SettingRow key="animated-covers" label="Animated covers"
+          help="Play Apple Music's animated album covers where an album has one."
+          keywords="motion artwork animated album cover video apple music"
+          unavailable="Apple Music artwork lookup needs a server-side integration.">
+          <Toggle label="Animated covers" checked={false} onChange={() => {}} />
+        </SettingRow>,`,
+  slice(rows, '        flag(\n          "npv_ambience"', '      ],\n    ],\n    [\n      "Layout"')
+    .replace("Draw the moving artwork, or the Canvas, behind the Now playing panel.", "Draw the moving artwork behind the Now playing lyrics card."),
   "], Layout: [",
-  slice(rows, '        flag(\n          "lyrics_compact"', '        flag(\n          "fullscreen_animate_close"'),
-  slice(rows, '        flag(\n          "lyrics_hide_npv"', '      ],\n    ],\n    [\n      "Sources"'),
+  slice(rows, '        flag(\n          "lyrics_compact"', '      ],\n    ],\n    [\n      "Sources"'),
   "  ] };\n}",
   slice(rows, "function MarkerColourRow(", "function QualitySelect("),
 ];
@@ -120,6 +132,22 @@ for (const [file, content] of snapshot) {
 write("types.ts", `${types}\n`);
 write("renderer.tsx", `${renderer.join("\n\n")}\n`);
 write("visual-settings.tsx", `${settingsRows.join("\n")}\n`);
+write("custom-fonts.tsx", read("frontend/custom-fonts.tsx")
+  .replace('from "./types"', 'from "../settings"')
+  .replace(/\/\*\* Fonts imported before[\s\S]*?(?=\/\*\* Custom font families)/, "")
+  .replace('"lyssna-fonts"', '"lyssna-lyrics-fonts"')
+  .replace(/    request\.onsuccess = \(\) => \{[\s\S]*?    \};/, "    request.onsuccess = () => resolve(request.result);")
+  .replace(/\/\*\* Copies fonts from[\s\S]*?(?=async function storedFonts)/, "")
+  .replace("const loaded = new Map<string, Promise<void>>();\nasync function registerFont(font: StoredFont) {",
+    "const documents = new WeakMap<Document, Map<string, Promise<void>>>();\nasync function registerFont(font: StoredFont, page = document) {\n  const loaded = documents.get(page) ?? new Map<string, Promise<void>>();\n  documents.set(page, loaded);")
+  .replace("document.fonts.add(face)", "page.fonts.add(face)")
+  .replace("loadSelectedFonts(families: (string | undefined)[])", "loadSelectedFonts(families: (string | undefined)[], page = document)")
+  .replace(".map(registerFont)", ".map((font) => registerFont(font, page))")
+  .replace('"Inter Variable"', '"Lyssna Inter"')
+  .replace('  settings: Pick<Settings, "ui_font" | "lyric_font">,', '  settings: Pick<Settings, "ui_font" | "lyric_font">,\n  page = document,')
+  .replace("loadSelectedFonts([settings.ui_font, settings.lyric_font])", "loadSelectedFonts([settings.ui_font, settings.lyric_font], page)")
+  .replace("}, [settings.ui_font, settings.lyric_font]);", "}, [settings.ui_font, settings.lyric_font, page]);")
+  .replace("Used across menus, lists and the player.", "Used across Lyssna’s settings and song details."));
 write("lyrics-visualiser.tsx", read("frontend/lyrics-visualiser.tsx")
   .replace('import { rpc } from "./bridge";\n', "")
   .replace("  opacity,", "  opacity,\n  spectrum,")

@@ -895,6 +895,225 @@
   scale: none !important;
   translate: none !important;
 }
+
+.lyrics-toolbar {
+  position: absolute;
+  right: 16px;
+  top: 14px;
+  display: flex;
+  gap: 6px;
+  z-index: 4;
+  background: light-dark(#f2f2f06b, #0d0d0f6b);
+  backdrop-filter: blur(15px) brightness(0.85);
+  border: 1px solid light-dark(#00000013, #ffffff13);
+  border-radius: 30px;
+  padding: 4px;
+}
+.lyrics-toolbar .icon-button {
+  color: light-dark(#0e0e0eb0, #f1f1f1b0);
+  transition:
+    color 0.15s,
+    background 0.15s,
+    transform 0.15s;
+  /* Each button on its own GPU layer: its hover scale and moving icon
+     parts are drawn inside it, not re-snapped to screen pixels each frame,
+     which made icons away from the toolbar's anchored side wobble on
+     scaled displays. */
+  will-change: transform;
+  backface-visibility: hidden;
+}
+.lyrics-toolbar .toolbar-icon {
+  shape-rendering: geometricPrecision;
+}
+/* Hidden until the pointer moves over the lyrics; stays while used. */
+.lyrics-toolbar {
+  opacity: 0;
+  transition:
+    opacity 0.3s,
+    background 0.2s;
+}
+.lyrics-page[data-tools="awake"] > .lyrics-toolbar,
+.lyrics-toolbar:hover,
+.lyrics-toolbar:focus-within {
+  opacity: 1;
+}
+/* Hovering darkens the frosted bar without making it opaque. */
+.lyrics-toolbar:hover {
+  background: light-dark(#ffffff80, #00000080);
+}
+.lyrics-toolbar .icon-button:hover {
+  color: light-dark(#000, #fff);
+  background: light-dark(#0000001f, #ffffff1f);
+  transform: scale(1.1);
+}
+.lyrics-toolbar .icon-button:active {
+  transform: scale(0.92);
+}
+/* Each icon moves in its own way while hovered (see toolbar-icons.tsx). */
+.toolbar-icon g,
+.toolbar-icon path,
+.toolbar-icon rect {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+/* 文A: the A is in front until hovered or romanizing, then the symbol. */
+.toolbar-icon-translate g {
+  transition:
+    opacity 0.3s,
+    scale 0.3s ease;
+}
+.toolbar-icon-translate .part-symbol {
+  opacity: 0.5;
+  scale: 0.86;
+}
+.toolbar-icon-translate .part-latin {
+  scale: 1.08;
+}
+[data-icon="romanized"]:hover .part-symbol,
+[data-icon="romanized"].active .part-symbol {
+  opacity: 1;
+  scale: 1.12;
+}
+[data-icon="romanized"]:hover .part-latin,
+[data-icon="romanized"].active .part-latin {
+  opacity: 0.5;
+  scale: 0.86;
+}
+/* Word sync: a level meter. Every bar starts from rest, so hovering
+   never jumps them to mid-bounce. */
+[data-icon="experimental_word_sync"]:hover .part-bar {
+  animation: icon-bar 0.9s ease-in-out infinite;
+}
+[data-icon="experimental_word_sync"]:hover .part-bar-1 {
+  animation-delay: 0.15s;
+}
+[data-icon="experimental_word_sync"]:hover .part-bar-2 {
+  animation-delay: 0.3s;
+}
+[data-icon="experimental_word_sync"]:hover .part-bar-3 {
+  animation-delay: 0.1s;
+}
+[data-icon="experimental_word_sync"]:hover .part-bar-4 {
+  animation-delay: 0.25s;
+}
+@keyframes icon-bar {
+  50% {
+    scale: 1 0.55;
+  }
+}
+/* Compact: the rows squeeze together. */
+.toolbar-icon-compact rect,
+.toolbar-icon-compact path {
+  transition:
+    scale 0.25s,
+    translate 0.25s;
+}
+[data-icon="lyrics_compact"]:hover .part-frame {
+  scale: 1 0.82;
+}
+[data-icon="lyrics_compact"]:hover .part-row-top {
+  translate: 0 1.5px;
+}
+[data-icon="lyrics_compact"]:hover .part-row-bottom {
+  translate: 0 -1.5px;
+}
+/* Hide artwork: the chevron pushes left, inside its panel. */
+[data-icon="lyrics_hide_artwork"]:hover .part-chevron {
+  animation: icon-push-left 0.9s ease-in-out infinite;
+}
+@keyframes icon-push-left {
+  50% {
+    translate: -2px 0;
+  }
+}
+/* Swap sides: the arrows pulse left and right in turn. */
+[data-icon="lyrics_artwork_right"]:hover .part-left {
+  animation: icon-pulse-left 0.9s ease-in-out infinite;
+}
+[data-icon="lyrics_artwork_right"]:hover .part-right {
+  animation: icon-pulse-right 0.9s ease-in-out infinite;
+}
+@keyframes icon-pulse-left {
+  25% {
+    translate: -2px 0;
+  }
+  50% {
+    translate: 0 0;
+  }
+}
+@keyframes icon-pulse-right {
+  50% {
+    translate: 0 0;
+  }
+  75% {
+    translate: 2px 0;
+  }
+}
+/* Upload: the arrow shoots up and a new one rises from the tray. */
+[data-icon="upload"]:hover .part-arrow {
+  animation: icon-shoot 1.1s ease-in-out infinite;
+}
+@keyframes icon-shoot {
+  35% {
+    translate: 0 -10px;
+    opacity: 0;
+  }
+  36% {
+    translate: 0 6px;
+    opacity: 0;
+  }
+  75%,
+  100% {
+    translate: 0 0;
+    opacity: 1;
+  }
+}
+/* Retry: spins like a refresh. */
+[data-icon="retry"]:hover .part-spinner {
+  animation: icon-spin 0.9s linear infinite;
+}
+/* Full screen: the corners push out and draw back in. */
+[data-icon="fullscreen"]:hover .part-corner-out {
+  animation: icon-corner-out 0.9s ease-in-out infinite alternate;
+}
+[data-icon="fullscreen"]:hover .part-corner-in {
+  animation: icon-corner-in 0.9s ease-in-out infinite alternate;
+}
+@keyframes icon-corner-out {
+  from {
+    translate: -1px 1px;
+  }
+  to {
+    translate: 1.5px -1.5px;
+  }
+}
+@keyframes icon-corner-in {
+  from {
+    translate: 1px -1px;
+  }
+  to {
+    translate: -1.5px 1.5px;
+  }
+}
+/* Settings: the gear turns. */
+[data-icon="settings"]:hover svg {
+  animation: icon-spin 1.4s linear infinite;
+}
+@keyframes icon-spin {
+  to {
+    rotate: 360deg;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lyrics-toolbar .icon-button:hover *,
+  .lyrics-toolbar .icon-button:hover svg {
+    animation: none !important;
+  }
+}
+.reduce-motion .lyrics-toolbar .icon-button:hover *,
+.reduce-motion .lyrics-toolbar .icon-button:hover svg {
+  animation: none !important;
+}
 /* Space Gravity: words float over the whole lyrics page. The stage spans
    the page so words can drift around the artwork, which they avoid. */
 .lyrics-page.space-gravity .lyrics-body {

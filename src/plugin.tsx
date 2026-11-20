@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { MicVocal, Music2, Settings2, X } from "lucide-react";
+import { MicVocal, Music2, Settings as GearIcon, X } from "lucide-react";
 import { getHost, type Host, type Track } from "./host";
 import { useArtworkColor } from "./lyssna/artwork-color";
 import { Ambience } from "./lyssna/ambience";
@@ -8,14 +8,17 @@ import { FullscreenPauseIcon, FullscreenPlayIcon, SkipNextIcon, SkipPreviousIcon
 import { LyricsDisplay, LyricsSkeleton } from "./lyssna/renderer";
 import { markerColour } from "./lyssna/highlighter";
 import { SpaceGravityLyrics } from "./lyssna/space-gravity-lyrics";
-import { CompactIcon, FullScreenIcon, HideArtworkIcon, PopoutIcon, SwapSidesIcon, TranslateIcon, WordSyncIcon } from "./lyssna/toolbar-icons";
+import { CompactIcon, FullScreenIcon, HideArtworkIcon, PopoutIcon, RetryIcon, SwapSidesIcon, TranslateIcon, UploadIcon, WordSyncIcon } from "./lyssna/toolbar-icons";
 import type { Lyrics } from "./lyssna/types";
 import { setWindowActivity, setWindowPosition } from "./lyssna/window-activity";
 import { filterWords } from "./lyssna/word-filter";
 import { displayLyrics } from "./lyssna/word-sync";
 import { readSettings, saveSettings, settingsEvent, type Settings } from "./settings";
 import { channelLabels, SettingsPanel, type BuildOptions } from "./settings-panel";
-import { readSpicyLyrics, startSpicyProvider } from "./spicy";
+import { startSpicyProvider } from "./spicy";
+import { useAppFonts } from "./lyssna/custom-fonts";
+import { lyricsChanged, saveLocalLyrics } from "./local-lyrics";
+import { enabledSources, readLyrics, refreshLyrics, sourceIds } from "./lyric-sources";
 import { LyricCredits } from "./credits";
 import { CanvasArtwork, nowPlayingSelector, SpotifyVisualiser, useCanvas } from "./spotify-artwork";
 import { clock, usePlayback, usePosition } from "./playback";
@@ -36,35 +39,53 @@ function useLiveSettings() {
   return settings;
 }
 
-function useTrackLyrics(trackId: string, view: Window) {
+function useTrackLyrics(track: Track, duration: number, view: Window, settings: Settings) {
   const [lyrics, setLyrics] = useState<Lyrics>();
   const [waiting, setWaiting] = useState(true);
+  const sourceKey = enabledSources(settings).join(",");
   useEffect(() => {
-    let live = true;
+    const enabled = sourceKey.split(",").filter((id): id is (typeof sourceIds)[number] => sourceIds.some((source) => source === id));
+    let generation = 0;
     let timer = 0;
-    const deadline = Date.now() + 15_000;
-    async function read() {
-      const lyrics = await readSpicyLyrics(trackId).catch(() => undefined);
-      if (!live) return;
-      if (lyrics) {
-        setLyrics(lyrics);
-        return;
+    function restart() {
+      view.clearTimeout(timer);
+      const current = ++generation;
+      setLyrics(undefined);
+      const pendingSpicy = enabled.includes("spicy") || enabled.includes("apple");
+      setWaiting(enabled.length > 0);
+      if (enabled.length === 0) return;
+      const deadline = Date.now() + 15_000;
+      async function read() {
+        const lyrics = await readLyrics(track, duration, enabled);
+        if (generation !== current) return;
+        if (lyrics) {
+          setLyrics(lyrics);
+          setWaiting(false);
+          return;
+        }
+        if (!pendingSpicy) { setWaiting(false); return; }
+        const pending = Date.now() < deadline;
+        setWaiting(pending);
+        timer = view.setTimeout(read, pending ? 500 : 3_000);
       }
-      const pending = Date.now() < deadline;
-      setWaiting(pending);
-      timer = view.setTimeout(read, pending ? 500 : 3_000);
+      void read();
     }
-    void read();
-    return () => { live = false; view.clearTimeout(timer); };
-  }, [trackId, view]);
+    window.addEventListener(lyricsChanged, restart);
+    restart();
+    return () => {
+      generation++;
+      view.clearTimeout(timer);
+      window.removeEventListener(lyricsChanged, restart);
+    };
+  }, [track, duration, view, sourceKey]);
   return { lyrics, waiting };
 }
 
 function LyricsForTrack({ track, host, playing, settings, compact = false, view = window }: {
   track: Track; host: Host; playing: boolean; settings: Settings; compact?: boolean; view?: Window;
 }) {
-  const { lyrics, waiting } = useTrackLyrics(track.id, view);
   const duration = host.duration();
+  const { lyrics, waiting } = useTrackLyrics(track, duration, view, settings);
   const position = usePosition(host, playing, view);
   const time = position + settings.lyric_offset_ms + (settings.lyric_song_offsets[track.id] ?? 0);
   const rendered = useMemo(() => filterWords(displayLyrics(lyrics, settings.experimental_word_sync,
@@ -86,7 +107,7 @@ function LyricsForTrack({ track, host, playing, settings, compact = false, view 
       highlighter={settings.lyrics_highlighter ? markerColour(settings.lyrics_highlighter_color) : undefined}
       linkWidth={settings.gravity_links ? settings.gravity_link_width / 100 : 0}
       credits={<>{rendered.songwriters?.length ? <p className="writer-credits">Written by {rendered.songwriters.join(", ")}</p> : null}
-        <LyricCredits lyrics={rendered} expanded />{upNext}</>} />;
+        <LyricCredits lyrics={rendered} expanded discord={settings.lyrics_discord_usernames} />{upNext}</>} />;
   }
   if (rendered) return <LyricsDisplay lyrics={rendered} positionMs={time} settings={settings}
     onSeek={host.seek} compact={compact} upNext={upNext} />;
@@ -100,8 +121,10 @@ function LyricsForTrack({ track, host, playing, settings, compact = false, view 
 function NowPlayingCard({ host, open }: { host: Host; open: () => void }) {
   const { track, playing } = usePlayback(host);
   const settings = useLiveSettings();
+  const fonts = useAppFonts(settings);
   if (!track || settings.lyrics_hide_npv) return null;
-  return <aside className={`lyssna-now-playing-card${settings.lyrics_hide_npv_empty ? " hide-empty" : ""}`} aria-label="Lyssna Lyrics">
+  return <aside className={`lyssna-now-playing-card${settings.lyrics_hide_npv_empty ? " hide-empty" : ""}`} aria-label="Lyssna Lyrics" style={fonts}>
+    {track.cover && settings.npv_ambience && <Ambience image={track.cover} animate={playing} reduceMotion={settings.reduce_motion} />}
     <header><h2>Lyrics</h2><button className="icon-button" type="button" aria-label="Open lyrics" onClick={open}><MicVocal size={18} /></button></header>
     <div className="lyssna-now-playing-lines"><LyricsForTrack key={track.id} track={track} host={host} playing={playing} settings={settings} compact /></div>
   </aside>;
@@ -148,14 +171,70 @@ function LyricsView({ host, options, close, parent, openPopout }: {
   const [leaving, setLeaving] = useState(false);
   const [narrow, setNarrow] = useState(false);
   const [popoutError, setPopoutError] = useState(false);
+  const [notice, setNotice] = useState("");
   const [artistHeader, setArtistHeader] = useState<{ uri: string; url: string }>();
+  const [albumYear, setAlbumYear] = useState<{ uri: string; year: string }>();
   const timer = useRef<number>(0);
+  const toolsTimer = useRef<number>(0);
+  const lyricsPage = useRef<HTMLElement>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const importTrack = useRef<Track | null>(null);
   const settingsRef = useRef(settings);
+  const fonts = useAppFonts(settings);
   const coverColour = useArtworkColor(track?.cover);
   const canvas = useCanvas(track?.id, settings.canvas_lyrics && !settings.lyrics_hide_artwork);
   const background = settings.lyrics_background;
   const artistUri = track?.artistUri;
   const trackId = track?.id;
+  const albumUri = track?.albumUri;
+  const year = track?.year ?? (albumYear?.uri === albumUri ? albumYear?.year : undefined);
+  useEffect(() => {
+    if (settings.lyrics_year_position === "off" || track?.year || !albumUri || !/^spotify:album:[A-Za-z0-9]{22}$/.test(albumUri)) return;
+    let live = true;
+    void host.releaseYear(albumUri)?.then((year) => {
+      if (live && year) setAlbumYear({ uri: albumUri, year });
+    });
+    return () => { live = false; };
+  }, [host, albumUri, track?.year, settings.lyrics_year_position]);
+  function importTtml() {
+    if (!track) return;
+    importTrack.current = track;
+    fileInput.current?.click();
+  }
+
+  async function loadTtml(file: File, song: Track) {
+    try {
+      if (file.size > 2_000_000) throw new Error("Choose a TTML file under 2 MB.");
+      await saveLocalLyrics([{
+        uri: `spotify:track:${song.id}`, text: await file.text(), kind: "ttml", name: song.title, artists: song.artists,
+      }]);
+      setNotice("Imported lyrics.");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Couldn’t load TTML.");
+    }
+  }
+
+  function sleepTools() {
+    window.clearTimeout(toolsTimer.current);
+    if (lyricsPage.current) delete lyricsPage.current.dataset.tools;
+  }
+
+  function wakeTools() {
+    if (!lyricsPage.current) return;
+    lyricsPage.current.dataset.tools = "awake";
+    window.clearTimeout(toolsTimer.current);
+    toolsTimer.current = window.setTimeout(sleepTools, 750);
+  }
+
+  useEffect(() => {
+    wakeTools();
+    return () => window.clearTimeout(toolsTimer.current);
+  }, []);
+  useEffect(() => {
+    if (!notice || showSettings) return;
+    const id = window.setTimeout(() => setNotice(""), 3_000);
+    return () => window.clearTimeout(id);
+  }, [notice, showSettings]);
   useEffect(() => {
     if (background !== "artist" || !artistUri || !trackId) return;
     let current = true;
@@ -227,8 +306,7 @@ function LyricsView({ host, options, close, parent, openPopout }: {
   const className = `lyrics-page ${narrow || settings.lyrics_compact ? "narrow" : ""} ${settings.space_gravity ? "space-gravity" : ""}
     ${settings.lyrics_hide_artwork ? "no-artwork" : ""} ${settings.lyrics_artwork_right ? "artwork-right" : ""}
     ${background === "color" ? "colour-background" : ""} ${settings.lyrics_toolbar_bottom ? "toolbar-bottom" : ""} ${settings.reduce_motion ? "reduce-motion" : ""}`;
-  const pageStyle = { "--lyric-size": `${Math.round(settings.lyric_size * 1.6)}px`, "--lyric-font": settings.lyric_font || undefined,
-    "--lyric-detail-font": settings.lyric_font || undefined,
+  const pageStyle = { ...fonts, "--lyric-size": `${Math.round(settings.lyric_size * 1.6)}px`,
     "--lyrics-cover-color": coverColour, "--hero": coverColour } as CSSProperties;
   return <>
     {hasAmbience && <Ambience image={track.cover} animate={playing && background === "animated"}
@@ -236,43 +314,62 @@ function LyricsView({ host, options, close, parent, openPopout }: {
     {backgroundImage && <img className="lyrics-background" src={backgroundImage}
       style={{ "--artwork-blur": `${settings.lyrics_background_blur}px` } as CSSProperties}
       onError={banner ? () => setArtistHeader((current) => current?.url === banner && current.uri === artistUri ? undefined : current) : undefined} alt="" />}
-    <section className={className} aria-label="Lyssna Lyrics" style={pageStyle}>
+    <section ref={lyricsPage} className={className} aria-label="Lyssna Lyrics" style={pageStyle}
+      onPointerMove={wakeTools} onPointerLeave={sleepTools} onKeyDownCapture={wakeTools}>
       {track ? <>
         <div className="lyrics-album">
           {(canvas || track.cover) && <div className="lyrics-media">{canvas
             ? <CanvasArtwork src={canvas} cover={track.cover} playing={playing && !settings.reduce_motion} />
             : <img className={`cover${settings.cover_animation && !settings.reduce_motion ? " crossfade" : ""}`} key={track.cover} src={track.cover} alt="" />}</div>}
           <div className="lyrics-details"><div className="lyrics-title"><strong className="song-title">{track.title}</strong></div>
-            <div className="lyrics-artists">{track.artists}</div></div>
+            <div className="lyrics-artists">
+              {year && settings.lyrics_year_position === "left" && <span>{year} · </span>}
+              {track.artists}
+              {year && settings.lyrics_year_position === "right" && <span> · {year}</span>}
+            </div></div>
         </div>
         <div className="lyrics-body"><LyricsForTrack key={track.id} track={track} host={host} playing={playing} settings={settings} /></div>
       </> : <div className="lyrics-message"><Music2 /><h2>Play something you love</h2><p>Your lyrics will appear here.</p></div>}
       {track && settings.lyrics_visualiser && <SpotifyVisualiser key={track.id} host={host} trackId={track.id}
         opacity={settings.lyrics_visualiser_opacity} playing={playing && !settings.reduce_motion} />}
-      <div className="lyrics-toolbar" aria-label="View controls">
-        <button type="button" className="icon-button" aria-label="Show translations" aria-pressed={settings.lyrics_translations}
-          onClick={() => change({ lyrics_translations: !settings.lyrics_translations })}><TranslateIcon /></button>
-        <button type="button" className="icon-button" aria-label="Experimental word sync" aria-pressed={settings.experimental_word_sync}
-          onClick={() => change({ experimental_word_sync: !settings.experimental_word_sync })}><WordSyncIcon /></button>
-        <button type="button" className="icon-button" aria-label="Compact lyrics" aria-pressed={settings.lyrics_compact}
-          onClick={() => change({ lyrics_compact: !settings.lyrics_compact })}><CompactIcon /></button>
-        <button type="button" className="icon-button" aria-label="Hide artwork" aria-pressed={settings.lyrics_hide_artwork}
-          onClick={() => change({ lyrics_hide_artwork: !settings.lyrics_hide_artwork })}><HideArtworkIcon /></button>
-        <button type="button" className="icon-button" aria-label="Artwork on the right" aria-pressed={settings.lyrics_artwork_right}
-          onClick={() => change({ lyrics_artwork_right: !settings.lyrics_artwork_right })}><SwapSidesIcon /></button>
-        <button type="button" className="icon-button" aria-label={fullscreen ? "Exit full screen" : "Full screen"}
+      <div className="lyrics-toolbar" role="toolbar" aria-label="View controls">
+        {([
+          ["romanized", "Romanization", TranslateIcon],
+          ["experimental_word_sync", "Experimental word sync", WordSyncIcon],
+          ["lyrics_compact", "Compact lyrics", CompactIcon],
+          ["lyrics_hide_artwork", "Hide artwork", HideArtworkIcon],
+          ["lyrics_artwork_right", "Artwork on the right", SwapSidesIcon],
+        ] as const).map(([key, label, Icon]) => <button type="button" key={key} data-icon={key} title={label}
+          className={`icon-button${settings[key] ? " active" : ""}`} aria-label={label} aria-pressed={settings[key]}
+          onClick={() => change({ [key]: !settings[key] })}><Icon /></button>)}
+        <span className="toolbar-divider" aria-hidden="true" />
+        <button type="button" className="icon-button" data-icon="upload" title="Load TTML" aria-label="Load TTML"
+          disabled={!track} onClick={importTtml}><UploadIcon /></button>
+        {settings.lyrics_cache_button && <button type="button" className="icon-button" data-icon="retry" title="Refresh lyrics" aria-label="Refresh lyrics"
+          disabled={!track} onClick={() => { refreshLyrics(track?.id, settings.lyrics_cache_action); setNotice("Refreshing lyrics…"); }}><RetryIcon /></button>}
+        <button type="button" className="icon-button" data-icon="fullscreen" title={fullscreen ? "Exit full screen" : "Full screen"}
+          aria-label={fullscreen ? "Exit full screen" : "Full screen"}
           aria-pressed={fullscreen} onClick={toggleFullscreen}><FullScreenIcon /></button>
-        {pictureInPicture && <button type="button" className="icon-button" aria-label="Pop out lyrics" onClick={() => {
+        {pictureInPicture && settings.cinema_lyrics && <button type="button" className="icon-button" title="Pop out lyrics" aria-label="Pop out lyrics" onClick={() => {
           setPopoutError(false);
           void openPopout().catch(() => setPopoutError(true));
         }}><PopoutIcon /></button>}
-        <button type="button" className="icon-button" aria-label="Lyssna settings" onClick={() => setShowSettings(true)}><Settings2 size={18} /></button>
-        <button type="button" className="icon-button" aria-label="Close lyrics" onClick={close}><X size={20} /></button>
+        <button type="button" className="icon-button" data-icon="settings" title="Lyssna settings" aria-label="Lyssna settings"
+          onClick={() => { setNotice(""); setShowSettings(true); }}><GearIcon size={18} /></button>
+        <button type="button" className="icon-button" title="Close lyrics" aria-label="Close lyrics" onClick={close}><X size={18} /></button>
       </div>
       {popoutError && <div className="lyssna-popout-error" role="status">Spotify couldn’t open the lyrics pop-out.</div>}
+      {!showSettings && notice && <div className="lyssna-popout-error" role="status">{notice}</div>}
       {fullscreen && <FullscreenControls host={host} playing={playing} settings={settings} />}
     </section>
-    {showSettings && <SettingsPanel settings={settings} change={change} close={() => setShowSettings(false)} options={options} trackId={track?.id} />}
+    <input ref={fileInput} type="file" hidden accept=".ttml,.xml,application/ttml+xml" onChange={(event) => {
+      const file = event.currentTarget.files?.[0];
+      const song = importTrack.current;
+      event.currentTarget.value = "";
+      if (file && song) void loadTtml(file, song);
+    }} />
+    {showSettings && <SettingsPanel settings={settings} change={change} close={() => { setNotice(""); setShowSettings(false); }}
+      options={options} trackId={track?.id} importTtml={importTtml} notice={notice} setNotice={setNotice} />}
   </>;
 }
 
@@ -283,7 +380,22 @@ export default function start(options: BuildOptions) {
   const stylesheet = document.createElement("style");
   stylesheet.textContent = `${fontCss}\n${desktopCss}\n${settingsCss}\n${viewCss}`;
   document.head.append(stylesheet);
-  const stopProvider = startSpicyProvider();
+  let stopProvider: (() => void) | undefined;
+  function syncProvider() {
+    const disabled = readSettings().lyrics_sources_disabled;
+    if (!disabled.includes("spicy") || !disabled.includes("apple")) {
+      stopProvider ??= startSpicyProvider();
+    } else {
+      stopProvider?.();
+      stopProvider = undefined;
+    }
+  }
+  syncProvider();
+  window.addEventListener(settingsEvent, syncProvider);
+  function disposeProvider() {
+    window.removeEventListener(settingsEvent, syncProvider);
+    stopProvider?.();
+  }
   let close: (() => void) | undefined;
   let mainContainer: HTMLElement | undefined;
   let button: ReturnType<Host["button"]> | undefined;
@@ -353,7 +465,7 @@ export default function start(options: BuildOptions) {
     stopViewSwitch = host.watchViewSwitch(() => close?.());
   } catch (error) {
     button?.remove();
-    stopProvider();
+    disposeProvider();
     stylesheet.remove();
     throw error;
   }
@@ -385,7 +497,7 @@ export default function start(options: BuildOptions) {
       closePopout?.();
       close?.();
       button?.remove();
-      stopProvider();
+      disposeProvider();
       stylesheet.remove();
     },
     open,

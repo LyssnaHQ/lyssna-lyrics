@@ -69,7 +69,7 @@ export function visualRows(settings: Settings, onSettings: (patch: Partial<Setti
     );
   };
   const lyricSize = settings.lyric_size || 36;
-return { Look: [
+return { flag, range, Look: [
         <SettingRow
           key="size"
           label="Lyric text size"
@@ -150,6 +150,28 @@ return { Look: [
             <option value="off">Off</option>
             <option value="no_writers">No Writers</option>
             <option value="full">Full</option>
+          </select>
+        </SettingRow>,
+        <SettingRow
+          key="year"
+          label="Release year position"
+          help="Show the year before or after the artists beside the lyrics, or leave it out."
+          keywords="year date metadata release hide"
+        >
+          <select
+            className="settings-select"
+            aria-label="Release year position"
+            value={settings.lyrics_year_position ?? "left"}
+            onChange={(event) =>
+              onSettings({
+                lyrics_year_position: event.target
+                  .value as Settings["lyrics_year_position"],
+              })
+            }
+          >
+            <option value="off">Off</option>
+            <option value="left">Left</option>
+            <option value="right">Right</option>
           </select>
         </SettingRow>,
 ], Display: [
@@ -362,6 +384,36 @@ return { Look: [
             <option value="upper">ALL UPPERCASE</option>
           </select>
         </SettingRow>,
+        flag(
+          "canvas_lyrics",
+          "Canvas in lyrics",
+          "Play the track's Canvas when Spotify makes it available.",
+          "video background",
+        ),
+<SettingRow key="animated-covers" label="Animated covers"
+          help="Play Apple Music's animated album covers where an album has one."
+          keywords="motion artwork animated album cover video apple music"
+          unavailable="Apple Music artwork lookup needs a server-side integration.">
+          <Toggle label="Animated covers" checked={false} onChange={() => {}} />
+        </SettingRow>,
+        flag(
+          "npv_ambience",
+          "Dynamic background in Now playing",
+          "Draw the moving artwork behind the Now playing lyrics card.",
+          "now playing sidebar ambience background dynamic",
+        ),
+        flag(
+          "glass_seek",
+          "Glass seek bar",
+          "Give the full screen seek bar a frosted glass track and a glowing fill.",
+          "seek bar slider progress glass styling fullscreen full screen",
+        ),
+        flag(
+          "cover_animation",
+          "Cover art animation",
+          "Crossfade the artwork beside the lyrics when the song changes.",
+          "cover artwork album fade transition",
+        ),
 ], Layout: [
         flag(
           "lyrics_compact",
@@ -473,6 +525,12 @@ return { Look: [
             <option value="fully">Exit fully</option>
           </select>
         </SettingRow>,
+        flag(
+          "fullscreen_animate_close",
+          "Animate closing full screen",
+          "Slide the lyrics away before full screen closes.",
+          "fullscreen full screen close exit animation slide",
+        ),
         flag(
           "lyrics_hide_npv",
           "Hide lyrics in Now playing",

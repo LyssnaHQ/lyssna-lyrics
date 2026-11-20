@@ -232,6 +232,7 @@ type Vocal = {
 };
 type VocalEntry = Vocal & { Type?: string; Lead?: Vocal; Background?: Vocal[]; OppositeAligned?: boolean };
 type Payload = Vocal & {
+  source?: string;
   Type?: string;
   Lines?: VocalEntry[];
   Content?: VocalEntry[];
@@ -240,7 +241,10 @@ type Payload = Vocal & {
 };
 
 function normalize(data: Payload): Lyrics | undefined {
-  if (data.Type === "Instrumental") return { source: "Spicy Lyrics", lines: [], synced: false, instrumental: true };
+  const sourceId = typeof data.source === "string" ? data.source.toLowerCase() : "";
+  const tokens = sourceId.split(/[^a-z0-9]+/);
+  const source = sourceId === "apple_music" || (tokens.includes("aml") && !tokens.includes("spl")) ? "Apple Music" : "Spicy Lyrics";
+  if (data.Type === "Instrumental") return { source, lines: [], synced: false, instrumental: true };
   const lines: Line[] = [];
   const timed = data.Type === "Syllable" || data.Type === "Line";
   const ms = (time = 0) => Number.isFinite(time) ? Math.max(0, Math.round(time * 1000)) : 0;
@@ -273,7 +277,7 @@ function normalize(data: Payload): Lyrics | undefined {
     for (const vocal of entry.Background ?? []) add(vocal, entry, true);
   }
   if (lines.length) return {
-    source: "Spicy Lyrics", lines, synced: timed, instrumental: false,
+    source, lines, synced: timed, instrumental: false,
     songwriters: data.SongWriters?.flatMap((writer) => typeof writer === "string" ? [writer] : (writer?.name ? [writer.name] : [])),
     attribution: { maker: data.UploadAttribution?.Maker, uploader: data.UploadAttribution?.Uploader },
   };

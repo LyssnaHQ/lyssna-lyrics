@@ -4,6 +4,7 @@ import type { Host, Track } from "./host";
 import { Ambience } from "./lyssna/ambience";
 import { NextIcon, PauseIcon, PlayIcon, PreviousIcon, RepeatIcon, ShuffleIcon } from "./lyssna/player-icons";
 import { clock, usePosition } from "./playback";
+import { useAppFonts } from "./lyssna/custom-fonts";
 import type { Settings } from "./settings";
 
 export const pictureInPicture = (window as Window & {
@@ -74,6 +75,7 @@ function PopoutControls({ host, track, playing }: { host: Host; track: Track | n
 export function LyricsPopout({ host, view, close, track, playing, settings, children }: {
   host: Host; view: Window; close: () => void; track: Track | null; playing: boolean; settings: Settings; children: ReactNode;
 }) {
+  const fonts = useAppFonts(settings, view.document);
   const [awake, setAwake] = useState(false);
   const sleep = useRef(0);
   function hide() {
@@ -98,8 +100,7 @@ export function LyricsPopout({ host, view, close, track, playing, settings, chil
   }, [view, close]);
   return <section className="lyrics-popout" aria-label="Lyrics pop-out" data-awake={awake || undefined}
     onPointerMove={wake} onPointerLeave={hide}
-    style={{ "--lyric-size": `${Math.round(settings.lyric_size * 1.6)}px`, "--lyric-font": settings.lyric_font || undefined,
-      "--lyric-detail-font": settings.lyric_font || undefined } as CSSProperties}>
+    style={{ ...fonts, "--lyric-size": `${Math.round(settings.lyric_size * 1.6)}px` } as CSSProperties}>
     {track?.cover && <Ambience image={track.cover} animate={playing} reduceMotion={settings.reduce_motion} />}
     <button type="button" className="icon-button lyrics-popout-close" aria-label="Close lyrics pop-out" onClick={close}><X size={18} /></button>
     <header className="lyrics-popout-title">
