@@ -46,7 +46,10 @@ export function playbarViewButtons(host: Host, onFullscreen: (event: MouseEvent)
       } else {
         const order = anchor.style.order;
         if (popout.button.style.order !== order) popout.button.style.order = order;
-        if (anchor.nextElementSibling !== popout.button) anchor.after(popout.button);
+        // Keep the hidden native fullscreen button adjacent to its replacement.
+        const previous = anchor.previousElementSibling;
+        const before = previous?.matches(nativeSelector) ? previous : anchor;
+        if (before.previousElementSibling !== popout.button) before.before(popout.button);
       }
     },
     setPopoutActive(active: boolean) { popout?.button.setAttribute("aria-pressed", String(active)); },

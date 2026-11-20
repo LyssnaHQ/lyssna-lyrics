@@ -22,7 +22,7 @@ import { lyricsChanged, saveLocalLyrics } from "./local-lyrics";
 import { enabledSources, readLyrics, refreshLyrics, sourceIds } from "./lyric-sources";
 import { LyricCredits } from "./credits";
 import { CanvasArtwork, SpotifyVisualiser, useCanvas } from "./spotify-artwork";
-import { findNowPlaying, nowPlayingArtwork, placeNowPlayingPreview } from "./now-playing";
+import { findNowPlaying, nowPlayingArtwork, nowPlayingCanvas, placeNowPlayingPreview } from "./now-playing";
 import { TrackMetadata } from "./track-metadata";
 import { useDefaultLyricsFont } from "./lyrics-font-fallback";
 import { clock, usePlayback, usePosition } from "./playback";
@@ -193,7 +193,6 @@ function NowPlayingLyrics({ track, playing, settings, host, open, expand }: {
   const collapseLabel = collapsed ? "Show lyrics" : "Collapse lyrics";
   return <aside className={`lyssna-now-playing-card lyric-preview${expanded ? " expanded" : ""}${collapsed ? " collapsed" : ""}${settings.reduce_motion ? " reduce-motion" : ""}`}
     aria-label="Lyssna Lyrics preview" data-has-lyrics={hasLyrics || undefined} style={fonts}>
-    {track.cover && settings.npv_ambience && <Ambience image={track.cover} animate={playing} reduceMotion={settings.reduce_motion} />}
     <header>
       <h2>Lyrics</h2>
       <div className="lyssna-now-playing-actions">
@@ -209,6 +208,21 @@ function NowPlayingLyrics({ track, playing, settings, host, open, expand }: {
     {!collapsed && <div className="lyssna-now-playing-lines" data-scroll-size-contained=""><TrackLyrics track={track} host={host}
       playing={playing} settings={settings} compact duration={duration} {...data} /></div>}
   </aside>;
+}
+
+function NowPlayingBackdrop({ host, panel }: { host: Host; panel: HTMLElement }) {
+  const { track, playing } = usePlayback(host);
+  const settings = useLiveSettings();
+  const enabled = !!track?.cover && settings.npv_ambience;
+  const canvas = useMemo(() => () => nowPlayingCanvas(panel), [panel]);
+
+  useLayoutEffect(() => {
+    if (!enabled) return;
+    panel.classList.add("lyssna-npv-ambient-panel");
+    return () => panel.classList.remove("lyssna-npv-ambient-panel");
+  }, [enabled, panel]);
+
+  return enabled && <Ambience image={track?.cover} animate={playing} reduceMotion={settings.reduce_motion} followCanvas={canvas} />;
 }
 
 function PopoutView({ host, view, close }: { host: Host; view: Window; close: () => void }) {
@@ -429,12 +443,6 @@ function LyricsView({ host, options, close, parent, openPopout, fullscreenReques
     parent.classList.toggle("lyssna-slide-away", leaving);
   }, [parent, fullscreen, leaving]);
   useEffect(() => {
-    const update = () => setWindowActivity({ minimized: document.hidden, focused: document.hasFocus() });
-    update();
-    for (const event of ["visibilitychange", "focus", "blur"]) window.addEventListener(event, update);
-    return () => { for (const event of ["visibilitychange", "focus", "blur"]) window.removeEventListener(event, update); };
-  }, []);
-  useEffect(() => {
     const update = () => setWindowPosition(window.screenX, window.screenY);
     update();
     if (!settings.space_gravity || settings.reduce_motion) return;
@@ -560,6 +568,7 @@ export default function start(options: BuildOptions) {
   let card: HTMLElement | undefined;
   let cardPanel: HTMLElement | undefined;
   let mutedPreviewPanel: HTMLElement | undefined;
+  let backdrop: { panel: HTMLElement; container: HTMLElement; dispose(): void } | undefined;
   let sidebarCover: string | undefined;
   let closePopout: (() => void) | undefined;
   let opening = false;
@@ -681,6 +690,26 @@ export default function start(options: BuildOptions) {
     pictureInPicture ? () => void openPopout().catch((error) => console.warn("[Lyssna Lyrics] Could not open pop-out", error)) : undefined,
   );
   const stopEnhancementStartup = startEnhancements();
+  const updateActivity = () => setWindowActivity({ minimized: document.hidden, focused: document.hasFocus() });
+  document.addEventListener("visibilitychange", updateActivity);
+  window.addEventListener("focus", updateActivity);
+  window.addEventListener("blur", updateActivity);
+  updateActivity();
+
+  function syncBackdrop(panel: HTMLElement | null) {
+    if (panel?.querySelector(":scope > :is(.lyssna-dynamic-bg, .spicy-dynamic-bg)")) panel = null;
+    if (backdrop && backdrop.panel === panel && backdrop.container.parentElement === panel) return;
+    backdrop?.dispose();
+    backdrop = undefined;
+    if (!panel) return;
+    const container = document.createElement("div");
+    container.className = "lyssna-lyrics-view lyssna-npv-backdrop";
+    container.setAttribute("aria-hidden", "true");
+    panel.prepend(container);
+    const root = host.mount(container);
+    root.render(<NowPlayingBackdrop host={host} panel={panel} />);
+    backdrop = { panel, container, dispose() { root.unmount(); container.remove(); } };
+  }
 
   function attachCard(panel: HTMLElement | null) {
     if (panel?.querySelector("#LyssnaLyricsNPVCard, #SpicyLyricsNPVCard")) panel = null;
@@ -732,6 +761,7 @@ export default function start(options: BuildOptions) {
     if (restorePending && host.mainView()) void open();
     if (mainContainer && !mainContainer.isConnected) close?.();
     const panel = findNowPlaying();
+    syncBackdrop(panel);
     syncNowPlaying(panel);
     sidebarArtwork.sync(panel, sidebarCover);
   }
@@ -744,6 +774,7 @@ export default function start(options: BuildOptions) {
       observer.disconnect();
       stopViewSwitch();
       removeCard?.();
+      backdrop?.dispose();
       mutedPreviewPanel?.classList.remove("lyssna-npv-hide-lyrics");
       closePopout?.();
       close?.(false);
@@ -753,6 +784,9 @@ export default function start(options: BuildOptions) {
       disposeProvider();
       stopPreferenceSync();
       stopEnhancementStartup();
+      document.removeEventListener("visibilitychange", updateActivity);
+      window.removeEventListener("focus", updateActivity);
+      window.removeEventListener("blur", updateActivity);
       stylesheet.remove();
     },
     open: () => { if (!close) void open(); },

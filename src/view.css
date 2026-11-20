@@ -384,7 +384,7 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   position: relative;
 }
 
-.lyssna-npv-expanded-panel > :not(.lyssna-npv-expanded) {
+.lyssna-npv-expanded-panel > :not(.lyssna-npv-expanded, .lyssna-npv-backdrop) {
   visibility: hidden;
   pointer-events: none;
 }
@@ -394,6 +394,53 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   inset: 0;
   z-index: 20;
   background: var(--background-base, #181818);
+}
+
+.lyssna-npv-ambient-panel {
+  position: relative;
+  isolation: isolate;
+}
+
+.lyssna-lyrics-view.lyssna-npv-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: var(--section-border-radius, 8px);
+  background: transparent;
+  pointer-events: none;
+}
+
+.lyssna-npv-backdrop .ambient-shade {
+  background: #0005;
+}
+
+.lyssna-npv-ambient-panel [data-npv-root] {
+  --background-tinted-base: #ffffff12;
+  --section-background-base: var(--background-tinted-base);
+  background-color: transparent;
+}
+
+.lyssna-npv-ambient-panel :is(.main-nowPlayingView-headerContainer, .main-nowPlayingView-headerContainerV2) {
+  --background-base: #0006;
+}
+
+.lyssna-npv-ambient-panel :is(
+  [data-canvas-surface],
+  [data-testid="track-visual-enhancement"] ~ [aria-hidden="true"]:has(:is(video, img))
+) {
+  mask-image: linear-gradient(#000 56%, transparent);
+}
+
+.lyssna-npv-ambient-panel [data-testid="track-visual-enhancement"] ~ [aria-hidden="true"]:has(:is(video, img))::before {
+  background: linear-gradient(#0006, transparent 30%);
+}
+
+.lyssna-npv-ambient-panel [data-testid="track-visual-enhancement"] ~ [aria-hidden="true"]:has(:is(video, img))::after {
+  display: none;
+}
+
+.lyssna-npv-ambient-panel > .lyssna-lyrics-view.lyssna-npv-expanded {
+  background: transparent;
 }
 
 .lyssna-now-playing-card {
@@ -409,8 +456,8 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   box-shadow: inset 0 1px 0 #ffffff0e;
 }
 
-.lyssna-now-playing-card > .ambience {
-  z-index: -1;
+.lyssna-npv-ambient-panel .lyssna-now-playing-card {
+  background: #ffffff12;
 }
 
 .lyssna-now-playing-card.collapsed {

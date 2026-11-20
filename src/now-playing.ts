@@ -9,6 +9,12 @@ export function findNowPlaying() {
   ) ?? document.querySelector<HTMLElement>(panelContent);
 }
 
+export function nowPlayingCanvas(panel: HTMLElement) {
+  if (panel.classList.contains("lyssna-npv-expanded-panel")) return;
+  const video = panel.querySelector<HTMLVideoElement>(`:is(${canvasSurface}) video, video:is(${canvasSurface})`);
+  if (video && video.readyState >= video.HAVE_CURRENT_DATA && !video.closest(".lyssna-npv-album-artwork")) return video;
+}
+
 export function placeNowPlayingPreview(panel: HTMLElement, preview: HTMLElement) {
   const stock = panel.querySelector(nativePreview);
   if (stock) {

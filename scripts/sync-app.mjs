@@ -116,8 +116,7 @@ export function visualRows(settings: Settings, onSettings: (patch: Partial<Setti
           unavailable="Apple Music artwork lookup needs a server-side integration.">
           <Toggle label="Animated covers" checked={false} onChange={() => {}} />
         </SettingRow>,`,
-  slice(rows, '        flag(\n          "npv_ambience"', '      ],\n    ],\n    [\n      "Layout"')
-    .replace("Draw the moving artwork, or the Canvas, behind the Now playing panel.", "Draw the moving artwork behind the Now playing lyrics card."),
+  slice(rows, '        flag(\n          "npv_ambience"', '      ],\n    ],\n    [\n      "Layout"'),
   "], Layout: [",
   slice(rows, '        flag(\n          "lyrics_compact"', '      ],\n    ],\n    [\n      "Sources"'),
   "  ] };\n}",
@@ -270,6 +269,9 @@ write("ambience.tsx", read("frontend/ambience.tsx")
   .replace("  track,\n", "")
   .replace("  track?: Track;\n", "")
   .replace('image ?? track?.album.images?.[0]?.url ?? ""', 'image ?? ""')
+  .replace('the window shows, the lyrics page\'s first. */\n  followCanvas?: boolean | "window";', `the window shows, the lyrics page's first. A function selects a native
+   * Canvas outside this ambience layer. */
+  followCanvas?: boolean | "window" | (() => HTMLVideoElement | undefined);`)
   .replace("  windowActivity,", "  windowActivity as openerActivity,")
   .replace("    let engine: Kawarp;", `    const page = canvas.ownerDocument;
     const view = page.defaultView ?? window;
@@ -281,6 +283,9 @@ write("ambience.tsx", read("frontend/ambience.tsx")
     const root = panel?.getRootNode() as Document | ShadowRoot | undefined;`)
   .replace("? (document.querySelector<HTMLVideoElement>(", "? (root?.querySelector<HTMLVideoElement>(")
   .replace("            document.querySelector<HTMLVideoElement>(", "            panel?.ownerDocument.querySelector<HTMLVideoElement>(")
+  .replace('      const video =\n        followCanvas === "window"', '      const video = typeof followCanvas === "function"\n        ? followCanvas()\n        : followCanvas === "window"')
+  .replace("      if (video === following.current) return;\n      try {", "      if (video === following.current) return;\n      following.current = video;\n      try {")
+  .replace("        failed = video;\n        return;\n      }\n      following.current = video;", "        failed = video;\n        stopFollowing();\n        return;\n      }\n      if (following.current !== video) return;")
   .replace("frameRate: Math.max(1, ambienceFps(windowActivity()))", "frameRate: Math.max(1, ambienceFps(openerActivity()))")
   .replaceAll("frame = requestAnimationFrame(tick)", "frame = view.requestAnimationFrame(tick)")
   .replaceAll("cancelAnimationFrame(frame)", "view.cancelAnimationFrame(frame)")

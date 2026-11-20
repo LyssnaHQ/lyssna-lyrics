@@ -399,7 +399,7 @@ return { flag, range, Look: [
         flag(
           "npv_ambience",
           "Dynamic background in Now playing",
-          "Draw the moving artwork behind the Now playing lyrics card.",
+          "Draw the moving artwork, or the Canvas, behind the Now playing panel.",
           "now playing sidebar ambience background dynamic",
         ),
         flag(

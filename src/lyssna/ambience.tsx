@@ -31,8 +31,9 @@ export const Ambience = memo(function Ambience({
   saturation?: number;
   /** Warp the panel's playing Canvas video instead of the artwork, as Spicy
    * Lyrics' Now Playing background does; "window" follows whichever Canvas
-   * the window shows, the lyrics page's first. */
-  followCanvas?: boolean | "window";
+   * the window shows, the lyrics page's first. A function selects a native
+   * Canvas outside this ambience layer. */
+  followCanvas?: boolean | "window" | (() => HTMLVideoElement | undefined);
 }) {
   const source = image ?? "",
     surface = useRef<HTMLCanvasElement>(null),
@@ -194,8 +195,9 @@ export const Ambience = memo(function Ambience({
     const panel = surface.current?.parentElement?.parentElement;
     const root = panel?.getRootNode() as Document | ShadowRoot | undefined;
     const look = () => {
-      const video =
-        followCanvas === "window"
+      const video = typeof followCanvas === "function"
+        ? followCanvas()
+        : followCanvas === "window"
           ? (root?.querySelector<HTMLVideoElement>(
               ".lyrics-page video[data-canvas-video]",
             ) ??
@@ -205,6 +207,7 @@ export const Ambience = memo(function Ambience({
           : panel?.querySelector<HTMLVideoElement>("video[data-canvas-video]");
       if (!video || video === failed) return stopFollowing();
       if (video === following.current) return;
+      following.current = video;
       try {
         engine.loadVideo(video, {
           // Canvases are 9:16; keep that shape in the colour map.
@@ -221,9 +224,10 @@ export const Ambience = memo(function Ambience({
         });
       } catch {
         failed = video;
+        stopFollowing();
         return;
       }
-      following.current = video;
+      if (following.current !== video) return;
       if (surface.current) surface.current.dataset.source = "canvas";
       resume.current?.();
     };
