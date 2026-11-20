@@ -1,0 +1,163 @@
+.ttml-recording {
+  flex: none;
+}
+.ttml-recording-trigger {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 6px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.ttml-recording-trigger:is(:hover, [aria-expanded="true"]) {
+  color: #fff;
+  background: #ffffff14;
+}
+.ttml-recording-ring {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: conic-gradient(var(--spice-button, #1ed760) var(--recorded), #ffffff30 0);
+  mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1.5px));
+}
+.ttml-recording-popover:popover-open {
+  position: fixed;
+  inset: auto;
+  display: grid;
+  gap: 10px;
+  box-sizing: border-box;
+  width: min(292px, calc(100vw - 16px));
+  margin: 0;
+  padding: 14px;
+  overflow-y: auto;
+  border: 1px solid #ffffff1f;
+  border-radius: 14px;
+  background: #202020;
+  color: #f5f5f5;
+  color-scheme: dark;
+  box-shadow: 0 12px 32px #0009, inset 0 1px #ffffff0d;
+  font: 13px/1.35 "Lyssna Metropolis", "Segoe UI", sans-serif;
+}
+.ttml-recording-popover h2 { margin: 0; font-size: 14px; font-weight: 700; }
+.ttml-recording-popover p {
+  margin: 0;
+  color: #b3b3b3;
+  font-size: 11.5px;
+}
+.ttml-recording-track {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.ttml-recording-cover {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 44px;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: 7px;
+  background: #ffffff0d;
+  color: #b3b3b3;
+}
+.ttml-recording-cover > * { grid-area: 1 / 1; }
+.ttml-recording-cover img { width: 100%; height: 100%; object-fit: cover; }
+.ttml-recording-track > div { min-width: 0; }
+.ttml-recording-track :is(strong, div > span) {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ttml-recording-track div > span {
+  margin-top: 2px;
+  color: #b3b3b3;
+  font-size: 11.5px;
+}
+.ttml-recording-status {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 5px 10px;
+  color: #b3b3b3;
+  font-size: 11.5px;
+}
+.ttml-recording-status > span:nth-child(2) { color: #f5f5f5; font-weight: 700; font-variant-numeric: tabular-nums; }
+.ttml-recording-status[data-complete] > span:nth-child(2) { color: #63e68e; }
+.ttml-recording-status progress {
+  appearance: none;
+  grid-column: 1 / -1;
+  width: 100%;
+  height: 4px;
+  border: 0;
+}
+.ttml-recording-status progress::-webkit-progress-bar { border-radius: 3px; background: #ffffff14; }
+.ttml-recording-status progress::-webkit-progress-value { border-radius: 3px; background: #1ed760; }
+.ttml-recording-actions,
+.ttml-recording-manage { display: grid; gap: 5px; }
+.ttml-recording-actions:empty { display: none; }
+.ttml-recording-manage {
+  padding-top: 7px;
+  border-top: 1px solid #ffffff14;
+}
+.ttml-recording-manage p { margin: -1px 8px 3px; }
+.ttml-recording-popover .ttml-recording-error { color: #ffacb4; }
+.ttml-recording-popover button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 32px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 8px;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.ttml-recording-popover button svg { flex: none; }
+.ttml-recording-manage button svg:nth-child(2) { margin-inline-start: auto; color: #b3b3b3; }
+.ttml-recording-popover .ttml-recording-return,
+.ttml-recording-export button { background: #ffffff0c; }
+.ttml-recording-popover button:hover:enabled { background: #ffffff1a; }
+.ttml-recording-popover button.ttml-recording-delete { color: #ffacb4; }
+.ttml-recording-popover button.ttml-recording-delete:hover:enabled { background: #ff708613; }
+.ttml-recording-popover :is(button, select):disabled { opacity: .45; cursor: default; }
+.ttml-recording-popover :is(button, select):focus-visible,
+.ttml-recording-trigger:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.ttml-recording-export {
+  display: grid;
+  grid-template-columns: minmax(88px, 1fr) minmax(0, 1.3fr);
+  gap: 8px;
+}
+.ttml-recording-export label { position: relative; display: flex; }
+.ttml-recording-export label svg {
+  position: absolute;
+  inset-inline-end: 8px;
+  top: 50%;
+  translate: 0 -50%;
+  color: #b3b3b3;
+  pointer-events: none;
+}
+.ttml-recording-export select {
+  appearance: none;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 32px;
+  padding: 5px 24px 5px 8px;
+  border: 1px solid #ffffff19;
+  border-radius: 8px;
+  color: inherit;
+  background: #292929;
+  font: inherit;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}

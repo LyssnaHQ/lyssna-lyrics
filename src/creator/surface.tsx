@@ -14,7 +14,7 @@ import { submitLyssnaTtml } from "../lyssna-submission";
 import { revalidateLyssnaSong } from "../lyssna-provider";
 import { lyssnaInstallReady } from "../lyssna-api";
 import { CreatorEnvironment } from "./environment";
-import { couldBeComplete, recordedCoverage, savedAudioCleared, type RecordingCoverage, type SavedRecording } from "./captured-replay";
+import { couldBeComplete, recordedCoverage, recordingPercent, savedAudioCleared, type RecordingCoverage, type SavedRecording } from "./captured-replay";
 import { recordedAudioSaved, type SpotifyCapture } from "./spotify-capture";
 import { downloadRecording, recordingExportEnabled, type RecordingFormat } from "./recording-export";
 import { readRecordingMetadata } from "./recording-metadata";
@@ -27,6 +27,7 @@ import { dismissDraft } from "./ttml-working";
 import type { CreatorState, PlayerRequest, Track } from "./types";
 import { formatTime } from "./ttml-creator-model";
 import css from "./ttml-creator.css?inline";
+import meterCss from "./recording-meter.css?inline";
 
 type EditorAudio = {
   uri: string;
@@ -101,9 +102,7 @@ export function CreatorSurface({ host, view: owner, settings, close, previewing,
   const captured = capture.recordings;
   const saved = recorded?.uri === current?.uri ? recorded : undefined;
   const fullRecording = completeAudio?.uri === current?.uri && completeAudio?.duration === duration ? completeAudio.recording : undefined;
-  const recordedPercent = saved?.frames && duration > 0
-    ? fullRecording ? 100 : Math.max(1, Math.min(99, Math.round(100 * saved.frames / (duration * saved.sampleRate / 1000))))
-    : undefined;
+  const recordedPercent = recordingPercent(saved, duration, !!fullRecording);
 
   useLayoutEffect(() => {
     activeUri.current = current?.uri;
@@ -449,7 +448,7 @@ export function CreatorSurface({ host, view: owner, settings, close, previewing,
   };
 
   return <div className={`lyssna-creator-surface${settings.reduce_motion ? " reduce-motion" : ""}`} ref={setRoot}>
-    <style>{css}</style>
+    <style>{`${css}\n${meterCss}`}</style>
     <input type="file" ref={picker} hidden accept="audio/*,.wav,.flac,.mp3,.m4a,.ogg,.opus" onChange={(event) => {
       const file = event.currentTarget.files?.[0];
       event.currentTarget.value = "";

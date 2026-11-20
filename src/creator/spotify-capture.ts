@@ -25,6 +25,17 @@ type CaptureStatus = "idle" | "selecting" | "live";
 type FrameBatch = { first: number; decibels: Float32Array };
 type ReplayBatch = { firstFrame: number; samples: Int32Array };
 const signalFloor = -120;
+const capturePeakLimit = 0x7fffff * 10 ** (-1 / 20);
+
+function boostCapture(samples: Int32Array, volume: number) {
+  if (!Number.isFinite(volume) || volume <= 0 || volume >= 1) return;
+  let peak = 0;
+  for (const sample of samples) peak = Math.max(peak, Math.abs(sample));
+  if (!peak) return;
+  const gain = Math.min(1 / Math.max(0.01, volume), capturePeakLimit / peak);
+  if (gain <= 1) return;
+  for (let index = 0; index < samples.length; index++) samples[index] = Math.round(samples[index] * gain);
+}
 
 function captureError(error: unknown) {
   if (!(error instanceof Error)) return "Spotify couldn’t start audio sharing.";
@@ -372,14 +383,15 @@ export function createSpotifyCapture(host: Host, view: Window & typeof globalThi
               const remaining = Math.round(clock.duration * sampleRate / 1000) - startFrame;
               if (remaining <= 0) return;
               const samples = data.samples.subarray(0, remaining * 2);
-              const packet = { uri: clock.uri, startFrame, sampleRate, samples };
+              const packet = { uri: clock.uri, startFrame, sampleRate, samples, bitrate: host.captureBitrate() };
+              replayHeard ||= samples.some((sample) => Math.abs(sample) >= 512);
+              boostCapture(samples, clock.volume);
               if (!replayHeard) {
-                replayHeard = samples.some((sample) => Math.abs(sample) >= 512);
-                if (!replayHeard) {
-                  leadingAudio.push(packet);
-                  if (leadingAudio.length > 50) leadingAudio.shift();
-                  return;
-                }
+                leadingAudio.push(packet);
+                if (leadingAudio.length > 50) leadingAudio.shift();
+                return;
+              }
+              if (leadingAudio.length) {
                 leadingAudio.forEach(appendReplay);
                 leadingAudio.length = 0;
               }

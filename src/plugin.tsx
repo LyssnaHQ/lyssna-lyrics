@@ -50,6 +50,7 @@ import desktopCss from "./lyssna/lyrics.css?inline";
 import settingsCss from "./lyssna/settings.css?inline";
 import ttmlCss from "./lyssna/load-ttml.css?inline";
 import viewCss from "./view.css?inline";
+import meterCss from "./creator/recording-meter.css?inline";
 
 function useLiveSettings() {
   const [settings, setSettings] = useState(readSettings);
@@ -753,7 +754,7 @@ export default function start(options: BuildOptions) {
   const capture = createSpotifyCapture(host);
   const stopPreferenceSync = startPreferenceSync();
   const stylesheet = document.createElement("style");
-  stylesheet.textContent = `${fontCss}\n${desktopCss}\n${settingsCss}\n${ttmlCss}\n${viewCss}`;
+  stylesheet.textContent = `${fontCss}\n${desktopCss}\n${settingsCss}\n${ttmlCss}\n${meterCss}\n${viewCss}`;
   document.head.append(stylesheet);
   let stopProvider: (() => void) | undefined;
   let playbarButtons: ReturnType<typeof playbarViewButtons> | undefined;
@@ -782,7 +783,7 @@ export default function start(options: BuildOptions) {
       container.className = "lyssna-auto-record-host";
       document.body.append(container);
       const root = host.mount(container);
-      root.render(<AutoRecordPrompt capture={capture} />);
+      root.render(<AutoRecordPrompt capture={capture} host={host} />);
       removeAutoRecord = () => { root.unmount(); container.remove(); };
     } else if (!autoRecord && removeAutoRecord) {
       capture.stopAuto();

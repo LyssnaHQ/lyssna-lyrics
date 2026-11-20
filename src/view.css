@@ -53,6 +53,21 @@
 }
 .lyssna-auto-record button:hover { background: #ffffff30; }
 
+.lyssna-auto-record-slot {
+  display: flex;
+  align-items: center;
+  flex: none;
+  --muted: #b3b3b3;
+}
+.lyssna-auto-record-slot.floating {
+  position: fixed;
+  inset: auto 16px calc(var(--panel-gap, 8px) + 96px) auto;
+  z-index: 10500;
+  border: 1px solid #ffffff24;
+  border-radius: 999px;
+  background: #222;
+}
+
 :host(.lyssna-lyrics-host) > .lyssna-lyrics-view:not(.immersive, .lyssna-full-window) {
   z-index: 2;
 }

@@ -1,5 +1,6 @@
 import { useLayoutEffect, useState } from "react";
 import creatorCss from "./ttml-creator.css?inline";
+import meterCss from "./recording-meter.css?inline";
 
 export type CreatorPlaybarSlots = {
   wave: HTMLElement;
@@ -17,7 +18,7 @@ export function useCreatorPlaybar(view: Window & typeof globalThis, open: boolea
     dock.className = "lyssna-editor-dock";
     const shadow = dock.attachShadow({ mode: "open" });
     const style = document.createElement("style");
-    style.textContent = creatorCss;
+    style.textContent = `${creatorCss}\n${meterCss}`;
     const wave = document.createElement("div");
     wave.className = "lyssna-editor-wave-slot";
     shadow.append(style, wave);

@@ -48,6 +48,7 @@ type PlayerState = {
   item?: SpotifyTrack;
   playbackId?: string;
   isPaused?: boolean;
+  playbackQuality?: { bitrateLevel?: number };
   context?: { uri?: string; url?: string; metadata?: Record<string, string> };
   restrictions?: { disallowSeekingReasons?: string[]; canToggleRepeatTrack?: boolean; disallowTogglingRepeatTrackReasons?: string[] };
   signals?: string[];
@@ -470,6 +471,15 @@ export function getHost() {
     previous: () => kit ? kit.Player.previous() : spice?.Player.back?.(),
     next: () => kit ? kit.Player.next() : spice?.Player.next?.(),
     volume: () => kit ? kit.Player.volume : spice?.Player.getVolume?.() ?? 0,
+    captureBitrate() {
+      // The current playback quality, which can differ from the user's selected target.
+      switch (playerState()?.playbackQuality?.bitrateLevel) {
+        case 1: return 24_000;
+        case 2: return 96_000;
+        case 3: return 160_000;
+        case 4: return 320_000;
+      }
+    },
     setVolume: (level: number) => kit ? kit.Player.setVolume(level) : spice?.Player.setVolume?.(level),
     repeat: () => kit ? kit.Player.repeat : repeatModes[spice?.Player.getRepeat?.() ?? 0] ?? "off",
     repeatTrackBlocked() {
