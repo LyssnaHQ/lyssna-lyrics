@@ -113,22 +113,28 @@ function useTrackLyrics(track: Track, duration: number, view: Window, settings: 
   return { lyrics, waiting };
 }
 
-function LyricsForTrack({ track, host, playing, settings, view = window, fullView = view === window }: {
+function LyricsForTrack({ track, host, playing, settings, view = window, fullView = false, openCreator }: {
   track: Track; host: Host; playing: boolean; settings: Settings; view?: Window; fullView?: boolean;
+  openCreator?(): void;
 }) {
   const duration = host.duration();
   const data = useTrackLyrics(track, duration, view, settings);
   const uri = `spotify:track:${track.id}`;
   const [draft, setDraft] = useState(() => fullView ? draftPreview(uri) : null);
-  useEffect(() => { setDraft(fullView ? draftPreview(uri) : null); }, [uri, fullView]);
-  if (draft && !(settings.ttml_reviewer !== "off" && hasTemporaryTtml(track.id) &&
-    !settings.lyrics_sources_disabled.includes("local"))) return <>
-    <button type="button" className="lyssna-dismiss-draft" onClick={() => { dismissDraft(uri); setDraft(null); }}>Hide draft preview</button>
-    <TrackLyrics track={track} host={host} playing={playing} settings={settings} view={view} fullView={fullView}
-      duration={duration} lyrics={draft} waiting={false} />
+  const reviewing = settings.ttml_reviewer !== "off" && hasTemporaryTtml(track.id) &&
+    !settings.lyrics_sources_disabled.includes("local");
+  const visibleDraft = reviewing ? null : draft;
+  const lyrics = <TrackLyrics track={track} host={host} playing={playing} settings={settings} view={view} fullView={fullView}
+    duration={duration} {...(visibleDraft ? { lyrics: visibleDraft, waiting: false } : data)} />;
+  if (!fullView) return lyrics;
+  return <>
+    <div className="lyrics-body">{lyrics}</div>
+    {visibleDraft && <div className="ttml-draft-banner">
+      <span role="status">Showing your TTML draft</span>
+      {openCreator && <button type="button" onClick={openCreator}>Back to Creator</button>}
+      <button type="button" onClick={() => { dismissDraft(uri); setDraft(null); }}>Original lyrics</button>
+    </div>}
   </>;
-  return <TrackLyrics track={track} host={host} playing={playing} settings={settings} view={view} fullView={fullView}
-    duration={duration} {...data} />;
 }
 
 function TrackLyrics({ track, host, playing, settings, compact = false, view = window, fullView = !compact, duration, lyrics, waiting }: {
@@ -379,9 +385,10 @@ function requestDisplayFullscreen(parent: HTMLElement) {
   void parent.requestFullscreen().then(() => parent.focus({ preventScroll: true })).catch(() => {});
 }
 
-function LyricsView({ host, options, close, parent, view = window, fullscreenRequest = 0, closeCreator, onSidebarCover }: {
+function LyricsView({ host, options, close, parent, view = window, fullscreenRequest = 0, openCreator, closeCreator, onSidebarCover }: {
   host: Host; options: BuildOptions; close: () => void; parent: HTMLElement; view?: Window;
   fullscreenRequest?: number;
+  openCreator?(): void;
   closeCreator?(): void;
   onSidebarCover?(cover?: string): void;
 }) {
@@ -605,7 +612,11 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
             reduceMotion={settings.reduce_motion} orderByWidth={!!canvas} />
           {artworkDock && playback}
         </div>
-        <div className="lyrics-body"><LyricsForTrack key={track.id} track={track} host={host} playing={playing} settings={settings} view={view} fullView /></div>
+        <LyricsForTrack key={track.id} track={track} host={host} playing={playing} settings={settings} view={view} fullView
+          openCreator={preferences.ttml_creator && openCreator ? () => {
+            if (fullscreen && !externalCinema) toggleFullscreen();
+            openCreator();
+          } : undefined} />
       </> : <div className="lyrics-message"><Music2 /><h2>Play something you love</h2><p>Your lyrics will appear here.</p></div>)}
       {track && settings.lyrics_visualiser && <SpotifyVisualiser key={track.id} host={host} trackId={track.id}
         opacity={settings.lyrics_visualiser_opacity} playing={playing && !settings.reduce_motion} />}
@@ -822,8 +833,12 @@ export default function start(options: BuildOptions) {
         playbarButtons?.setCinemaActive(cinema);
         if (cinema) close?.();
         syncNowPlaying();
+        const returnToCreator = async () => {
+          if (!creatorOpen) await open("creator");
+          if (creatorOpen) dismiss();
+        };
         root.render(cinema
-          ? <LyricsView host={host} options={options} close={dismiss} parent={parent} view={view} />
+          ? <LyricsView host={host} options={options} close={dismiss} parent={parent} view={view} openCreator={() => void returnToCreator()} />
           : <PopoutView host={host} view={view} close={dismiss} />);
       } catch (error) {
         if (detached?.view === view) detached.dismiss();
@@ -892,7 +907,8 @@ export default function start(options: BuildOptions) {
       window.requestAnimationFrame(() => playbarButtons?.focusCreator());
     };
     renderMainView = () => root.render(<LyricsView host={host} options={options} close={closeView} parent={parent}
-      fullscreenRequest={fullscreenRequest} closeCreator={creatorOpen ? closeCreator : undefined} onSidebarCover={setSidebarCover} />);
+      fullscreenRequest={fullscreenRequest} openCreator={() => setCreator(true)}
+      closeCreator={creatorOpen ? closeCreator : undefined} onSidebarCover={setSidebarCover} />);
     enterFullscreen = (next) => {
       fullscreenRequest++;
       renderMainView?.();
