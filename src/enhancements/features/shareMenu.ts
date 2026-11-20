@@ -14,9 +14,15 @@ const boundEmbedButtons = new WeakSet<HTMLElement>();
 const shareTypes = new Set(["track", "album", "artist", "playlist", "show", "episode", "audiobook", "user", "concert", "venue"]);
 const noEmbed = new Set(["user", "concert", "venue"]);
 
-// Spotify's 16 px Copy link and Embed icons from its Share submenu.
+// Spotify's 16 px icons from the Share menu and track actions.
 const copyIcon = '<path d="M5 .75A.75.75 0 0 1 5.75 0h9.5a.75.75 0 0 1 .75.75v10.5a.75.75 0 0 1-.75.75H12v-1.5h2.5v-9h-8V3H5z"></path><path d="M.75 4a.75.75 0 0 0-.75.75v10.5c0 .414.336.75.75.75h9.5a.75.75 0 0 0 .75-.75V4.75A.75.75 0 0 0 10.25 4zm.75 10.5v-9h8v9z"></path>';
 const embedIcon = '<path d="M0 1.75A.75.75 0 0 1 .75 1h14.5a.75.75 0 0 1 .75.75v13.5a.75.75 0 0 1-.75.75H.75a.75.75 0 0 1-.75-.75zm1.5.75v12h13v-12z"></path><path d="M6.962 5.47a.75.75 0 0 1 0 1.06L4.992 8.5l1.97 1.97a.75.75 0 1 1-1.06 1.06L2.87 8.5 5.9 5.47a.75.75 0 0 1 1.061 0zm2.076 0a.75.75 0 0 0 0 1.06l1.97 1.97-1.97 1.97a.75.75 0 1 0 1.06 1.06L13.13 8.5 10.1 5.47a.75.75 0 0 0-1.06 0"></path>';
+
+const artistIcon = '<path d="M11.757 2.987A4.36 4.36 0 0 0 7.618 0a4.36 4.36 0 0 0-4.139 2.987 5.5 5.5 0 0 0-.22 1.894 5.6 5.6 0 0 0 1.4 3.312l.125.152a.748.748 0 0 1-.2 1.128l-2.209 1.275A4.75 4.75 0 0 0 0 14.857v1.142h8.734A5.5 5.5 0 0 1 8.15 14.5H1.517a3.25 3.25 0 0 1 1.6-2.454l2.21-1.275a2.25 2.25 0 0 0 .6-3.386l-.128-.153a4.1 4.1 0 0 1-1.05-2.44A4 4 0 0 1 4.89 3.47a2.8 2.8 0 0 1 1.555-1.713 2.89 2.89 0 0 1 3.293.691c.265.296.466.644.589 1.022.12.43.169.876.144 1.322a4.12 4.12 0 0 1-1.052 2.44l-.127.153a2.24 2.24 0 0 0-.2 2.58c.338-.45.742-.845 1.2-1.173 0-.162.055-.32.156-.447l.126-.152a5.6 5.6 0 0 0 1.4-3.312 5.5 5.5 0 0 0-.218-1.894zm3.493 3.771a.75.75 0 0 0-.75.75v3.496h-1a2.5 2.5 0 0 0-2.31 1.542 2.497 2.497 0 0 0 1.822 3.406A2.502 2.502 0 0 0 16 13.502V7.508a.75.75 0 0 0-.75-.75m-.75 6.744a.998.998 0 0 1-1.707.707 1 1 0 0 1 .707-1.706h1z"></path>';
+const albumIcon = '<path d="M8 6.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3"></path><path d="M8 5a3 3 0 1 0 0 6 3 3 0 0 0 0-6m0 1.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3"></path><path d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8"></path>';
+// Reuse Spotify+'s Copy icon in the host's leading icon slot.
+const copySubmenuIcon = '<path d="M5 1.25h4.55c1 0 1.8.8 1.8 1.8V4.1H9.9V3.2a.45.45 0 0 0-.45-.45H5.2a.45.45 0 0 0-.45.45v6.1c0 .25.2.45.45.45h.95v1.45H5A1.7 1.7 0 0 1 3.3 9.5V2.95c0-.94.76-1.7 1.7-1.7m3.35 3.55h3.7c.91 0 1.65.74 1.65 1.65v6.25c0 .91-.74 1.65-1.65 1.65h-3.7c-.91 0-1.65-.74-1.65-1.65V6.45c0-.91.74-1.65 1.65-1.65m.1 1.4a.35.35 0 0 0-.35.35v5.95c0 .19.16.35.35.35h3.5a.35.35 0 0 0 .35-.35V6.55a.35.35 0 0 0-.35-.35zm.8 1.35h2.4V8.7h-2.4zm0 1.9h2.4V10.6h-2.4z"></path>';
+const idIcon = '<path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" d="M2.5 2.75h11A1.75 1.75 0 0 1 15.25 4.5v7a1.75 1.75 0 0 1-1.75 1.75h-11A1.75 1.75 0 0 1 .75 11.5v-7A1.75 1.75 0 0 1 2.5 2.75ZM4.75 6v4m3 0V6h1.5a2 2 0 0 1 0 4z"></path>';
 
 function shareTarget(uris: string[]) {
   if (uris.length !== 1) return;
@@ -200,11 +206,11 @@ export function startShareMenuController(host: Host) {
     createContextMenuItem("Copy ID", (uris) => {
       const id = trackId(uris);
       if (id) void copyText(id, "Spotify ID copied");
-    }, showCopy, copyIcon),
-    createContextMenuItem("Copy Song Name & Artist", (uris) => void copyTrackMetadata(uris, "song"), showCopy, Spicetify.SVGIcons?.credits ?? copyIcon),
-    createContextMenuItem("Copy ISRC", (uris) => void copyTrackMetadata(uris, "isrc"), showCopy, copyIcon),
+    }, showCopy, idIcon),
+    createContextMenuItem("Copy Song Name & Artist", (uris) => void copyTrackMetadata(uris, "song"), showCopy, artistIcon),
+    createContextMenuItem("Copy ISRC", (uris) => void copyTrackMetadata(uris, "isrc"), showCopy, albumIcon),
   ];
-  createContextMenuSubMenu(copyLabel, copyItems, showCopy, copyIcon).register();
+  createContextMenuSubMenu(copyLabel, copyItems, showCopy, copySubmenuIcon).register();
 
   document.addEventListener("contextmenu", resetMenuContext, true);
   observeMenus(syncMenus);

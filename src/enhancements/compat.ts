@@ -42,7 +42,6 @@ type LegacyHost = {
   Player?: { data?: PlayerData };
   URI?: { fromString(uri: string): { type: string; toURLPath(useNative?: boolean): string } };
   GraphQL?: { Definitions?: Record<string, unknown>; Request(definition: unknown, vars: object): Promise<PlaylistResult> };
-  SVGIcons?: { credits?: string };
   Locale?: { get?(key: string): string };
   ContextMenu?: {
     Item: new (name: string, click: Callback, when: Predicate, icon?: string, trailingIcon?: string, disabled?: boolean) => MenuItem;
