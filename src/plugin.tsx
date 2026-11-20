@@ -126,11 +126,13 @@ function LyricsForTrack({ track, host, playing, settings, compact = false, view 
       tuning={settings.lyrics_animator} onSeek={(ms) => host.seek(Math.max(0, ms - (settings.lyrics_seek_compensation ? 300 : 0)))}
       highlighter={settings.lyrics_highlighter ? markerColour(settings.lyrics_highlighter_color) : undefined}
       linkWidth={settings.gravity_links ? settings.gravity_link_width / 100 : 0}
-      credits={<>{rendered.songwriters?.length ? <p className="writer-credits">Written by {rendered.songwriters.join(", ")}</p> : null}
-        <div className={upNext ? "lyric-credits-row" : undefined}>
+      credits={<div className={upNext ? "lyric-credits-row" : undefined}>
+        <div className="gravity-credit-details">
+          {rendered.songwriters?.length ? <p className="writer-credits">Written by {rendered.songwriters.join(", ")}</p> : null}
           <LyricCredits lyrics={rendered} expanded discord={settings.lyrics_discord_usernames} />
-          {upNext}
-        </div></>} /></div>;
+        </div>
+        {upNext}
+      </div>} /></div>;
   }
   if (rendered) return <div className={fontClass} style={{ display: "contents" }}><LyricsDisplay lyrics={rendered} positionMs={time} settings={settings}
     onSeek={host.seek} compact={compact} upNext={upNext} /></div>;

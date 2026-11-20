@@ -480,6 +480,15 @@
   padding-block: 0.25em;
 }
 
+.lyssna-lyrics-view .gravity-credits .lyric-credits-row {
+  align-items: end;
+}
+
+.lyssna-lyrics-view .gravity-credits .lyric-credits-row > .gravity-credit-details {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
 .lyssna-lyrics-view .lyssna-provider-credits > div:first-child a {
   text-decoration: underline;
   text-underline-offset: 0.18em;
