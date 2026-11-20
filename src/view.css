@@ -1394,8 +1394,24 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   pointer-events: none;
 }
 
-.lyssna-profile-settings > .lyrics-settings-backdrop:not(.lyssna-animator-backdrop) {
+.lyssna-lyrics-view .lyssna-settings-dialog {
+  position: fixed;
+  inset: 0;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
   pointer-events: auto;
+}
+
+.lyssna-lyrics-view .lyssna-settings-dialog::backdrop {
+  background: transparent;
 }
 
 .lyssna-lyrics-view .lyrics-settings-backdrop[data-theme="light"] {

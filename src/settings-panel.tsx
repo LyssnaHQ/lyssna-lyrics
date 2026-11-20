@@ -102,6 +102,7 @@ export function SettingsPanel({ settings, change, close, options, track, notice,
   const [buildError, setBuildError] = useState("");
   const [transferring, setTransferring] = useState(false);
   const [marker, setMarker] = useState<{ left: number; width: number }>();
+  const modal = useRef<HTMLDialogElement>(null);
   const scroll = useRef<HTMLDivElement>(null);
   const mainScroll = useRef(initial.scroll);
   const submenuScroll = useRef(initial.submenuScroll ?? 0);
@@ -123,6 +124,13 @@ export function SettingsPanel({ settings, change, close, options, track, notice,
     hidden,
     hide: (id: string) => change({ hidden_settings: [...new Set([...hidden, id])] }),
   };
+
+  useLayoutEffect(() => {
+    const dialog = modal.current;
+    if (!dialog) return;
+    dialog.showModal();
+    return () => dialog.close();
+  }, [tuning]);
 
   useLayoutEffect(() => {
     if (scroll.current) scroll.current.scrollTop = submenu ? submenuScroll.current : mainScroll.current;
@@ -404,11 +412,10 @@ export function SettingsPanel({ settings, change, close, options, track, notice,
     </SettingRow>);
 
   const backdropClass = `modal-backdrop lyrics-settings-backdrop${settings.liquid_glass ? " liquid-glass" : ""}${settings.reduce_motion ? " reduce-motion" : ""}${tuning ? " lyssna-animator-backdrop" : ""}`;
-  return <div className={backdropClass} data-theme={settings.theme} style={fonts}
+  const content = <div className={backdropClass} data-theme={settings.theme} style={fonts}
     onClick={(event) => { if (event.target === event.currentTarget) close(); }}>
     {tuning ? <AnimatorPanel animator={settings.lyrics_animator} onChange={(lyrics_animator) => change({ lyrics_animator })}
-      onBack={() => setTuning(false)} onClose={close} /> : <section className={`lyrics-settings plugin-settings${submenu ? " plugin-settings-submenu" : ""}`}
-        role="dialog" aria-modal="true" aria-labelledby="lyssna-settings-title">
+      onBack={() => setTuning(false)} onClose={close} /> : <section className={`lyrics-settings plugin-settings${submenu ? " plugin-settings-submenu" : ""}`}>
       <header className="lyrics-settings-head">
         {submenu && <button type="button" ref={backButton} className="pill outline settings-submenu-back" onClick={back}>
           <ChevronLeft size={16} />Back
@@ -484,6 +491,12 @@ export function SettingsPanel({ settings, change, close, options, track, notice,
       </div>
     </section>}
   </div>;
+  return tuning ? content : <dialog ref={modal} className="lyssna-settings-dialog" aria-labelledby="lyssna-settings-title"
+    onCancel={(event) => {
+      event.preventDefault();
+      if (submenu) back();
+      else close();
+    }}>{content}</dialog>;
 }
 
 function TimingOffsetSlider({ label, value, disabled, onChange }: {
