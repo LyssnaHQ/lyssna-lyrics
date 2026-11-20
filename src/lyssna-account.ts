@@ -7,6 +7,13 @@ export const accountChanged = "lyssna-lyrics:account";
 
 type Tokens = { access_token: string; access_expires_at: string; refresh_token: string; refresh_expires_at: string };
 export type SignIn = { url: string; verifier: string; state: string };
+export type LyssnaProfile = {
+  username: string;
+  role?: string;
+  reputation?: number;
+  tier?: string;
+  emailVerified?: boolean;
+};
 
 let session: Tokens | undefined;
 let memoryOnly = false;
@@ -122,7 +129,7 @@ export async function lyssnaAccess(rejected?: string) {
   });
 }
 
-export async function lyssnaProfileName() {
+export async function readLyssnaProfile(): Promise<LyssnaProfile | undefined> {
   let accessToken = await lyssnaAccess();
   if (!accessToken) return;
   let response = await lyssnaRequest("/v1/me", { accessToken });
@@ -132,8 +139,19 @@ export async function lyssnaProfileName() {
     response = await lyssnaRequest("/v1/me", { accessToken });
   }
   if (!response?.ok) return;
-  const profile = await response.json() as { user?: { username?: string } };
-  return typeof profile.user?.username === "string" ? profile.user.username : undefined;
+  const profile = await response.json() as {
+    user?: { username?: string; role?: string; reputation?: number; email_verified?: boolean };
+    tier?: { name?: string };
+  } | null;
+  const user = profile?.user;
+  if (typeof user?.username !== "string" || !user.username) return;
+  return {
+    username: user.username,
+    role: typeof user.role === "string" && user.role ? user.role : undefined,
+    reputation: typeof user.reputation === "number" && Number.isFinite(user.reputation) ? user.reputation : undefined,
+    tier: typeof profile?.tier?.name === "string" && profile.tier.name ? profile.tier.name : undefined,
+    emailVerified: typeof user.email_verified === "boolean" ? user.email_verified : undefined,
+  };
 }
 
 export async function lyssnaSignOut() {

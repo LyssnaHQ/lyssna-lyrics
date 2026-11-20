@@ -1309,7 +1309,7 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   background: light-dark(#0001, #fff1);
 }
 
-.lyssna-lyrics-view .lyssna-account-form a {
+.lyssna-lyrics-view :is(.lyssna-account-form, .lyssna-account-actions) a {
   text-decoration: none;
 }
 
