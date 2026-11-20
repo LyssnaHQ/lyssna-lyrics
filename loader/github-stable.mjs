@@ -1,22 +1,20 @@
 const repository = "LyssnaHQ/lyssna-lyrics";
-const releaseApi = `https://api.github.com/repos/${repository}/releases/latest`;
-
-export async function readStableRelease(signal) {
-  const response = await fetch(releaseApi, {
-    credentials: "omit", cache: "no-cache", headers: { Accept: "application/vnd.github+json" },
-    signal: AbortSignal.any([signal, AbortSignal.timeout(5_000)]),
-  });
-  if (response.status === 404) return null;
-  if (!response.ok) throw new Error(`GitHub Stable release HTTP ${response.status}`);
-  const release = await response.json();
-  const tag = release?.tag_name;
-  if (typeof tag !== "string" || !/^v?\d+\.\d+\.\d+$/.test(tag) || release.draft || release.prerelease) return null;
+export async function readStableRelease(signal, catalog) {
+  // Older cached entrypoints call this without a catalog.
+  if (!catalog) {
+    const response = await fetch(`https://raw.githubusercontent.com/${repository}/master/loader/channels.json`, {
+      credentials: "omit", cache: "no-store", signal: AbortSignal.any([signal, AbortSignal.timeout(8_000)]),
+    });
+    if (!response.ok) throw new Error(`Build channels HTTP ${response.status}`);
+    catalog = await response.json();
+  }
+  const { tag, digest } = catalog?.stableRelease ?? {};
+  if (catalog?.protocol !== 1 || typeof tag !== "string" || !/^v?\d+\.\d+\.\d+$/.test(tag) ||
+    typeof digest !== "string" || !/^sha256:[a-f0-9]{64}$/i.test(digest)) return null;
   const version = tag.replace(/^v/, "");
   const filename = `lyssna-lyrics@${version}.mjs`;
-  const asset = Array.isArray(release.assets) && release.assets.find((item) => item.name === filename);
-  if (typeof asset?.digest !== "string" || !/^sha256:[a-f0-9]{64}$/i.test(asset.digest)) return null;
   const url = `https://github.com/${repository}/releases/download/${encodeURIComponent(tag)}/${encodeURIComponent(filename)}`;
-  return { version, url, digest: asset.digest.toLowerCase() };
+  return { version, url, digest: digest.toLowerCase() };
 }
 
 export async function importStableRelease(release, signal) {

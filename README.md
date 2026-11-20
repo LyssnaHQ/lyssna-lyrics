@@ -115,7 +115,7 @@ npm run build
 
 The versioned bundle is in `dist/builds`. The build also produces the v1.0 entrypoint and the SpotiKit package.
 
-- **Stable** uses the latest public [GitHub Release](https://github.com/LyssnaHQ/lyssna-lyrics/releases). Attach `lyssna-lyrics@<version>.mjs` to a matching `v<version>` release. The loader checks the asset against GitHub’s SHA-256 digest.
+- **Stable** uses a public [GitHub Release](https://github.com/LyssnaHQ/lyssna-lyrics/releases). Attach `lyssna-lyrics@<version>.mjs` to a matching `v<version>` release, then set `stableRelease.tag` and `stableRelease.digest` in [loader/channels.json](loader/channels.json) from GitHub’s release metadata. The loader checks the asset against that SHA-256 digest.
 - **Beta and Canary** use [loader/channels.json](loader/channels.json) on GitHub. Run `npm run build -- --test` to upload the Canary bundle to `Y:/website/lyssna-plugin/builds/` and update the local manifest. For Beta, place the bundle in the same directory and set the manifest’s `beta` version. Commit and push the manifest to update the public channels.
 - **Private builds** use `npm run build -- --hidden [version]`. The command publishes to `builds/hidden/<key>/` and prints its access key. Anyone with the key can load the build. Keep the directory unlisted and remove a build’s manifest and bundle to retire its key.
 

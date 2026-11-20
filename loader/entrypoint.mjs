@@ -86,11 +86,12 @@ async function readChannels(signal) {
   if (!response.ok) throw new Error(`Build channels HTTP ${response.status}`);
   const catalog = await response.json();
   if (catalog?.protocol !== 1) throw new Error("Unrecognized build channel manifest");
-  const channels = { stable: null, ...Object.fromEntries(["beta", "canary"].map((name) => {
+  const stable = await readStableRelease(signal, catalog);
+  const channels = { stable: stable?.version ?? null, ...Object.fromEntries(["beta", "canary"].map((name) => {
     const version = catalog.channels?.[name];
     return [name, typeof version === "string" && versionPattern.test(version) ? version : null];
   })) };
-  return { lyssnaSignIn: catalog.lyssnaSignIn === true, channels };
+  return { lyssnaSignIn: catalog.lyssnaSignIn === true, channels, stable };
 }
 
 async function importWebsiteBuild(url, signal) {
@@ -114,19 +115,7 @@ export async function start(signal) {
 }
 
 async function startBuild(signal) {
-  const [{ lyssnaSignIn, channels }, stable] = await Promise.all([
-    readChannels(signal).catch((error) => {
-      signal.throwIfAborted();
-      console.warn("[Lyssna Lyrics] Could not check test channels:", error);
-      return { lyssnaSignIn: false, channels: { stable: null, beta: null, canary: null } };
-    }),
-    readStableRelease(signal).catch((error) => {
-      signal.throwIfAborted();
-      console.warn("[Lyssna Lyrics] Could not check GitHub Stable:", error);
-      return null;
-    }),
-  ]);
-  channels.stable = stable?.version ?? null;
+  const { lyssnaSignIn, channels, stable } = await readChannels(signal);
   const saved = localStorage.getItem(channelKey);
   const selected = names.includes(saved) && channels[saved] ? saved : names.find((name) => channels[name]);
   if (!selected) throw new Error("No Lyssna builds are published yet");
@@ -187,11 +176,7 @@ async function startBuild(signal) {
         hiddenVersion: hidden?.version, selectHiddenBuild,
         clearHiddenBuild: savedHiddenKey ? clearHiddenBuild : undefined,
         patchNotesUrl: new URL(".change_notes/PATCH_NOTES.md", repository).href,
-        latestVersion: async (checkSignal) => {
-          const check = AbortSignal.any([signal, checkSignal]);
-          if (channel === "stable") return (await readStableRelease(check))?.version ?? null;
-          return (await readChannels(check)).channels[channel];
-        },
+        latestVersion: async (checkSignal) => (await readChannels(AbortSignal.any([signal, checkSignal]))).channels[channel],
         showLoading,
       });
       stop();
