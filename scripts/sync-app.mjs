@@ -42,7 +42,14 @@ const lyrics = [
   slice(styles, "/* Lyrics loading skeleton:", "/* Lyrics popout window"),
   slice(styles, "/* Lyrics popout window", "\n.album-grid.all {"),
   slice(styles, "\n.lyrics-display.simple-lyrics .lyric-line {", "\n.ttml-draft-banner {"),
-].map((css) => css.replaceAll(':root:not([data-animator="Legacy"])', ':is(.lyrics-display, .gravity-lyrics):not([data-animator="Legacy"])'));
+].map((css) => css
+  .replaceAll(':root:not([data-animator="Legacy"])', ':is(.lyrics-display, .gravity-lyrics):not([data-animator="Legacy"])')
+  .replace(/(\.gravity-word \.lyric-paint \{\n)  --glyph-bleed: 0em;\n  --sweep-edge: [^\n]+\n  padding: 0;\n  margin: 0;/, `$1  /* The mask needs room for italic overhang without widening the word. */
+  --glyph-bleed: 0.45em;
+  --sweep-width: calc(100% - 2 * var(--glyph-bleed));
+  --sweep-edge: calc(var(--glyph-bleed) + var(--sweep-width) * var(--sweep) + var(--sweep-overrun));
+  --sweep-soft-edge: calc(var(--sweep-edge) + var(--sweep-width) * var(--sweep-soft, 0.2));`)
+  .replaceAll("calc(var(--sweep-edge) + 20%)", "var(--sweep-soft-edge)"));
 const snapshot = files.map((file) => [file, read(`frontend/${file}`)]);
 const settingsCss = read("frontend/settings.css")
   .replaceAll(".application:not(.liquid-glass) .lyrics-settings", ".lyrics-settings-backdrop:not(.liquid-glass) .lyrics-settings")

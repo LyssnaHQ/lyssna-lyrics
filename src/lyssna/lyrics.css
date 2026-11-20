@@ -1159,21 +1159,22 @@
    glyphs with the lyric colour and fade the unsung part with a mask, which
    paints nothing of its own, so no box edge can show. */
 .gravity-word .lyric-paint {
-  --glyph-bleed: 0em;
-  --sweep-edge: calc(100% * var(--sweep) + var(--sweep-overrun));
-  padding: 0;
-  margin: 0;
+  /* The mask needs room for italic overhang without widening the word. */
+  --glyph-bleed: 0.45em;
+  --sweep-width: calc(100% - 2 * var(--glyph-bleed));
+  --sweep-edge: calc(var(--glyph-bleed) + var(--sweep-width) * var(--sweep) + var(--sweep-overrun));
+  --sweep-soft-edge: calc(var(--sweep-edge) + var(--sweep-width) * var(--sweep-soft, 0.2));
   background-image: none;
   -webkit-text-fill-color: rgb(var(--lyric-rgb, 255 255 255));
   -webkit-mask-image: linear-gradient(
     90deg,
     rgb(0 0 0 / var(--sung-alpha)) var(--sweep-edge),
-    rgb(0 0 0 / var(--unsung-alpha)) calc(var(--sweep-edge) + 20%)
+    rgb(0 0 0 / var(--unsung-alpha)) var(--sweep-soft-edge)
   );
   mask-image: linear-gradient(
     90deg,
     rgb(0 0 0 / var(--sung-alpha)) var(--sweep-edge),
-    rgb(0 0 0 / var(--unsung-alpha)) calc(var(--sweep-edge) + 20%)
+    rgb(0 0 0 / var(--unsung-alpha)) var(--sweep-soft-edge)
   );
 }
 .gravity-word:not([data-spawned]) {
