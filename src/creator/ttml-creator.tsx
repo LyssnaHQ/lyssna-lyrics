@@ -6,6 +6,7 @@ import {
   type ReactNode,
   useCallback,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -256,7 +257,7 @@ export function TtmlCreator({
   notify,
   renderPreview,
   barSlot,
-  onShowPlayer,
+  onHideBar,
   onClose,
 }: {
   state: CreatorState;
@@ -272,9 +273,8 @@ export function TtmlCreator({
   ) => Promise<Lyrics>;
   notify: (message: string, error?: boolean) => void;
   renderPreview?: (lyrics: Lyrics, position: number, track: Track) => ReactNode;
-  /** Where the creator's own bar replaces the player bar. */
   barSlot?: HTMLElement | null;
-  onShowPlayer?: () => void;
+  onHideBar: () => void;
   onClose?: () => void;
 }) {
   const { root, view: window, waveform, playClip } = useCreatorEnvironment();
@@ -1229,7 +1229,7 @@ export function TtmlCreator({
     const onKey = (event: KeyboardEvent) => {
       const target = event.composedPath()[0] as HTMLElement | null;
       if (root.querySelector(".ttml-menu, .ttml-dialog")) return;
-      if (target?.closest(".creator-playbar-slot button") && (event.key === " " || event.key === "Enter")) return;
+      if (target?.closest(".ttml-bar button, .ttml-spectrum button") && (event.key === " " || event.key === "Enter")) return;
       if (
         (IS_MAC ? event.metaKey : event.ctrlKey) &&
         !event.altKey &&
@@ -1494,6 +1494,7 @@ export function TtmlCreator({
   const [spectrogram, setSpectrogram] = useState(
     () => readStorage(SPECTROGRAM_KEY) === "1",
   );
+  const spectrogramId = useId();
   const showSpectrogram = (on: boolean) => {
     setSpectrogram(on);
     writeStorage(SPECTROGRAM_KEY, on ? "1" : null);
@@ -2950,6 +2951,24 @@ export function TtmlCreator({
           onClose={() => setEditingMeta(false)}
         />
       )}
+      {barSlot && spectrogram && (
+        <TtmlSpectrogram
+          key={track.uri}
+          id={spectrogramId}
+          uri={track.uri}
+          duration={track.duration_ms}
+          position={position}
+          playing={isPlaying}
+          lines={lines}
+          cursor={cursor}
+          picked={picked}
+          onSeek={seek}
+          onLines={setLines}
+          onCursor={setCursor}
+          onPlayUnit={playUnit}
+          canOpenAudio={here}
+        />
+      )}
       {barSlot &&
         createPortal(
           <TtmlBar
@@ -2957,29 +2976,13 @@ export function TtmlCreator({
             duration={track.duration_ms}
             playing={isPlaying}
             peaks={peaks?.uri === track.uri ? peaks.values : null}
-            spectrum={
-              <TtmlSpectrogram
-                key={track.uri}
-                uri={track.uri}
-                duration={track.duration_ms}
-                position={position}
-                playing={isPlaying}
-                lines={lines}
-                cursor={cursor}
-                picked={picked}
-                onSeek={seek}
-                onLines={setLines}
-                onCursor={setCursor}
-                onPlayUnit={playUnit}
-                canOpenAudio={here}
-              />
-            }
             spectrogram={spectrogram}
+            spectrogramId={spectrogramId}
             onSpectrogram={showSpectrogram}
             spans={barSpans}
             onToggle={onToggle}
             onSeek={seek}
-            onShowPlayer={() => onShowPlayer?.()}
+            onHideBar={onHideBar}
             onClose={onClose}
             speed={shownSpeed}
             minSpeed={MIN_SPEED}

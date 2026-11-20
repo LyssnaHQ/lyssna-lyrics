@@ -30,13 +30,13 @@ export function TtmlBar({
   duration,
   playing,
   peaks,
-  spectrum,
   spectrogram,
+  spectrogramId,
   onSpectrogram,
   spans,
   onToggle,
   onSeek,
-  onShowPlayer,
+  onHideBar,
   onClose,
   speed,
   minSpeed,
@@ -51,13 +51,13 @@ export function TtmlBar({
   duration: number;
   playing: boolean;
   peaks: Uint8Array | null;
-  spectrum: ReactNode;
   spectrogram: boolean;
+  spectrogramId: string;
   onSpectrogram: (on: boolean) => void;
   spans: BarSpan[];
   onToggle: () => void;
   onSeek: (ms: number) => void;
-  onShowPlayer: () => void;
+  onHideBar: () => void;
   onClose?: () => void;
   speed: number;
   minSpeed: number;
@@ -143,7 +143,7 @@ export function TtmlBar({
     );
     observer.observe(element);
     return () => observer.disconnect();
-  }, [spectrogram]);
+  }, []);
   const shown = dragging ?? position;
   useEffect(() => {
     const element = canvas.current;
@@ -230,7 +230,7 @@ export function TtmlBar({
     }
     context.fillStyle = "#1ed760";
     context.fillRect(Math.round(played) - 1, 0, 2, height);
-  }, [width, peaks, spans, shown, duration, spectrogram, hover, dragging]);
+  }, [width, peaks, spans, shown, duration, hover, dragging]);
 
   const timeAt = (clientX: number) => {
     const box = canvas.current!.getBoundingClientRect();
@@ -240,7 +240,7 @@ export function TtmlBar({
     );
   };
   return (
-    <div className={`ttml-bar${spectrogram ? " spectral" : ""}`} ref={root}>
+    <div className="ttml-bar" ref={root}>
       <button
         ref={trigger}
         className={`ttml-bar-round${panelShown ? " active" : ""}`}
@@ -326,50 +326,46 @@ export function TtmlBar({
         )}
       </button>
       <span className="ttml-bar-time">{formatTime(shown)}</span>
-      {spectrogram ? (
-        spectrum
-      ) : (
-        <canvas
-          ref={canvas}
-          className={`ttml-bar-wave${peaks ? "" : " loading"}`}
-          role="slider"
-          aria-label="Song position"
-          aria-valuemin={0}
-          aria-valuemax={duration}
-          aria-valuenow={Math.round(shown)}
-          tabIndex={0}
-          onPointerDown={(event) => {
-            event.currentTarget.setPointerCapture(event.pointerId);
-            setDragging(timeAt(event.clientX));
-          }}
-          onPointerMove={(event) => {
-            setHover(
-              event.clientX - event.currentTarget.getBoundingClientRect().left,
-            );
-            if (dragging !== null) setDragging(timeAt(event.clientX));
-          }}
-          onPointerLeave={() => setHover(null)}
-          onPointerUp={(event) => {
-            if (dragging === null) return;
-            onSeek(timeAt(event.clientX));
-            setDragging(null);
-          }}
-          onPointerCancel={() => setDragging(null)}
-          onKeyDown={(event) => {
-            if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-            event.preventDefault();
-            event.stopPropagation();
-            onSeek(position + (event.key === "ArrowLeft" ? -3000 : 3000));
-          }}
-        />
-      )}
+      <canvas
+        ref={canvas}
+        className={`ttml-bar-wave${peaks ? "" : " loading"}`}
+        role="slider"
+        aria-label="Song position"
+        aria-valuemin={0}
+        aria-valuemax={duration}
+        aria-valuenow={Math.round(shown)}
+        tabIndex={0}
+        onPointerDown={(event) => {
+          event.currentTarget.setPointerCapture(event.pointerId);
+          setDragging(timeAt(event.clientX));
+        }}
+        onPointerMove={(event) => {
+          setHover(
+            event.clientX - event.currentTarget.getBoundingClientRect().left,
+          );
+          if (dragging !== null) setDragging(timeAt(event.clientX));
+        }}
+        onPointerLeave={() => setHover(null)}
+        onPointerUp={(event) => {
+          if (dragging === null) return;
+          onSeek(timeAt(event.clientX));
+          setDragging(null);
+        }}
+        onPointerCancel={() => setDragging(null)}
+        onKeyDown={(event) => {
+          if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+          event.preventDefault();
+          event.stopPropagation();
+          onSeek(position + (event.key === "ArrowLeft" ? -3000 : 3000));
+        }}
+      />
       <span className="ttml-bar-time">{formatTime(duration)}</span>
-      <div className="player-extras ttml-bar-extras">
+      <div className="ttml-bar-extras">
         <button
           className="icon-button"
-          onClick={onShowPlayer}
-          title="Show the player bar"
-          aria-label="Show the player bar"
+          onClick={onHideBar}
+          title="Hide Creator controls"
+          aria-label="Hide Creator controls"
         >
           <PanelBottom size={18} />
         </button>
@@ -385,7 +381,8 @@ export function TtmlBar({
         <button
           className="icon-button"
           aria-label="Spectrogram"
-          aria-pressed={spectrogram}
+          aria-expanded={spectrogram}
+          aria-controls={spectrogram ? spectrogramId : undefined}
           title={spectrogram ? "Hide the spectrogram" : "Show the spectrogram"}
           onClick={() => onSpectrogram(!spectrogram)}
         >

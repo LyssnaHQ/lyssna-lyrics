@@ -17,7 +17,7 @@
   margin: 0;
   color: #fff;
 }
-.ttml-creator button:not(:where(.ttml-preview *)) {
+.ttml-creator button:not(:where(.ttml-preview *, .ttml-spectrum *)) {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -34,10 +34,10 @@
     background 0.15s,
     box-shadow 0.15s;
 }
-.ttml-creator button:hover:not(:disabled, :where(.ttml-preview *)) {
+.ttml-creator button:hover:not(:disabled, :where(.ttml-preview *, .ttml-spectrum *)) {
   background: #ffffff21;
 }
-.ttml-creator button:disabled:not(:where(.ttml-preview *)) {
+.ttml-creator button:disabled:not(:where(.ttml-preview *, .ttml-spectrum *)) {
   opacity: 0.4;
   cursor: default;
 }
@@ -1380,9 +1380,9 @@
 .ttml-preview .lyric-source {
   display: none;
 }
-.player-bar.ttml-player-bar {
-  display: flex;
-  align-items: stretch;
+.lyssna-creator-transport button {
+  border: 0;
+  cursor: pointer;
 }
 .ttml-bar {
   display: flex;
@@ -1435,7 +1435,29 @@
   }
 }
 .ttml-bar-extras {
+  display: flex;
+  align-items: center;
   flex-shrink: 0;
+}
+.ttml-bar-extras .icon-button {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 50%;
+  color: var(--muted);
+  background: transparent;
+}
+.ttml-bar-extras .icon-button:hover {
+  color: #fff;
+  background: #ffffff12;
+}
+.ttml-bar-extras .ttml-button { color: #1ed760; }
+@container (width < 650px) {
+  .ttml-bar { gap: 6px; }
+  .ttml-bar-time { font-size: 10px; }
+  .ttml-bar-extras .icon-button { width: 27px; }
 }
 .reduce-motion .ttml-bar-wave.loading {
   animation: none;
@@ -1593,20 +1615,20 @@
   color: var(--muted);
   font-size: 12.5px;
 }
-.ttml-bar.spectral {
-  padding: 8px 0 4px;
-}
 .ttml-spectrum {
   position: relative;
   display: flex;
-  flex: 1;
+  flex: none;
   min-width: 0;
+  min-height: 120px;
+  max-height: 55%;
   border: 1px solid #ffffff14;
   border-radius: 8px;
   background: #05060f;
   overflow: hidden;
   user-select: none;
 }
+.ttml-creator:has(> .ttml-spectrum) .ttml-lines { min-height: 96px; }
 .ttml-spectrum-resize {
   position: absolute;
   top: 0;
@@ -1939,6 +1961,7 @@
   color: #fff;
   border-color: #ffffff80;
 }
+.ttml-spectrum-tool:disabled { opacity: 0.4; }
 .ttml-spectrum-tool.on {
   border-color: #fff;
   color: #000;

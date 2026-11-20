@@ -240,6 +240,7 @@ interface Drag {
 }
 
 export function TtmlSpectrogram({
+  id,
   uri,
   duration,
   position,
@@ -253,6 +254,7 @@ export function TtmlSpectrogram({
   onPlayUnit,
   canOpenAudio,
 }: {
+  id: string;
   uri: string;
   duration: number;
   position: number;
@@ -323,7 +325,7 @@ export function TtmlSpectrogram({
     stored("lyssna.ttml-spectrum-zoom", 200, isNumber),
   );
   const [scroll, setScroll] = useState(0);
-  const [width, setWidth] = useState(0);
+  const [{ width, height: plotAreaHeight }, setPlotSize] = useState({ width: 0, height: 0 });
   const [hover, setHover] = useState<{ x: number; y: number } | null>(null);
   const [settings, setSettings] = useState(false);
   const [drag, setDrag] = useState<Drag | null>(null);
@@ -383,9 +385,10 @@ export function TtmlSpectrogram({
     const element = area.current;
     const panel = spectrum.current;
     if (!element || !panel) return;
-    const observer = new ResizeObserver(([entry]) =>
-      setWidth(entry.contentRect.width),
-    );
+    const observer = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect;
+      setPlotSize({ width, height });
+    });
     observer.observe(element);
     const wheel = (event: WheelEvent) => {
       if (!event.ctrlKey && !event.composedPath().includes(element)) return;
@@ -672,7 +675,7 @@ export function TtmlSpectrogram({
   const resize = (event: React.PointerEvent) => {
     event.preventDefault();
     const startY = event.clientY;
-    const startHeight = height;
+    const startHeight = spectrum.current?.offsetHeight ?? height;
     let next = startHeight;
     const move = (moved: PointerEvent) => {
       next = Math.round(
@@ -689,7 +692,7 @@ export function TtmlSpectrogram({
   };
 
   const hoverMs = hover ? ((scroll + hover.x) / zoom) * 1000 : 0;
-  const plotHeight = height - RULER;
+  const plotHeight = Math.max(1, plotAreaHeight - RULER);
   const hoverBand = hover && hover.y > RULER ? Math.max(0, Math.min(1, 1 - (hover.y - RULER) / plotHeight)) : null;
   const hoverHz = !pitch && hoverBand !== null ? spectrumFrequency(hoverBand) : null;
   const hoverNote = pitch && hoverBand !== null ? NOTES[Math.min(pitchBands - 1, Math.floor(hoverBand * pitchBands))] : null;
@@ -697,6 +700,7 @@ export function TtmlSpectrogram({
 
   return (
     <section
+      id={id}
       ref={spectrum}
       className={`ttml-spectrum${pitch ? " spotify-pitch" : ""}`}
       aria-label={liveCapture ? "Captured Spotify spectrogram" : pitch ? "Spotify pitch analysis" : "Spectrogram"}

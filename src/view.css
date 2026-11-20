@@ -106,32 +106,6 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   color: var(--spice-button, #1ed760);
 }
 
-.lyssna-creator-playbar {
-  flex: 1 1 0;
-  min-width: 0;
-  padding-inline: 8px 12px;
-}
-
-:has(> .lyssna-creator-playbar) {
-  height: auto !important;
-}
-
-[data-npb-layer]:has(> [data-npb-layer] > .lyssna-creator-playbar) {
-  height: auto !important;
-  overflow: visible;
-}
-
-:has(> .lyssna-creator-playbar) > :is(.main-nowPlayingBar-center, .main-nowPlayingBar-right,
-  [data-npb-secondary]:has([data-testid="player-controls"], .main-nowPlayingBar-extraControls, .now-playing-bar-extra-controls)) {
-  display: none !important;
-}
-
-:has(> .lyssna-creator-playbar) > :is(.main-nowPlayingBar-left, :has([data-testid="now-playing-widget"], [data-testid="now-playing-widget-v2"])) {
-  flex: 0 1 clamp(64px, 18vw, 240px);
-  width: auto;
-  min-width: 0;
-}
-
 .spotify-plus-disable-peek button[data-spotify-plus-disable-peek="true"] ~ button[data-spotify-plus-disable-peek="true"],
 .spotify-plus-disable-peek .main-nowPlayingBar-extraControls > button[data-spotify-plus-disable-peek="true"]:nth-child(n+2 of [data-spotify-plus-disable-peek="true"], :has(button[data-spotify-plus-disable-peek="true"])),
 .spotify-plus-disable-peek .main-nowPlayingBar-extraControls > :nth-child(n+2 of [data-spotify-plus-disable-peek="true"], :has(button[data-spotify-plus-disable-peek="true"])) button[data-spotify-plus-disable-peek="true"] {
@@ -1360,9 +1334,12 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   color: inherit;
   cursor: pointer;
 }
-.lyssna-lyrics-view .lyssna-creator-transport { padding-inline: 12px; }
-.lyssna-lyrics-view .lyssna-creator-transport:not(:empty) { padding-block: 8px; }
-.lyssna-lyrics-view .lyssna-creator-transport button { border: 0; }
+.lyssna-lyrics-view .lyssna-creator-transport {
+  display: flex;
+  flex: none;
+  padding-inline: 24px;
+}
+.lyssna-lyrics-view .lyssna-creator-transport:not(:empty) { padding-bottom: 8px; }
 .lyssna-lyrics-view .lyssna-creator-preview { position: absolute; inset: 0; display: flex; align-items: stretch; }
 .lyssna-lyrics-view .lyssna-creator-preview.artwork-right { flex-direction: row-reverse; }
 .lyssna-lyrics-view .lyssna-creator-preview-album {

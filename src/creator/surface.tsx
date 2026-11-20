@@ -16,7 +16,6 @@ import { lyssnaInstallReady } from "../lyssna-api";
 import { CreatorEnvironment } from "./environment";
 import { creatorPitchSpectrum, creatorSpectrum, creatorWaveform } from "./audio";
 import { TtmlCreator } from "./ttml-creator";
-import { useCreatorPlaybar } from "./playbar";
 import { currentCreatorLyrics, within } from "./current-lyrics";
 import { dismissDraft } from "./ttml-working";
 import type { CreatorState, PlayerRequest, Track } from "./types";
@@ -47,7 +46,6 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
   const [portal, setPortal] = useState<HTMLDivElement | null>(null);
   const [bar, setBar] = useState<HTMLDivElement | null>(null);
   const [showBar, setShowBar] = useState(true);
-  const playbarSlot = useCreatorPlaybar(view, showBar && !!current, settings.reduce_motion);
   const [seed, setSeed] = useState<{ uri: string; lyrics?: Lyrics }>();
   const [notice, setNotice] = useState<{ message: string; error: boolean }>();
   const [audio, setAudio] = useState<LocalAudio>();
@@ -257,7 +255,7 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
       {root && portal && <CreatorEnvironment.Provider value={{ root, portal, view, read, readCapturePosition, waveform, spectrogram,
         spectrumKey: audio?.url ?? "spotify", spectrumAudioUri: audio?.uri, openAudio, playClip }}>
         <TtmlCreator state={state} onPlayer={player} onToggle={() => player({ command: isPlaying ? "pause" : "play" })}
-          onSpeed={setSpeed} notify={notify} barSlot={showBar ? playbarSlot ?? bar : null} onShowPlayer={() => { releaseAudio(); setShowBar(false); }}
+          onSpeed={setSpeed} notify={notify} barSlot={bar} onHideBar={() => { releaseAudio(); setShowBar(false); }}
           onClose={close}
           onParse={async (filename, text, song) => {
             const ms = song?.duration_ms ?? 0;
@@ -303,7 +301,7 @@ export function CreatorSurface({ host, view: owner, settings, close }: { host: H
           }} />
       </CreatorEnvironment.Provider>}
     </div>
-    {!playbarSlot && showBar && <div className="lyssna-creator-transport" ref={setBar} />}
+    {showBar && <div className="lyssna-creator-transport" ref={setBar} />}
     <div className="lyssna-creator-portals" ref={setPortal} />
     {notice && <p className="lyssna-creator-notice" role={notice.error ? "alert" : "status"}>{notice.message}</p>}
   </div>;
