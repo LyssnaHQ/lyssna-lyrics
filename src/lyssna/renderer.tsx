@@ -325,10 +325,9 @@ export function LyricsDisplay({
         settings.lyrics_minimal && !compact && container.closest(".immersive")
           ? 0.4
           : 0.28;
-      container.style.setProperty(
-        "--lead-top",
-        `${card ? 8 : compact || !stacked ? container.clientHeight * opening : Math.max(0, focus - (lines.current[0]?.offsetHeight ?? 0) / 2)}px`,
-      );
+      const leadTop = `${card ? 8 : compact || !stacked ? container.clientHeight * opening : Math.max(0, focus - (lines.current[0]?.offsetHeight ?? 0) / 2)}px`;
+      if (container.style.getPropertyValue("--lead-top") !== leadTop)
+        container.style.setProperty("--lead-top", leadTop);
       spring.current.target = Math.max(
         0,
         Math.min(

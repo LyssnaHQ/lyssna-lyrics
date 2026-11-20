@@ -70,7 +70,10 @@ import { LyricCredits } from "../credits";`,
     .replace("    let frame = 0,\n      last = performance.now();", "    const view = container.ownerDocument.defaultView ?? window;\n    let frame = 0,\n      last = performance.now();")
     .replace("    const tick = (time: number) => {", "    const tick = () => {\n      const time = performance.now();")
     .replaceAll("requestAnimationFrame(tick)", "view.requestAnimationFrame(tick)")
-    .replaceAll("cancelAnimationFrame(frame)", "view.cancelAnimationFrame(frame)"),
+    .replaceAll("cancelAnimationFrame(frame)", "view.cancelAnimationFrame(frame)")
+    .replace(/      container\.style\.setProperty\(\n        "--lead-top",\n        (\`[^\n]+\`),\n      \);/, `      const leadTop = $1;
+      if (container.style.getPropertyValue("--lead-top") !== leadTop)
+        container.style.setProperty("--lead-top", leadTop);`),
   slice(components, "/** Static lyric markup.", "function TimedLyricsPreview("),
   slice(components, "const SKELETON_WIDTHS =", "/** Volume beside or below").replace("function LyricsSkeleton()", "export function LyricsSkeleton()"),
 ];

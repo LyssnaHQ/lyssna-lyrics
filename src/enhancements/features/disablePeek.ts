@@ -22,6 +22,8 @@ const NATIVE_PLAYBAR_BUTTON_SELECTOR =
   `button[data-testid="control-button-npv"]:not(${PROXY_SELECTOR}), button[data-testid="cover-art-button"]`;
 const STRUCTURAL_SELECTOR =
   `${PANEL_SELECTOR}, ${PLAYBAR_SELECTOR}, ${PLAYBAR_ANCHOR_SELECTOR}, ${EXTRA_CONTROLS_SELECTOR}, ${MAIN_VIEW_SELECTOR}, ${SHOW_BUTTON_SELECTOR}`;
+const LYRICS_VIEW_SELECTOR = ".lyssna-lyrics-view, #LyssnaLyricsPage, #SpicyLyricsPage";
+const ACTIVE_CLASSES = ["main-genericButton-buttonActive", "main-genericButton-buttonActiveDot"];
 const ENABLED_CLASS = "spotify-plus-disable-peek";
 const BUTTON_WAIT_TIMEOUT = 1200;
 const TRANSITION_TIMEOUT = 2500;
@@ -36,6 +38,7 @@ let proxyButton: PlaybarButton | null = null;
 let observedSidebar: HTMLElement | null = null;
 let observedControls: HTMLElement | null = null;
 let sidebarObserver: MutationObserver | null = null;
+let controlsObserver: MutationObserver | null = null;
 let bodyObserver: MutationObserver | null = null;
 let syncScheduled = false;
 let desiredOpen: boolean | null = null;
@@ -43,6 +46,10 @@ let transitionRunner: Promise<void> | null = null;
 let transitionEpoch = 0;
 function isEnabled() {
   return getSettings().disablePeek;
+}
+
+function setAttribute(element: Element, name: string, value: string) {
+  if (element.getAttribute(name) !== value) element.setAttribute(name, value);
 }
 
 function findSidebar() {
@@ -107,10 +114,9 @@ function setProxyOpenState(open: boolean) {
   if (!proxyButton) return;
 
   const element = proxyButton.element;
-  element.setAttribute("aria-pressed", open ? "true" : "false");
-  element.dataset.active = open ? "true" : "false";
-  element.classList.toggle("main-genericButton-buttonActive", open);
-  element.classList.toggle("main-genericButton-buttonActiveDot", open);
+  setAttribute(element, "aria-pressed", String(open));
+  setAttribute(element, "data-active", String(open));
+  for (const name of ACTIVE_CLASSES) element.classList.toggle(name, open);
 }
 
 function setProxyState() {
@@ -305,31 +311,49 @@ function styleProxyButton(nativeButton: HTMLButtonElement) {
 
   const element = proxyButton.element;
   const open = element.dataset.active === "true";
-  element.className = nativeButton.className;
-  element.classList.remove("main-nowPlayingBar-lyricsButton");
-  element.dataset.encoreId = nativeButton.dataset.encoreId ?? "buttonTertiary";
+  const classes = [...nativeButton.classList].filter((name) =>
+    name !== "main-nowPlayingBar-lyricsButton" && !ACTIVE_CLASSES.includes(name));
+  if (open) classes.push(...ACTIVE_CLASSES);
+  setAttribute(element, "class", classes.join(" "));
+  setAttribute(element, "data-encore-id", nativeButton.dataset.encoreId ?? "buttonTertiary");
 
   const wrapper = element.firstElementChild;
   const nativeWrapper = nativeButton.firstElementChild;
   if (wrapper instanceof HTMLElement && nativeWrapper instanceof HTMLElement) {
-    wrapper.className = nativeWrapper.className;
-    wrapper.setAttribute("aria-hidden", "true");
+    setAttribute(wrapper, "class", nativeWrapper.className);
+    setAttribute(wrapper, "aria-hidden", "true");
   }
 
   const icon = element.querySelector("svg");
   const nativeIcon = nativeButton.querySelector("svg");
   if (icon && nativeIcon) {
-    icon.setAttribute("class", nativeIcon.getAttribute("class") ?? "");
-    icon.setAttribute("style", nativeIcon.getAttribute("style") ?? "");
-    icon.setAttribute("data-encore-id", nativeIcon.dataset.encoreId ?? "icon");
-    icon.setAttribute("role", "img");
-    icon.setAttribute("aria-hidden", "true");
+    setAttribute(icon, "class", nativeIcon.getAttribute("class") ?? "");
+    setAttribute(icon, "style", nativeIcon.getAttribute("style") ?? "");
+    setAttribute(icon, "data-encore-id", nativeIcon.dataset.encoreId ?? "icon");
+    setAttribute(icon, "role", "img");
+    setAttribute(icon, "aria-hidden", "true");
   }
-
-  setProxyOpenState(open);
 }
 
-function positionProxyButton() {
+function observeControls(container: HTMLElement | null) {
+  if (container === observedControls) return;
+  controlsObserver?.disconnect();
+  observedControls = container;
+  controlsObserver = null;
+  if (!container) return;
+  controlsObserver = new MutationObserver((mutations) => {
+    if (mutations.some(({ target }) => target instanceof Element && target.matches(PLAYBAR_ANCHOR_SELECTOR))) {
+      scheduleSync();
+    }
+  });
+  controlsObserver.observe(container, {
+    subtree: true,
+    attributes: true,
+    attributeFilter: ["class", "aria-pressed", "data-active"],
+  });
+}
+
+function syncProxyButton() {
   if (!proxyButton) return;
 
   const playbar = document.querySelector<HTMLElement>(PLAYBAR_SELECTOR);
@@ -337,7 +361,10 @@ function positionProxyButton() {
   const root = mappedControls ?? playbar ?? document;
   const nativeButton = root.querySelector<HTMLButtonElement>(LYRICS_BUTTON_SELECTOR) ??
     root.querySelector<HTMLButtonElement>(PLAYBAR_ANCHOR_SELECTOR);
-  if (!nativeButton?.parentElement) return;
+  if (!nativeButton?.parentElement) {
+    observeControls(null);
+    return;
+  }
 
   let extraControls = mappedControls ?? nativeButton.parentElement;
   if (!mappedControls && !nativeButton.matches(LYRICS_BUTTON_SELECTOR)) {
@@ -351,18 +378,14 @@ function positionProxyButton() {
       parent = parent.parentElement;
     }
   }
-  observedControls = extraControls;
+  observeControls(extraControls);
   const templateButton = [...extraControls.querySelectorAll<HTMLButtonElement>(PLAYBAR_ANCHOR_SELECTOR)]
     .find((candidate) => candidate.dataset.active !== "true" && candidate.getAttribute("aria-pressed") !== "true") ?? nativeButton;
   styleProxyButton(templateButton);
 
-  let anchor: HTMLElement = nativeButton;
-  while (anchor.parentElement && anchor.parentElement !== extraControls) {
-    anchor = anchor.parentElement;
-  }
-  if (proxyButton.element.parentElement !== extraControls || proxyButton.element.nextElementSibling !== anchor) {
-    extraControls.insertBefore(proxyButton.element, anchor);
-  }
+  // Spicetify and SpotiKit place registered buttons in their own containers.
+  // Recover after a remount without moving a button the host already placed.
+  if (!proxyButton.element.isConnected) extraControls.append(proxyButton.element);
 }
 
 function removeProxyButton() {
@@ -400,7 +423,7 @@ function observeSidebar() {
 
   sidebarObserver = new MutationObserver((mutations) => {
     const relevant = mutations.some((mutation) => {
-      if (mutation.target instanceof Element && mutation.target.closest("#LyssnaLyricsPage, #SpicyLyricsPage")) return false;
+      if (mutation.target instanceof Element && mutation.target.closest(LYRICS_VIEW_SELECTOR)) return false;
       if (mutation.type === "attributes") {
         return (
           mutation.target === sidebar ||
@@ -430,7 +453,7 @@ function startBodyObserver() {
   if (bodyObserver) return;
 
   bodyObserver = new MutationObserver((mutations) => {
-    if (observedSidebar && !observedSidebar.isConnected) {
+    if ((observedSidebar && !observedSidebar.isConnected) || (observedControls && !observedControls.isConnected)) {
       scheduleSync();
       return;
     }
@@ -441,20 +464,9 @@ function startBodyObserver() {
     }
 
     const relevant = mutations.some((mutation) => {
-      if (mutation.target instanceof Element && mutation.target.closest(PROXY_SELECTOR)) {
+      if (mutation.target instanceof Element && mutation.target.closest(`${PROXY_SELECTOR}, ${LYRICS_VIEW_SELECTOR}`)) {
         return false;
       }
-      if (mutation.type === "attributes") {
-        return mutation.target instanceof Element &&
-          mutation.target.matches(STRUCTURAL_SELECTOR);
-      }
-      if (
-        mutation.target === observedControls ||
-        (mutation.target instanceof Element && mutation.target.matches(EXTRA_CONTROLS_SELECTOR))
-      ) {
-        return true;
-      }
-
       return [...mutation.addedNodes, ...mutation.removedNodes].some(
         (node) =>
           node instanceof Element &&
@@ -468,8 +480,6 @@ function startBodyObserver() {
   bodyObserver.observe(document.body, {
     childList: true,
     subtree: true,
-    attributes: true,
-    attributeFilter: ["class", "aria-label", "data-testid", "aria-pressed", "data-active"],
   });
 }
 
@@ -478,7 +488,7 @@ function stopObservers() {
   sidebarObserver = null;
   delete observedSidebar?.dataset.spotifyPlusPeekHidden;
   observedSidebar = null;
-  observedControls = null;
+  observeControls(null);
   bodyObserver?.disconnect();
   bodyObserver = null;
 }
@@ -497,7 +507,7 @@ function syncDisablePeekMode() {
   startBodyObserver();
 
   installProxyButton();
-  positionProxyButton();
+  syncProxyButton();
   setProxyState();
 }
 
