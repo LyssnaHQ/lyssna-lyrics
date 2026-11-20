@@ -1292,6 +1292,27 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   flex: 0 0 40px;
 }
 
+.lyssna-lyrics-view .lyssna-account-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.lyssna-lyrics-view .lyssna-account-form input {
+  flex: 1 1 14rem;
+  min-width: 0;
+  padding: 8px 12px;
+  border: 1px solid light-dark(#0002, #fff2);
+  border-radius: 8px;
+  color: inherit;
+  background: light-dark(#0001, #fff1);
+}
+
+.lyssna-lyrics-view .lyssna-account-form a {
+  text-decoration: none;
+}
+
 .lyssna-lyrics-view .settings-source-manager,
 .lyssna-lyrics-view .settings-source-summary {
   display: flex;

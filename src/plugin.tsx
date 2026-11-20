@@ -18,7 +18,9 @@ import { readSettings, saveSettings, settingsEvent, type Settings } from "./sett
 import { channelLabels, SettingsPanel, type BuildOptions } from "./settings-panel";
 import { startSpicyProvider } from "./spicy";
 import { useAppFonts } from "./lyssna/custom-fonts";
-import { lyricsChanged, saveLocalLyrics } from "./local-lyrics";
+import { downloadTtml, keepTemporaryLyricsFor, listLocalLyrics, lyricsChanged, removeLocalLyrics } from "./local-lyrics";
+import { LoadTtml } from "./lyssna/load-ttml";
+import { attachBulkLyrics, importLyricFile, loadBulkLyrics } from "./ttml-import";
 import { enabledSources, readLyrics, refreshLyrics, sourceIds } from "./lyric-sources";
 import { LyricCredits } from "./credits";
 import { CanvasArtwork, SpotifyVisualiser, useCanvas } from "./spotify-artwork";
@@ -40,6 +42,7 @@ import { MotionArtwork, useMotionArtwork } from "./motion-artwork";
 import fontCss from "./fonts/fonts.css?inline";
 import desktopCss from "./lyssna/lyrics.css?inline";
 import settingsCss from "./lyssna/settings.css?inline";
+import ttmlCss from "./lyssna/load-ttml.css?inline";
 import viewCss from "./view.css?inline";
 
 function useLiveSettings() {
@@ -77,7 +80,8 @@ function useTrackLyrics(track: Track, duration: number, view: Window, settings: 
         timer = view.setTimeout(read, lyrics ? 60_000 : pending ? 500 : pendingSpicy ? 3_000 : 60_000);
       }
     }
-    function restart() {
+    function restart(event?: Event) {
+      if (event instanceof CustomEvent && Array.isArray(event.detail) && !event.detail.includes(track.id)) return;
       setLyrics(undefined);
       setWaiting(enabled.length > 0);
       deadline = Date.now() + 15_000;
@@ -340,6 +344,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
   const { track, playing, narrating } = usePlayback(host, true);
   const settings = useLiveSettings();
   const [showSettings, setShowSettings] = useState(false);
+  const [showTtml, setShowTtml] = useState(false);
   const [fullscreen, setFullscreen] = useState(fullscreenRequest > 0);
   const [leaving, setLeaving] = useState(false);
   const [narrow, setNarrow] = useState(false);
@@ -350,8 +355,8 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
   const exitingDisplay = useRef(false);
   const toolsTimer = useRef<number>(0);
   const lyricsPage = useRef<HTMLElement>(null);
-  const fileInput = useRef<HTMLInputElement>(null);
-  const importTrack = useRef<Track | null>(null);
+  const ttmlButton = useRef<HTMLButtonElement>(null);
+  useLayoutEffect(() => { if (lyricsPage.current) lyricsPage.current.inert = showTtml; }, [showTtml]);
   const fonts = useAppFonts(settings, view.document);
   const artwork = narrating ? DJ_COVER : track?.cover;
   const coverColour = useArtworkColor(artwork);
@@ -378,22 +383,9 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
     });
     return () => { live = false; };
   }, [host, albumUri, track?.year, settings.lyrics_year_position]);
-  function importTtml() {
-    if (!track) return;
-    importTrack.current = track;
-    fileInput.current?.click();
-  }
-
-  async function loadTtml(file: File, song: Track) {
-    try {
-      if (file.size > 2_000_000) throw new Error("Choose a TTML file under 2 MB.");
-      await saveLocalLyrics([{
-        uri: `spotify:track:${song.id}`, text: await file.text(), kind: "ttml", name: song.title, artists: song.artists,
-      }]);
-      setNotice("Imported lyrics.");
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Couldn’t load TTML.");
-    }
+  function closeTtml() {
+    setShowTtml(false);
+    view.requestAnimationFrame(() => ttmlButton.current?.focus({ preventScroll: true }));
   }
 
   function sleepTools() {
@@ -516,7 +508,8 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
       if (event.key !== "Escape" && event.key !== "F11") return;
       event.preventDefault();
       event.stopImmediatePropagation();
-      if (showSettings) setShowSettings(false);
+      if (showTtml) closeTtml();
+      else if (showSettings) setShowSettings(false);
       else if (event.key === "F11") toggleFullscreen(event.shiftKey);
       else closeLyrics();
     };
@@ -579,8 +572,8 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
             onClick={() => change({ [id]: !settings[id] })}><Icon /></button>
         ))}
         <span className="toolbar-divider" aria-hidden="true" />
-        <button type="button" className="icon-button" data-icon="upload" title="Load TTML" aria-label="Load TTML"
-          disabled={!track} onClick={importTtml}><UploadIcon /></button>
+        <button ref={ttmlButton} type="button" className="icon-button" data-icon="upload" title="Load TTML" aria-label="Load TTML"
+          aria-haspopup="dialog" onClick={() => { setNotice(""); setShowTtml(true); }}><UploadIcon /></button>
         {settings.lyrics_cache_button && <button type="button" className="icon-button" data-icon="retry" title="Refresh lyrics" aria-label="Refresh lyrics"
           disabled={!track} onClick={() => { refreshLyrics(track?.id, settings.lyrics_cache_action); setNotice("Refreshing lyrics…"); }}><RetryIcon /></button>}
         <button type="button" className="icon-button" data-icon="fullscreen" title={fullscreen ? "Exit full screen" : externalCinema ? "Full screen" : "Full screen (Shift for cinema)"}
@@ -594,14 +587,25 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
       {!showSettings && notice && <div className="lyssna-popout-error" role="status">{notice}</div>}
       {!artworkDock && playback}
     </section>
-    <input ref={fileInput} type="file" hidden accept=".ttml,.xml,application/ttml+xml" onChange={(event) => {
-      const file = event.currentTarget.files?.[0];
-      const song = importTrack.current;
-      event.currentTarget.value = "";
-      if (file && song) void loadTtml(file, song);
-    }} />
+    {showTtml && <LoadTtml song={track ? track.title || "Unknown song" : undefined} glass={settings.liquid_glass} theme={settings.theme} style={fonts}
+      onLoad={async (file, mode) => {
+        if (!track) throw new Error("Play a song first.");
+        await importLyricFile(file, track, mode, () => host.track()?.id);
+        closeTtml();
+        setNotice("Imported lyrics.");
+      }}
+      onReset={async () => {
+        if (!track) return;
+        await removeLocalLyrics(`spotify:track:${track.id}`, true);
+        closeTtml();
+        setNotice("Imported lyrics cleared for this song.");
+      }}
+      onGuide={() => view.open("https://lyrprep.spicylyrics.org/guide", "_blank", "noopener,noreferrer")}
+      listSaved={listLocalLyrics} deleteSaved={removeLocalLyrics} onPlay={host.playTrack} onDownload={downloadTtml}
+      onBulk={(files, signal) => loadBulkLyrics(files, host, signal)} searchSongs={host.searchTracks}
+      attachSong={attachBulkLyrics} onClose={closeTtml} />}
     {showSettings && <SettingsPanel settings={settings} change={change} close={() => { setNotice(""); setShowSettings(false); }}
-      options={options} trackId={track?.id} importTtml={importTtml} notice={notice} setNotice={setNotice} view={view} developerMode={host.developerMode} />}
+      options={options} trackId={track?.id} notice={notice} setNotice={setNotice} view={view} developerMode={host.developerMode} />}
   </>;
 }
 
@@ -609,7 +613,7 @@ export default function start(options: BuildOptions) {
   const host = getHost();
   const stopPreferenceSync = startPreferenceSync();
   const stylesheet = document.createElement("style");
-  stylesheet.textContent = `${fontCss}\n${desktopCss}\n${settingsCss}\n${viewCss}`;
+  stylesheet.textContent = `${fontCss}\n${desktopCss}\n${settingsCss}\n${ttmlCss}\n${viewCss}`;
   document.head.append(stylesheet);
   let stopProvider: (() => void) | undefined;
   let playbarButtons: ReturnType<typeof playbarViewButtons> | undefined;
@@ -834,6 +838,8 @@ export default function start(options: BuildOptions) {
     }),
   );
   const stopEnhancementStartup = startEnhancements();
+  keepTemporaryLyricsFor(host.track()?.id);
+  const stopTemporaryTrack = host.watch(() => keepTemporaryLyricsFor(host.track()?.id));
   const stopLyssnaListens = trackLyssnaListens(host);
   const reportApiNotice = (event: Event) => host.notifyError((event as CustomEvent<string>).detail);
   window.addEventListener(lyssnaApiNotice, reportApiNotice);
@@ -946,6 +952,7 @@ export default function start(options: BuildOptions) {
       disposeProvider();
       stopPreferenceSync();
       stopEnhancementStartup();
+      stopTemporaryTrack();
       stopLyssnaListens();
       window.removeEventListener(lyssnaApiNotice, reportApiNotice);
       window.removeEventListener("pagehide", beginUnload);

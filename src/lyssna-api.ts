@@ -23,14 +23,19 @@ function save(key: string, value: string) {
   catch { /* Keep using the in-memory install if storage is unavailable. */ }
 }
 
-async function send(path: string, { body, etag, installation }: {
-  body?: object; etag?: string; installation?: string;
+type RequestOptions = { body?: object; etag?: string; accessToken?: string; waitForInstall?: boolean };
+
+async function send(path: string, { body, etag, installation, accessToken }: RequestOptions & {
+  installation?: string;
 }) {
+  const url = new URL(path, origin);
+  if (url.origin !== origin) throw new Error("Invalid Lyssna API address.");
   const headers = new Headers({ "Lyssna-Key": projectKey });
   if (installation) headers.set("Lyssna-Install", installation);
   if (etag) headers.set("If-None-Match", etag);
+  if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
   if (body) headers.set("Content-Type", "application/json");
-  const response = await fetch(new URL(path, origin), {
+  const response = await fetch(url, {
     headers, method: body ? "POST" : "GET", body: body ? JSON.stringify(body) : undefined,
     credentials: "omit", redirect: "error", referrerPolicy: "no-referrer", signal: AbortSignal.timeout(8_000),
   });
@@ -117,17 +122,22 @@ function register(rejected?: string) {
   return registering;
 }
 
-export async function lyssnaRequest(path: string, options: { body?: object; etag?: string } = {}) {
+export function prepareLyssnaInstall() {
+  if (!install && !saved(installKey)) void register();
+}
+
+export async function lyssnaRequest(path: string, options: RequestOptions = {}) {
   if (blocked || Date.now() < retryAfter || !navigator.onLine) return;
-  const installation = install ??= saved(installKey) || undefined;
+  const installation = (install ??= saved(installKey) || undefined) ?? (options.waitForInstall ? await register() : undefined);
   if (!installation) { if (!options.body) void register(); return; }
+  if (blocked || Date.now() < retryAfter) return;
   const first = await send(path, { ...options, installation });
   if (first.error !== "install_required") return first.response;
   if (install === installation) {
     install = undefined;
     if (saved(installKey) === installation) save(installKey, "");
   }
-  if (options.body) { void register(installation); return first.response; }
+  if (options.body && !options.waitForInstall) { void register(installation); return first.response; }
   const replacement = await register(installation);
   if (replacement && !blocked && Date.now() >= retryAfter) {
     const retried = await send(path, { ...options, installation: replacement });
@@ -147,11 +157,11 @@ export async function lyssnaRequest(path: string, options: { body?: object; etag
 export const lyssnaRetryAt = () => retryAfter;
 
 let playClient: string | undefined;
-export function sendLyssnaPlay(songId: string) {
+export function sendLyssnaPlay(songId: string, accessToken?: string) {
   if (!install && !saved(installKey)) return;
   if (!playClient) {
     playClient = saved(clientKey) || crypto.randomUUID();
     save(clientKey, playClient);
   }
-  void lyssnaRequest(`/v1/songs/${songId}/play`, { body: { client_id: playClient } }).catch(() => {});
+  void lyssnaRequest(`/v1/songs/${songId}/play`, { body: { client_id: playClient }, accessToken }).catch(() => {});
 }

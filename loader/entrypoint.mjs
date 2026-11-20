@@ -51,7 +51,7 @@ export async function start(signal) {
       const url = new URL(`builds/lyssna-lyrics@${channels[channel]}.mjs`, root);
       const build = await import(url.href);
       signal.throwIfAborted();
-      const next = build.default({ channel, channels, selectChannel: (name) => load(name, true) });
+      const next = build.default({ channel, channels, lyssnaSignIn: catalog.lyssnaSignIn === true, selectChannel: (name) => load(name, true) });
       stop();
       current = next;
       if (reopen) {

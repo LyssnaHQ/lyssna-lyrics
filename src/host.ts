@@ -22,6 +22,7 @@ type SpotifyHistory = {
 export type AudioSegment = { start: number; duration: number; pitches: number[]; loudness_max: number; loudness_start?: number; loudness_end?: number };
 type AudioAnalysis = { segments?: AudioSegment[]; beats?: { start: number; duration: number }[]; track?: { duration?: number } };
 type ImageSource = { url?: string; width?: number; maxWidth?: number };
+type SpotifyHttp = { get(url: string): Promise<unknown> };
 type HeaderImages = { sources?: ImageSource[] };
 type CatalogueResult = {
   data?: { trackUnion?: { canvas?: CanvasInfo | null }; albumUnion?: { date?: { isoString?: string; year?: number } }; artistUnion?: {
@@ -64,7 +65,7 @@ export type Spicetify = {
   Platform?: Record<string, unknown>;
   _platform?: { isDeveloperMode?: boolean };
   showNotification?(message: string, error?: boolean): void;
-  CosmosAsync?: unknown;
+  CosmosAsync?: SpotifyHttp;
   GraphQL?: {
     Definitions: Record<string, unknown>;
     Request(definition: unknown, variables: Record<string, unknown>): Promise<CatalogueResult>;
@@ -82,6 +83,7 @@ export type Spicetify = {
     getHeart?(): boolean;
     isPlaying(): boolean;
     seek(ms: number): void;
+    playUri?(uri: string): unknown;
     togglePlay(): void;
     next?(): void;
     back?(): void;
@@ -100,7 +102,7 @@ export type Spicetify = {
 type SpotiKit = {
   Config?: HostConfig;
   Platform: Record<string, unknown>;
-  Http: unknown;
+  Http: SpotifyHttp;
   Audio?: { analysis(uri: string): Promise<AudioAnalysis | null> };
   GraphQL?: {
     definitions?: Record<string, unknown>;
@@ -119,6 +121,7 @@ type SpotiKit = {
     volume: number;
     liked: boolean;
     seek(ms: number): void;
+    playUri?(uri: string): unknown;
     toggle(): void;
     next(): void;
     previous(): void;
@@ -135,6 +138,13 @@ type SpotiKit = {
 export type Root = { render(node: ReactNode): void; unmount(): void };
 export type Track = { id: string; title: string; artists: string; artist?: string; artistUri?: string; cover: string;
   artistLinks?: { name: string; uri?: string }[]; album?: string; albumUri?: string; albumUpc?: string; year?: string; isrc?: string };
+export type TtmlTrack = { uri: string; name: string; artists: { name: string }[]; album?: { name?: string; images?: { url: string }[] } };
+
+function isTtmlTrack(value: unknown): value is TtmlTrack {
+  const track = value as Partial<TtmlTrack> | null;
+  return !!track && typeof track.uri === "string" && /^spotify:track:[A-Za-z0-9]{22}$/.test(track.uri) &&
+    typeof track.name === "string" && Array.isArray(track.artists);
+}
 
 export function cataloguePath(uri?: string) {
   const match = /^(?:spotify:)(album|artist):([A-Za-z0-9]{22})$/.exec(uri ?? "");
@@ -207,6 +217,7 @@ export function getHost() {
   if ((!kit && !spice) || !dom) throw new Error("Spotify host is unavailable");
   const history = () => (kit?.Platform.History ?? spice?.Platform?.History) as SpotifyHistory | undefined;
   const customApps = new Set(["marketplace", "lyrics-plus", ...customAppRoutes(spice?.Config), ...customAppRoutes(kit?.Config)]);
+  const spotifyWeb = kit?.Http ?? spice?.CosmosAsync;
   const otherMainView = (location?: HistoryLocation) => {
     const [route, app] = location?.pathname.toLowerCase().slice(1).split("/") ?? [];
     return lyricsRoute(location) || customApps.has(route === "app" ? app : route);
@@ -339,6 +350,23 @@ export function getHost() {
       };
     },
     seek: (ms: number) => kit ? kit.Player.seek(ms) : spice?.Player.seek(ms),
+    async playTrack(uri: string) {
+      const player = kit?.Player ?? spice?.Player;
+      if (!player?.playUri) throw new Error("This Spotify client cannot open saved songs.");
+      await player.playUri(uri);
+    },
+    async searchTracks(query: string, limit = 6) {
+      if (!spotifyWeb) throw new Error("Spotify search is unavailable.");
+      const params = new URLSearchParams({ q: query, type: "track", limit: String(limit) });
+      const result = await spotifyWeb.get(`https://api.spotify.com/v1/search?${params}`) as { tracks?: { items?: unknown[] } };
+      if (!Array.isArray(result?.tracks?.items)) throw new Error("Spotify search is unavailable.");
+      return [...new Map(result.tracks.items.filter(isTtmlTrack).map((track) => [track.uri, track])).values()];
+    },
+    async lookupTrack(id: string) {
+      if (!spotifyWeb || !/^[A-Za-z0-9]{22}$/.test(id)) return;
+      const track = await spotifyWeb.get(`https://api.spotify.com/v1/tracks/${id}`);
+      return isTtmlTrack(track) ? track : undefined;
+    },
     position: () => kit ? kit.Player.position : spice?.Player.getProgress() ?? 0,
     duration: () => kit ? kit.Player.duration : spice?.Player.getDuration?.() ?? 0,
     playing: () => kit ? kit.Player.isPlaying : spice?.Player.isPlaying() ?? false,

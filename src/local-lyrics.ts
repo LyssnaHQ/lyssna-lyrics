@@ -1,8 +1,12 @@
 import type { Line, Lyrics, Word } from "./lyssna/types";
 import type { TransferLyrics } from "./lyssna/transfer-format";
+import { fromLrc } from "./lrc";
 
 export const lyricsChanged = "lyssna-lyrics:lyrics";
 const trackUri = /^spotify:track:[A-Za-z0-9]{22}$/;
+export type LoadMode = "persistent" | "temporary" | "session";
+const session = new Map<string, TransferLyrics>();
+let temporary: TransferLyrics | undefined;
 let database: Promise<IDBDatabase> | undefined;
 
 function openDatabase() {
@@ -31,7 +35,6 @@ async function write(change: (store: IDBObjectStore) => void) {
     transaction.onabort = () => reject(transaction.error ?? new Error("Could not save lyrics."));
     change(transaction.objectStore("ttml"));
   });
-  window.dispatchEvent(new Event(lyricsChanged));
 }
 
 function timestamp(value: string | null): number | undefined {
@@ -137,30 +140,78 @@ export function listLocalLyrics(): Promise<TransferLyrics[]> {
   return read((store) => store.getAll());
 }
 
-export async function readLocalLyrics(trackId: string) {
-  const entry = await read<TransferLyrics | undefined>((store) => store.get(`spotify:track:${trackId}`));
-  return entry && parseLocalTtml(entry.text);
-}
-
-export function saveLocalLyrics(entries: TransferLyrics[]) {
-  for (const entry of entries) {
-    if (!trackUri.test(entry.uri) || entry.kind !== "ttml" || new TextEncoder().encode(entry.text).length > 2_000_000) {
-      throw new Error("Choose a TTML file under 2 MB for a Spotify track.");
-    }
-    parseLocalTtml(entry.text);
+function readImport(entry: TransferLyrics, duration: number) {
+  if (entry.kind === "ttml") return parseLocalTtml(entry.text);
+  if (entry.kind === "lrc") {
+    const plain = entry.text.replace(/^\s*\[[a-z]+:[^\]\r\n]*\][\t ]*$/gim, "");
+    const result = fromLrc("Imported LRC", entry.text, plain, duration);
+    if (result) return result;
   }
-  return write((store) => { for (const entry of entries) store.put(entry); });
+  throw new Error("Choose a TTML or LRC file with lyric lines.");
 }
 
-export function removeLocalLyrics(uri: string) {
-  return write((store) => { store.delete(uri); });
+export async function readLocalLyrics(trackId: string, duration: number) {
+  const uri = `spotify:track:${trackId}`;
+  const entry = (temporary?.uri === uri ? temporary : session.get(uri)) ??
+    await read<TransferLyrics | undefined>((store) => store.get(uri));
+  return entry && readImport(entry, duration);
+}
+
+function validateImport(entry: TransferLyrics) {
+  if (!trackUri.test(entry.uri) || new TextEncoder().encode(entry.text).length > 2_000_000) {
+    throw new Error("Choose a TTML or LRC file under 2 MB for a Spotify track.");
+  }
+  readImport(entry, 0);
+}
+
+const notify = (uris: string[]) => window.dispatchEvent(new CustomEvent(lyricsChanged, {
+  detail: uris.map((uri) => uri.slice("spotify:track:".length)),
+}));
+
+export function clearTemporaryLyrics(trackId?: string) {
+  if (!trackId || temporary?.uri === `spotify:track:${trackId}`) temporary = undefined;
+}
+
+export function keepTemporaryLyricsFor(trackId?: string) {
+  if (temporary && temporary.uri !== `spotify:track:${trackId}`) temporary = undefined;
+}
+
+export async function saveLocalLyrics(entries: TransferLyrics[]) {
+  entries.forEach(validateImport);
+  await write((store) => { for (const entry of entries) store.put(entry); });
+  for (const entry of entries) {
+    session.delete(entry.uri);
+    if (temporary?.uri === entry.uri) temporary = undefined;
+  }
+  notify(entries.map(({ uri }) => uri));
+}
+
+export async function loadLocalLyrics(entry: TransferLyrics, mode: LoadMode) {
+  if (mode === "persistent") return saveLocalLyrics([entry]);
+  validateImport(entry);
+  if (mode === "temporary") temporary = entry;
+  else {
+    session.set(entry.uri, entry);
+    if (temporary?.uri === entry.uri) temporary = undefined;
+  }
+  notify([entry.uri]);
+}
+
+export async function removeLocalLyrics(uri: string, reset = false) {
+  await write((store) => { store.delete(uri); });
+  if (reset) {
+    session.delete(uri);
+    if (temporary?.uri === uri) temporary = undefined;
+  }
+  notify([uri]);
 }
 
 export function downloadTtml(entry: TransferLyrics) {
-  const url = URL.createObjectURL(new Blob([entry.text], { type: "application/ttml+xml" }));
+  const url = URL.createObjectURL(new Blob([entry.text], { type: entry.kind === "ttml" ? "application/ttml+xml" : "text/plain" }));
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = `${(entry.name || entry.uri).replace(/[<>:"/\\|?*]/g, "_")}.ttml`;
+  const name = [entry.name || entry.uri, entry.artists].filter(Boolean).join(" - ");
+  anchor.download = `${name.replace(/[<>:"/\\|?*]/g, "_")}.${entry.kind}`;
   anchor.click();
   window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
 }

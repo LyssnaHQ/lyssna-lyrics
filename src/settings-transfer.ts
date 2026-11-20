@@ -68,7 +68,7 @@ export async function importSettings(file: File) {
   if (file.size > TRANSFER_LIMIT) throw new Error("Settings files must be under 100 MB.");
   const transfer = parseTransfer(await file.text());
   const patch = validatePreferences(standalonePreferences(transfer));
-  const ttml = transfer.lyrics.filter((entry) => entry.kind === "ttml" && /^spotify:track:[A-Za-z0-9]{22}$/.test(entry.uri));
+  const ttml = transfer.lyrics.filter((entry) => entry.kind !== "json" && /^spotify:track:[A-Za-z0-9]{22}$/.test(entry.uri));
   if (ttml.length) await saveLocalLyrics(ttml);
   return { patch, skipped: transfer.lyrics.length - ttml.length };
 }

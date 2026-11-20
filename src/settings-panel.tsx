@@ -11,6 +11,7 @@ import { LyricsLibrary, SourcesManager } from "./settings-library";
 import { exportSettings, importSettings } from "./settings-transfer";
 import { pictureInPicture } from "./popout";
 import { quickEffects } from "./quick-effects";
+import { AccountSettings } from "./account-settings";
 
 export type Channel = "stable" | "beta" | "canary";
 export const channelLabels: Record<Channel, string> = { stable: "Stable", beta: "Beta", canary: "Canary" };
@@ -18,6 +19,7 @@ export type BuildOptions = {
   channel: Channel;
   channels: Record<Channel, string | null>;
   selectChannel: (channel: Channel) => Promise<void>;
+  lyssnaSignIn?: boolean;
 };
 
 const tabs = [
@@ -64,13 +66,12 @@ function visualRowKey(row: ReactNode) {
   return isValidElement(row) && row.key !== null ? String(row.key) : "";
 }
 
-export function SettingsPanel({ settings, change, close, options, trackId, importTtml, notice, setNotice, view = window, developerMode }: {
+export function SettingsPanel({ settings, change, close, options, trackId, notice, setNotice, view = window, developerMode }: {
   settings: Settings;
   change: (patch: Partial<Settings>) => void;
   close: () => void;
   options: BuildOptions;
   trackId?: string;
-  importTtml: () => void;
   notice: string;
   setNotice: (message: string) => void;
   view?: Window;
@@ -247,6 +248,7 @@ export function SettingsPanel({ settings, change, close, options, trackId, impor
     ]],
     ["Effects", "Lyric effects", visuals.Effects.filter((row) => !appearanceRows.includes(visualRowKey(row)))],
     ["Sources", "Sources", [
+      <AccountSettings key="lyssna-account" ready={options.lyssnaSignIn === true} />,
       flag("lyrics_credit_lyssna", "Credit Lyssna", "Show Lyssna beside lyrics it provides.", "attribution provider credits"),
       <SettingRow key="source-order" label="Manage Sources" help="Set lyric source priority, availability, and provider options."
         keywords={`sources order ${sourceSearch}`}>
@@ -254,9 +256,6 @@ export function SettingsPanel({ settings, change, close, options, trackId, impor
       </SettingRow>,
       <SettingRow key="ttml-library" label="Browse TTML Database" help="Open your saved lyrics." keywords="local lyrics download remove">
         {submenuButton("library", "Browse")}
-      </SettingRow>,
-      <SettingRow key="load-ttml" label="Load TTML" help="Use your own lyrics file for the playing song." keywords="import file" unavailable={emptyTrack}>
-        <button type="button" className="pill outline" onClick={importTtml}>Load</button>
       </SettingRow>,
       <SettingRow key="lyrics_cache_button" label="Lyrics View Cache Button" help="Choose what the refresh button does in the lyrics toolbar."
         keywords="cache-action refresh clear reload">

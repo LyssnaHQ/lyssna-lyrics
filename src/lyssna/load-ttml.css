@@ -1,0 +1,530 @@
+.lyssna-lyrics-view .load-ttml-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: min(25px, 3%);
+  background: light-dark(#fafafac4, #050505c4);
+  backdrop-filter: blur(12px);
+  color: light-dark(#000, #fff);
+  --glass-shadow: 0 25px 120px #0007;
+  --glass-fill-strong: light-dark(#e1e1dcef, #1e1e23ef);
+}
+
+.lyssna-lyrics-view .load-ttml-backdrop[data-theme="light"] { color-scheme: light; }
+.lyssna-lyrics-view .load-ttml-backdrop[data-theme="system"] { color-scheme: light dark; }
+
+.dialog.load-ttml {
+  width: min(100% - 48px, 720px);
+  box-sizing: border-box;
+  min-width: 0;
+  max-height: min(85vh, 100%);
+  overflow: auto;
+  padding: 0;
+  border-radius: 16px;
+  border: 1px solid light-dark(#00000015, #ffffff15);
+  background: light-dark(#e3ebebf2, #1c1414f2);
+  box-shadow: 0 25px 120px #0007;
+}
+.load-ttml button { border: 0; cursor: pointer; }
+.load-ttml button:disabled { opacity: 0.45; cursor: default; }
+.load-ttml .load-ttml-error { margin: 10px 22px 0; font-size: 13px; color: light-dark(#982c18, #ffa997); }
+.load-ttml-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 20px;
+  border-bottom: 1px solid light-dark(#00000014, #ffffff14);
+}
+/* Scoped under .dialog: the generic dialog heading margin, defined later,
+   would otherwise push the title above the close button's centre. */
+.dialog .load-ttml-head h2 {
+  flex: 1;
+  margin: 0;
+  line-height: 1.2;
+  font-size: 17px;
+  font-weight: 700;
+}
+.load-ttml-body {
+  padding: 18px 22px 22px;
+}
+.load-ttml-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.dialog .load-ttml-row p {
+  margin: 0;
+  min-width: 0;
+  font-size: 13.5px;
+  color: light-dark(#4c4c4c, #b3b3b3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.load-ttml-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.load-ttml-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 7px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: light-dark(#000, #fff);
+  background: light-dark(#0000000f, #ffffff0f);
+  box-shadow: inset 0 0 0 1px #ffffff1f;
+}
+.load-ttml-actions button:hover,
+.load-ttml-mode:hover {
+  background: light-dark(#0000001a, #ffffff1a);
+  box-shadow: inset 0 0 0 1px #ffffff33;
+}
+.load-ttml-modes {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+.load-ttml-mode {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  padding: 13px 14px;
+  border-radius: 10px;
+  text-align: left;
+  color: light-dark(#000, #fff);
+  background: light-dark(#0000000f, #ffffff0f);
+  box-shadow: inset 0 0 0 1px #ffffff1f;
+  transition:
+    background 0.18s,
+    transform 0.12s;
+}
+.dialog .bulk-ttml-summary {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: light-dark(#4c4c4c, #b3b3b3);
+}
+.bulk-ttml-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 60vh;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.bulk-ttml-file {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: light-dark(#0000000a, #ffffff0a);
+}
+.bulk-ttml-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.bulk-ttml-head img,
+.bulk-ttml-results img {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: 5px;
+  object-fit: cover;
+}
+.bulk-ttml-file :is(strong, small) {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bulk-ttml-file strong {
+  font-size: 14px;
+  font-weight: 500;
+}
+.bulk-ttml-file small {
+  margin-top: 2px;
+  font-size: 12px;
+  color: light-dark(#4c4c4c, #b3b3b3);
+}
+.bulk-ttml-file[data-state="saved"] small {
+  color: #1ed760;
+}
+.bulk-ttml-find {
+  display: flex;
+  gap: 8px;
+}
+.bulk-ttml-find .load-ttml-search {
+  flex: 1;
+}
+.bulk-ttml-find > button,
+.bulk-ttml-nav button,
+.bulk-ttml-done {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: light-dark(#000, #fff);
+  background: light-dark(#0000000f, #ffffff14);
+  box-shadow: inset 0 0 0 1px #ffffff1f;
+}
+.bulk-ttml-find > button:disabled {
+  opacity: 0.5;
+}
+.bulk-ttml-results {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.bulk-ttml-results button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 5px 6px;
+  border-radius: 7px;
+  text-align: left;
+  color: inherit;
+}
+.bulk-ttml-results button:hover:not(:disabled) {
+  background: light-dark(#0000000f, #ffffff12);
+}
+.bulk-ttml-step {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.bulk-ttml-step .bulk-ttml-summary {
+  margin: 0;
+}
+.bulk-ttml-step .bulk-ttml-results {
+  max-height: 42vh;
+  overflow-y: auto;
+}
+.bulk-ttml-tick {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  border-radius: 5px;
+  box-shadow: inset 0 0 0 1.5px light-dark(#0000004d, #ffffff4d);
+}
+.bulk-ttml-results [aria-checked="true"] .bulk-ttml-tick {
+  color: #000;
+  background: #1ed760;
+  box-shadow: none;
+}
+.bulk-ttml-results [aria-checked="true"] {
+  background: light-dark(#0000000a, #ffffff0d);
+}
+.bulk-ttml-nav > span {
+  display: flex;
+  gap: 8px;
+}
+.bulk-ttml-nav .bulk-ttml-save {
+  color: #000;
+  background: #1ed760;
+  box-shadow: none;
+}
+.bulk-ttml-save:disabled {
+  opacity: 0.6;
+}
+.bulk-ttml-progress {
+  height: 4px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: light-dark(#00000014, #ffffff14);
+}
+.bulk-ttml-progress i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #1ed760;
+  transition: width 0.25s ease;
+}
+.bulk-ttml-file[data-state="skipped"] small {
+  color: light-dark(#4c4c4c, #b3b3b3);
+}
+.bulk-ttml-nav {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 2px;
+}
+.bulk-ttml-nav button:disabled {
+  opacity: 0.4;
+}
+.bulk-ttml-done {
+  display: flex;
+  width: fit-content;
+  margin: 12px 0 0 auto;
+  color: #000;
+  background: #1ed760;
+  box-shadow: none;
+}
+.dialog :is(.bulk-ttml-error, .bulk-ttml-none) {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 12px;
+}
+.dialog .bulk-ttml-error {
+  color: #f3727f;
+}
+.dialog .bulk-ttml-none {
+  color: light-dark(#4c4c4c, #b3b3b3);
+}
+.load-ttml-mode:active {
+  transform: scale(0.99);
+}
+.load-ttml-mode:disabled,
+.load-ttml-actions button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+.load-ttml-icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background: light-dark(#00000014, #ffffff14);
+  box-shadow: inset 0 0 0 1px #ffffff1f;
+}
+.load-ttml-mode > span:last-child {
+  padding-top: 5px;
+}
+.load-ttml-mode strong {
+  display: block;
+  font-size: 14px;
+  font-weight: 700;
+}
+.load-ttml-mode small {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: light-dark(#4c4c4c, #b3b3b3);
+}
+.dialog .load-ttml-empty {
+  font-size: 15px;
+  color: light-dark(#4c4c4c, #b3b3b3);
+}
+/* TTML Database, after Spicy Lyrics' list: Back, search and Reset above
+   rows of cover, song and Play / Download / Delete. */
+.load-ttml-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.load-ttml-back,
+.load-ttml-reset {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 13.5px;
+  font-weight: 600;
+  flex-shrink: 0;
+  transition:
+    background 0.15s,
+    box-shadow 0.15s;
+}
+.load-ttml-back {
+  color: light-dark(#000, #fff);
+  background: light-dark(#0000000f, #ffffff0f);
+  box-shadow: inset 0 0 0 1px #ffffff1f;
+}
+.load-ttml-back:hover {
+  background: light-dark(#0000001a, #ffffff1a);
+}
+.load-ttml-reset {
+  color: #f46a6a;
+  background: #f4434312;
+  box-shadow: inset 0 0 0 1px #f4434366;
+}
+.load-ttml-reset:hover {
+  background: #f4434324;
+}
+.load-ttml-search {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 8px;
+  color: light-dark(#4c4c4c, #b3b3b3);
+  background: light-dark(#0000000a, #ffffff0a);
+  box-shadow: inset 0 0 0 1px #ffffff1f;
+}
+.load-ttml-search:focus-within {
+  box-shadow: inset 0 0 0 1px #ffffff55;
+}
+.load-ttml-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: light-dark(#000, #fff);
+  font: inherit;
+  font-size: 13.5px;
+}
+.load-ttml-saved {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 64vh;
+  /* The list fades out at the bottom instead of cutting rows off; the
+     padding lets the last row scroll clear of the fade. */
+  mask-image: linear-gradient(#000 calc(100% - 56px), transparent);
+  overflow-y: auto;
+  margin: 0;
+  padding: 0 0 40px;
+  list-style: none;
+}
+.load-ttml-saved li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  transition: background 0.15s;
+}
+.load-ttml-saved li:hover {
+  background: light-dark(#0000000d, #ffffff0d);
+}
+.load-ttml-saved img,
+.load-ttml-art {
+  width: 44px;
+  height: 44px;
+  border-radius: 5px;
+  flex-shrink: 0;
+  object-fit: cover;
+  background: light-dark(#00000014, #ffffff14);
+}
+.load-ttml-art {
+  display: grid;
+  place-items: center;
+  color: light-dark(#4c4c4c, #b3b3b3);
+}
+.load-ttml-song {
+  flex: 1;
+  min-width: 0;
+}
+.load-ttml-saved strong,
+.load-ttml-saved small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.load-ttml-saved strong {
+  font-size: 15px;
+  font-weight: 500;
+}
+.load-ttml-saved small {
+  margin-top: 2px;
+  font-size: 13px;
+  color: light-dark(#4c4c4c, #b3b3b3);
+}
+.load-ttml-row-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.load-ttml-row-actions button {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 7px;
+  color: light-dark(#000, #fff);
+  background: light-dark(#0000000f, #ffffff0f);
+  box-shadow: inset 0 0 0 1px #ffffff1f;
+  transition:
+    background 0.15s,
+    transform 0.12s;
+}
+.load-ttml-row-actions button:hover:not(:disabled) {
+  background: light-dark(#00000024, #ffffff24);
+}
+.load-ttml-row-actions button:active:not(:disabled) {
+  transform: scale(0.94);
+}
+.load-ttml-row-actions button:disabled {
+  opacity: 0.4;
+}
+@media (max-width: 900px) {
+  .load-ttml-modes {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .load-ttml-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+/* Load TTML is a frosted sheet with the ambience showing through. The
+   backdrop only dims, without its own blur: a blurred backdrop would be
+   all the sheet's blur could see. */
+.lyssna-lyrics-view .load-ttml-backdrop.liquid-glass {
+  background: light-dark(#ffffff4d, #0000004d);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+.load-ttml-backdrop.liquid-glass .dialog.load-ttml {
+  background: light-dark(#e1e1dc80, #1e1e2380);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  backdrop-filter: blur(40px) saturate(180%);
+  box-shadow: var(--glass-shadow);
+  border: 1px solid light-dark(#0000001f, #ffffff1f);
+}
+.load-ttml-backdrop.liquid-glass .load-ttml-head {
+  border-bottom-color: light-dark(#0000001f, #ffffff1f);
+}
+@media (prefers-reduced-transparency: reduce) {
+  .load-ttml-backdrop.liquid-glass .dialog.load-ttml {
+    background: var(--glass-fill-strong);
+  }
+}
+
+@container (max-width: 690px) {
+  .load-ttml-modes { grid-template-columns: minmax(0, 1fr); }
+  .load-ttml-row { flex-direction: column; align-items: flex-start; }
+  .load-ttml-row > p { max-width: 100%; }
+  .load-ttml-actions { max-width: 100%; }
+  .load-ttml-actions, .load-ttml-tools, .bulk-ttml-nav { flex-wrap: wrap; }
+}
+
+@container (max-width: 440px) {
+  .dialog.load-ttml { width: 100%; }
+  .load-ttml-body { padding-inline: 14px; }
+}

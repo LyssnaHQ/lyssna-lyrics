@@ -1,5 +1,5 @@
 import type { Track } from "./host";
-import { readLocalLyrics, lyricsChanged } from "./local-lyrics";
+import { clearTemporaryLyrics, readLocalLyrics, lyricsChanged } from "./local-lyrics";
 import type { Lyrics } from "./lyssna/types";
 import { readLrcLib, readLrcRed, readNetease } from "./remote-lyrics";
 import type { Settings } from "./settings";
@@ -38,6 +38,7 @@ type Cached = { expires: number; value: Promise<Lyrics | undefined> };
 const cache = new Map<string, Map<string, Cached>>();
 
 export function refreshLyrics(trackId?: string, action: Settings["lyrics_cache_action"] = "reload") {
+  clearTemporaryLyrics(action === "all" ? undefined : trackId);
   if (action === "all") {
     cache.clear();
     clearLyssnaCache();
@@ -72,7 +73,7 @@ function readCached(trackId: string, id: string, reader: () => Promise<Lyrics | 
 export async function readLyrics(track: Track, duration: number, sources: LyricSource[]) {
   for (const id of sources) {
     if (id === "local") {
-      const lyrics = await readLocalLyrics(track.id).catch(() => undefined);
+      const lyrics = await readLocalLyrics(track.id, duration).catch(() => undefined);
       if (lyrics) return lyrics;
     } else if (id === "lyssna") {
       const lyrics = await readLyssnaLyrics(track).catch(() => undefined);
