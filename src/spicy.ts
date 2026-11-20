@@ -5,11 +5,14 @@ import type { Contributor, Line, Lyrics, Word } from "./lyssna/types";
 const api = "https://api.spicylyrics.org/bp/loader/";
 const cacheName = "SpicyLyrics_LyricsStore_g1";
 const spicyName = /spicy[\W_]*lyrics/i;
+type ProviderWindow = Window & {
+  SpicyLyrics?: { db?: { objectStores?: { lyricsStore?: { manager?: { get(uri: string): Promise<unknown> } } } } };
+  __LYSSNA_SPICY_BACKGROUND__?: { ready?: Promise<Window | null>; frameWindow?: Window | null };
+};
+let ownProviderFrame: Window | undefined;
 
 function legacyProviderAvailable() {
-  const legacy = (window as Window & {
-    __LYSSNA_SPICY_BACKGROUND__?: { ready?: Promise<Window | null>; frameWindow?: Window | null };
-  }).__LYSSNA_SPICY_BACKGROUND__;
+  const legacy = (window as ProviderWindow).__LYSSNA_SPICY_BACKGROUND__;
   return !!legacy?.ready && legacy.frameWindow !== null;
 }
 
@@ -84,6 +87,7 @@ function makeBackground(host: ProviderHost) {
       for (const callback of callbacks) host.Player.removeEventListener(event, callback);
     }
     subscriptions.clear();
+    if (ownProviderFrame === frame.contentWindow) ownProviderFrame = undefined;
     frame.remove();
   }
 
@@ -96,6 +100,7 @@ function makeBackground(host: ProviderHost) {
     stop();
     throw new Error("Spicy Lyrics provider document unavailable");
   }
+  ownProviderFrame = sandbox;
 
   const base = doc.createElement("base");
   base.href = location.origin + "/";
@@ -232,19 +237,43 @@ type Vocal = {
 };
 type VocalEntry = Vocal & { Type?: string; Lead?: Vocal; Background?: Vocal[]; OppositeAligned?: boolean };
 type Payload = Vocal & {
+  uri?: string;
   source?: string;
   Type?: string;
   Lines?: VocalEntry[];
   Content?: VocalEntry[];
   SongWriters?: (string | { name?: string })[];
-  UploadAttribution?: { Uploader?: Contributor; Maker?: Contributor };
+  Songwriters?: (string | { name?: string })[];
+  UploadAttribution?: { Uploader?: unknown; Maker?: unknown };
+  TTMLUploadMetadata?: { Uploader?: unknown; Maker?: unknown };
 };
 
+function contributor(value: unknown): Contributor | undefined {
+  if (!value || typeof value !== "object") return;
+  const person = value as Record<string, unknown>;
+  const firstText = (...keys: string[]) => keys.map((key) => person[key]).find((item): item is string => typeof item === "string" && !!item.trim())?.trim();
+  const id = firstText("id", "userId", "user_id") ?? "";
+  const discord = firstText("discord", "discordUsername", "discord_username", "username");
+  const username = firstText("displayName", "display_name", "global_name", "globalName", "username", "name") ?? (id || undefined);
+  if (!username) return;
+  const profile = firstText("url", "profileUrl", "profile_url");
+  const url = profile && /^https:\/\/spicylyrics\.org\//i.test(profile) ? profile
+    : /^\d+$/.test(id) ? `https://spicylyrics.org/uid/${id}` : undefined;
+  const image = firstText("avatar_url", "avatarUrl", "avatar");
+  const avatar = image?.startsWith("https://") ? image : image && /^\d+$/.test(id) && /^(?:a_)?[a-f0-9]+$/i.test(image)
+    ? `https://cdn.discordapp.com/avatars/${id}/${image}.webp?size=64` : undefined;
+  return { id, username, discord, url, avatar };
+}
+
 function normalize(data: Payload): Lyrics | undefined {
-  const sourceId = typeof data.source === "string" ? data.source.toLowerCase() : "";
+  const sourceId = typeof data.source === "string" ? data.source.trim().toLowerCase() : "";
   const tokens = sourceId.split(/[^a-z0-9]+/);
   const source = sourceId === "apple_music" || (tokens.includes("aml") && !tokens.includes("spl")) ? "Apple Music" : "Spicy Lyrics";
-  if (data.Type === "Instrumental") return { source, lines: [], synced: false, instrumental: true };
+  const attribution = {
+    maker: contributor(data.UploadAttribution?.Maker) ?? contributor(data.TTMLUploadMetadata?.Maker),
+    uploader: contributor(data.UploadAttribution?.Uploader) ?? contributor(data.TTMLUploadMetadata?.Uploader),
+  };
+  if (data.Type === "Instrumental") return { source, attribution, lines: [], synced: false, instrumental: true };
   const lines: Line[] = [];
   const timed = data.Type === "Syllable" || data.Type === "Line";
   const ms = (time = 0) => Number.isFinite(time) ? Math.max(0, Math.round(time * 1000)) : 0;
@@ -278,14 +307,31 @@ function normalize(data: Payload): Lyrics | undefined {
   }
   if (lines.length) return {
     source, lines, synced: timed, instrumental: false,
-    songwriters: data.SongWriters?.flatMap((writer) => typeof writer === "string" ? [writer] : (writer?.name ? [writer.name] : [])),
-    attribution: { maker: data.UploadAttribution?.Maker, uploader: data.UploadAttribution?.Uploader },
+    songwriters: (data.SongWriters ?? data.Songwriters)?.flatMap((writer) => typeof writer === "string" ? [writer] : (writer?.name ? [writer.name] : [])),
+    attribution,
   };
 }
 
 export async function readSpicyLyrics(trackId: string) {
+  const uri = `spotify:track:${trackId}`;
+  const current = window as ProviderWindow;
+  const background = ownProviderFrame ?? current.__LYSSNA_SPICY_BACKGROUND__?.frameWindow;
+  let timeout: number | undefined;
+  try {
+    const provider = (background ?? current) as ProviderWindow;
+    const manager = provider.SpicyLyrics?.db?.objectStores?.lyricsStore?.manager;
+    const local = manager && await Promise.race([
+      manager.get(uri), new Promise<undefined>((resolve) => { timeout = window.setTimeout(resolve, 650); }),
+    ]) as Payload | null | undefined;
+    if (local && (!local.uri || local.uri === uri)) {
+      const lyrics = normalize(local);
+      if (lyrics) return lyrics;
+    }
+  } catch { /* The cached lyrics are still available while the provider starts. */ }
+  finally { window.clearTimeout(timeout); }
   const response = await caches.match(`/${trackId}`, { cacheName });
   if (!response) return;
   const record = await response.json() as { Content?: Payload; ExpiresAt?: number };
-  if (record.Content && (record.ExpiresAt ?? 0) > Date.now()) return normalize(record.Content);
+  const data = record.Content;
+  if (data && (!data.uri || data.uri === uri) && (record.ExpiresAt ?? 0) > Date.now()) return normalize(data);
 }

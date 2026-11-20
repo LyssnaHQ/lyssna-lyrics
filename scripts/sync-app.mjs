@@ -21,7 +21,7 @@ function slice(source, first, after) {
 const files = [
   "animator-tuning.ts", "frame-cap.ts", "lyric-animator.ts", "lyric-motion.ts", "lyric-word.tsx",
   "lyric-countdown.tsx", "space-gravity.ts", "space-gravity-lyrics.tsx", "highlighter.tsx",
-  "window-activity.ts", "word-sync.ts", "word-filter.ts", "gibberish.ts", "gibberish-dictionary.ts",
+  "window-activity.ts", "word-filter.ts", "gibberish.ts", "gibberish-dictionary.ts",
   "setting-row.tsx", "animator-settings.tsx", "toolbar-icons.tsx", "fullscreen-icons.tsx", "player-icons.tsx", "artwork-color.ts", "transfer-format.ts",
 ];
 const styles = read("frontend/styles.css");
@@ -151,6 +151,8 @@ write("custom-fonts.tsx", read("frontend/custom-fonts.tsx")
   .replace("document.fonts.add(face)", "page.fonts.add(face)")
   .replace("loadSelectedFonts(families: (string | undefined)[])", "loadSelectedFonts(families: (string | undefined)[], page = document)")
   .replace(".map(registerFont)", ".map((font) => registerFont(font, page))")
+  .replace("fontFamily(family?: string)", "fontFamily(family?: string, fallback = true)")
+  .replace('\", "Segoe UI", sans-serif`;', '\"${fallback ? \', "Segoe UI", sans-serif\' : ""}`;')
   .replace('"Inter Variable"', '"Lyssna Inter"')
   .replace('  settings: Pick<Settings, "ui_font" | "lyric_font">,', '  settings: Pick<Settings, "ui_font" | "lyric_font">,\n  page = document,')
   .replace("loadSelectedFonts([settings.ui_font, settings.lyric_font])", "loadSelectedFonts([settings.ui_font, settings.lyric_font], page)")

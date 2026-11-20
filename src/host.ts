@@ -11,19 +11,21 @@ type SpotifyHistory = {
   entries?: HistoryLocation[];
   index?: number;
   go?(offset: number): void;
+  push?(path: string): void;
   replace(path: string): void;
   listen(callback: () => void): Removal;
 };
-export type AudioSegment = { start: number; duration: number; pitches: number[]; loudness_max: number };
-type AudioAnalysis = { segments?: AudioSegment[] };
+export type AudioSegment = { start: number; duration: number; pitches: number[]; loudness_max: number; loudness_start?: number; loudness_end?: number };
+type AudioAnalysis = { segments?: AudioSegment[]; beats?: { start: number; duration: number }[]; track?: { duration?: number } };
 type ImageSource = { url?: string; width?: number; maxWidth?: number };
 type HeaderImages = { sources?: ImageSource[] };
 type CatalogueResult = {
-  data?: { albumUnion?: { date?: { isoString?: string; year?: number } }; artistUnion?: {
+  data?: { trackUnion?: { canvas?: CanvasInfo | null }; albumUnion?: { date?: { isoString?: string; year?: number } }; artistUnion?: {
     headerImage?: { data?: HeaderImages };
     visuals?: { headerImage?: HeaderImages };
   } };
 };
+export type CanvasInfo = { fileId?: string; type?: string; url?: string };
 type SpotifyTrack = {
   uri?: string;
   name?: string;
@@ -106,7 +108,12 @@ type SpotiKit = {
 
 export type Root = { render(node: ReactNode): void; unmount(): void };
 export type Track = { id: string; title: string; artists: string; artist?: string; artistUri?: string; cover: string;
-  album?: string; albumUri?: string; year?: string; isrc?: string };
+  artistLinks?: { name: string; uri?: string }[]; album?: string; albumUri?: string; year?: string; isrc?: string };
+
+export function cataloguePath(uri?: string) {
+  const match = /^(?:spotify:)(album|artist):([A-Za-z0-9]{22})$/.exec(uri ?? "");
+  return match ? `/${match[1]}/${match[2]}` : undefined;
+}
 
 export const spicetify = () => hosts.Spicetify as (typeof hosts.Spicetify & Spicetify) | undefined;
 export const spotikit = () => hosts.SpotiKit as (typeof hosts.SpotiKit & SpotiKit) | undefined;
@@ -148,15 +155,41 @@ export function getHost() {
   if ((!kit && !spice) || !dom) throw new Error("Spotify host is unavailable");
   const history = () => (kit?.Platform.History ?? spice?.Platform?.History) as SpotifyHistory | undefined;
 
-  const spiceGraph = spice?.GraphQL;
-  const kitGraph = kit?.GraphQL;
   const artistHeaders = new Map<string, Promise<string | undefined>>();
   const releaseYears = new Map<string, Promise<string | undefined>>();
+  const canvases = new Map<string, Promise<CanvasInfo | null | undefined>>();
+  const analyses = new Map<string, Promise<AudioAnalysis | null>>();
+  const currentTrack = () => kit?.Player.state?.item ?? kit?.Player.track ?? spice?.Player.data?.item;
   function graph() {
+    const spiceGraph = spice?.GraphQL;
+    const kitGraph = kit?.GraphQL;
     return {
       definitions: kitGraph?.definitions ?? spiceGraph?.Definitions,
       request: kitGraph?.request?.bind(kitGraph) ?? spiceGraph?.Request?.bind(spiceGraph),
     };
+  }
+  function trackCanvas(trackId: string) {
+    const trackUri = `spotify:track:${trackId}`;
+    const item = currentTrack();
+    const metadata = item?.uri === trackUri ? item.metadata : undefined;
+    if (metadata?.["canvas.fileId"] || metadata?.["canvas.url"]) {
+      return Promise.resolve({ fileId: metadata["canvas.fileId"], type: metadata["canvas.type"], url: metadata["canvas.url"] });
+    }
+    const cached = canvases.get(trackId);
+    if (cached) return cached;
+    const { definitions, request } = graph();
+    if (!definitions?.canvas || !request) return;
+    const definition = definitions.canvas;
+    const pending = Promise.resolve().then(() => request(definition, { trackUri })).then((result) => {
+      if (!result.data?.trackUnion) throw new Error("Canvas lookup returned no track");
+      return result.data.trackUnion.canvas ?? null;
+    }).catch(() => {
+      if (canvases.get(trackId) === pending) canvases.delete(trackId);
+      return undefined;
+    });
+    canvases.set(trackId, pending);
+    if (canvases.size > 50) canvases.delete(canvases.keys().next().value!);
+    return pending;
   }
   function artistHeader(artistUri: string, trackId: string) {
     const cached = artistHeaders.get(artistUri);
@@ -209,11 +242,15 @@ export function getHost() {
       const artist = track.artists?.[0];
       const artistUri = [artist?.uri, track.metadata?.artist_uri, artist?.id && `spotify:artist:${artist.id}`]
         .find((uri) => uri && /^spotify:artist:[A-Za-z0-9]{22}$/.test(uri));
+      const artistLinks = track.artists?.flatMap((artist, index) => artist.name ? [{
+        name: artist.name, uri: artist.uri || (artist.id ? `spotify:artist:${artist.id}` : index === 0 ? artistUri : undefined),
+      }] : []);
       return {
         id,
         title: track.name ?? track.metadata?.title ?? "",
         artists: track.artists?.map((artist) => artist.name).filter(Boolean).join(", ") || track.metadata?.artist_name || "",
         artistUri,
+        artistLinks,
         artist: artist?.name || track.metadata?.artist_name,
         album: track.album?.name ?? track.metadata?.album_title,
         albumUri: track.album?.uri || track.metadata?.album_uri,
@@ -239,6 +276,14 @@ export function getHost() {
     toggleLiked: () => kit ? kit.Player.setLiked?.(!kit.Player.liked) : spice?.Player.toggleHeart?.(),
     artistHeader,
     releaseYear,
+    trackCanvas,
+    navigate(path: string) {
+      const routes = history();
+      if (!routes) return false;
+      if (routes.push) routes.push(path);
+      else routes.replace(path);
+      return true;
+    },
     upcoming() {
       const next = kit?.Queue?.next[0];
       if (next) return { title: next.title, artist: next.artist, image: artwork(next.image ?? "") };
@@ -247,8 +292,15 @@ export function getHost() {
       if (title) return { title, artist: track?.metadata?.artist_name ?? "", image: artwork(track?.metadata?.image_url ?? "") };
     },
     analysis: (trackId: string) => {
+      const cached = analyses.get(trackId);
+      if (cached) return cached;
       const uri = `spotify:track:${trackId}`;
-      return kit ? kit.Audio?.analysis(uri) : spice?.getAudioData?.(uri);
+      const load = kit ? kit.Audio?.analysis(uri) : spice?.getAudioData?.(uri);
+      if (!load) return;
+      const pending = load.catch(() => null);
+      analyses.set(trackId, pending);
+      if (analyses.size > 12) analyses.delete(analyses.keys().next().value!);
+      return pending;
     },
     mainView() {
       return document.querySelector<HTMLElement>(".Root__main-view, .main-view-panel, #main-view");

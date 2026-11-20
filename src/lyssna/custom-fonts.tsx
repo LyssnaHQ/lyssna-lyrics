@@ -61,10 +61,10 @@ export async function loadSelectedFonts(families: (string | undefined)[], page =
     fonts.filter((font) => wanted.includes(font.family)).map((font) => registerFont(font, page)),
   );
 }
-export function fontFamily(family?: string) {
+export function fontFamily(family?: string, fallback = true) {
   if (!family?.trim() || family.length > 100 || /[\x00-\x1f\x7f]/.test(family))
     return undefined;
-  return `"${family.trim().replace(/["\\]/g, "\\$&")}", "Segoe UI", sans-serif`;
+  return `"${family.trim().replace(/["\\]/g, "\\$&")}"${fallback ? ', "Segoe UI", sans-serif' : ""}`;
 }
 const DEFAULT_LYRIC_FONT = '"Lyssna Inter", "Segoe UI", sans-serif';
 /** The interface and lyrics fonts a window's root uses, loading chosen

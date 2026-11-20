@@ -19,6 +19,7 @@ export function externalEnhancementOwner() {
   const standalone = runtime.__SPOTIFY_PLUS_RUNTIME__;
   if (standalone?.state === "active" || (hasStandaloneSpotifyPlus() && standalone?.protocol !== 1)) return "Spotify+";
   const legacy = runtime.__LYSSNA_LYRICS_INTEGRATION__;
+  if (standalone?.state === "waiting" && legacy?.phase === "standalone" && hasLegacyLoader()) return "Spotify+";
   if (legacy?.phase === "loading" || (legacy?.phase !== "standalone" && (hasLegacyLoader() || legacy?.hasEnhancements))) return "Lyssna Lyrics Legacy";
 }
 

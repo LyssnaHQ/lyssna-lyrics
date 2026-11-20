@@ -13,7 +13,8 @@ import { CompactIcon, FullScreenIcon, HideArtworkIcon, PopoutIcon, RetryIcon, Sw
 import type { Lyrics } from "./lyssna/types";
 import { setWindowActivity, setWindowPosition } from "./lyssna/window-activity";
 import { filterWords } from "./lyssna/word-filter";
-import { displayLyrics } from "./lyssna/word-sync";
+import { displayLyrics, needsWordSync } from "./word-sync";
+import type { AudioAnalysisData } from "./experimental-word-sync";
 import { readSettings, saveSettings, settingsEvent, type Settings } from "./settings";
 import { channelLabels, SettingsPanel, type BuildOptions } from "./settings-panel";
 import { startSpicyProvider } from "./spicy";
@@ -22,6 +23,8 @@ import { lyricsChanged, saveLocalLyrics } from "./local-lyrics";
 import { enabledSources, readLyrics, refreshLyrics, sourceIds } from "./lyric-sources";
 import { LyricCredits } from "./credits";
 import { CanvasArtwork, nowPlayingSelector, SpotifyVisualiser, useCanvas } from "./spotify-artwork";
+import { TrackMetadata } from "./track-metadata";
+import { useDefaultLyricsFont } from "./lyrics-font-fallback";
 import { clock, usePlayback, usePosition } from "./playback";
 import { LyricsPopout, pictureInPicture } from "./popout";
 import { startEnhancements } from "./enhancements";
@@ -96,9 +99,21 @@ function LyricsForTrack({ track, host, playing, settings, compact = false, view 
   const estimateTiming = settings.experimental_word_sync || gravity ||
     (!lyrics?.synced && settings.lyrics_highlighter) ||
     (!!lyrics?.synced && presetOf(settings.lyrics_animator) !== "Lyssna");
+  const [analysis, setAnalysis] = useState<AudioAnalysisData>();
+  const analyse = !!lyrics && estimateTiming && needsWordSync(lyrics, duration);
+  useEffect(() => {
+    if (!analyse) return;
+    let active = true;
+    void host.analysis(track.id)?.then((data) => {
+      if (active && data) setAnalysis({ track: data.track, segments: data.segments ?? [], beats: data.beats ?? [] });
+    });
+    return () => { active = false; };
+  }, [host, track.id, analyse]);
   const rendered = useMemo(() => filterWords(displayLyrics(lyrics, estimateTiming,
-    settings.romanized && { below: settings.romanization_below && !gravity }, duration), settings.lyrics_word_filter),
-  [lyrics, duration, estimateTiming, settings.romanized, settings.romanization_below, gravity, settings.lyrics_word_filter]);
+    settings.romanized && { below: settings.romanization_below && !gravity }, duration, analysis), settings.lyrics_word_filter),
+  [lyrics, duration, estimateTiming, settings.romanized, settings.romanization_below, gravity, settings.lyrics_word_filter, analysis]);
+  const defaultFont = useDefaultLyricsFont(settings.lyric_font, rendered, view.document);
+  const fontClass = defaultFont ? "lyssna-default-lyrics-font" : undefined;
   const upcoming = view === window && !compact && settings.lyrics_up_next && duration > 0 && position >= duration - 30_000 ? host.upcoming() : undefined;
   const upNext = upcoming && <div className="lyrics-up-next">
     <button type="button" className="lyrics-up-next-body first" onClick={host.next}>
@@ -110,15 +125,15 @@ function LyricsForTrack({ track, host, playing, settings, compact = false, view 
   </div>;
 
   if (gravity && rendered?.synced && rendered.lines.some((line) => line.words.length)) {
-    return <SpaceGravityLyrics lyrics={rendered} time={time} reduceMotion={settings.reduce_motion}
+    return <div className={fontClass} style={{ display: "contents" }}><SpaceGravityLyrics lyrics={rendered} time={time} reduceMotion={settings.reduce_motion}
       tuning={settings.lyrics_animator} onSeek={(ms) => host.seek(Math.max(0, ms - (settings.lyrics_seek_compensation ? 300 : 0)))}
       highlighter={settings.lyrics_highlighter ? markerColour(settings.lyrics_highlighter_color) : undefined}
       linkWidth={settings.gravity_links ? settings.gravity_link_width / 100 : 0}
       credits={<>{rendered.songwriters?.length ? <p className="writer-credits">Written by {rendered.songwriters.join(", ")}</p> : null}
-        <LyricCredits lyrics={rendered} expanded discord={settings.lyrics_discord_usernames} />{upNext}</>} />;
+        <LyricCredits lyrics={rendered} expanded discord={settings.lyrics_discord_usernames} />{upNext}</>} /></div>;
   }
-  if (rendered) return <LyricsDisplay lyrics={rendered} positionMs={time} settings={settings}
-    onSeek={host.seek} compact={compact} upNext={upNext} />;
+  if (rendered) return <div className={fontClass} style={{ display: "contents" }}><LyricsDisplay lyrics={rendered} positionMs={time} settings={settings}
+    onSeek={host.seek} compact={compact} upNext={upNext} /></div>;
   if (waiting && settings.lyrics_skeleton) return <LyricsSkeleton />;
   if (!waiting && !settings.lyrics_no_lyrics_notice) return null;
   return <div className="lyrics-message" role="status"><MicVocal />
@@ -189,7 +204,7 @@ function LyricsView({ host, options, close, parent, openPopout }: {
   const importTrack = useRef<Track | null>(null);
   const fonts = useAppFonts(settings);
   const coverColour = useArtworkColor(track?.cover);
-  const canvas = useCanvas(track?.id, settings.canvas_lyrics && !settings.lyrics_hide_artwork);
+  const canvas = useCanvas(host, track?.id, settings.canvas_lyrics && !settings.lyrics_hide_artwork);
   const background = settings.lyrics_background;
   const artistUri = track?.artistUri;
   const trackId = track?.id;
@@ -320,14 +335,9 @@ function LyricsView({ host, options, close, parent, openPopout }: {
       {track ? <>
         <div className="lyrics-album">
           {(canvas || track.cover) && <div className="lyrics-media">{canvas
-            ? <CanvasArtwork src={canvas} cover={track.cover} playing={playing && !settings.reduce_motion} />
+            ? <CanvasArtwork key={`${track.id}:${canvas.fileId ?? canvas.url}`} info={canvas} cover={track.cover} playing={playing && !settings.reduce_motion} />
             : <img className={`cover${settings.cover_animation && !settings.reduce_motion ? " crossfade" : ""}`} key={track.cover} src={track.cover} alt="" />}</div>}
-          <div className="lyrics-details"><div className="lyrics-title"><strong className="song-title">{track.title}</strong></div>
-            <div className="lyrics-artists">
-              {year && settings.lyrics_year_position === "left" && <span>{year} · </span>}
-              {track.artists}
-              {year && settings.lyrics_year_position === "right" && <span> · {year}</span>}
-            </div></div>
+          <TrackMetadata host={host} track={track} year={year} yearPosition={settings.lyrics_year_position} reduceMotion={settings.reduce_motion} />
         </div>
         <div className="lyrics-body"><LyricsForTrack key={track.id} track={track} host={host} playing={playing} settings={settings} /></div>
       </> : <div className="lyrics-message"><Music2 /><h2>Play something you love</h2><p>Your lyrics will appear here.</p></div>}

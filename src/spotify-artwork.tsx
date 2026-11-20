@@ -1,42 +1,72 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { AudioSegment, Host } from "./host";
+import type { AudioSegment, CanvasInfo, Host } from "./host";
 import { LyricsVisualiser } from "./lyssna/lyrics-visualiser";
+import { playCanvasMedia } from "./canvas-media";
 
 export const nowPlayingSelector = 'aside.NowPlayingView, .main-nowPlayingView-section, .now-playing-view';
 
-export function useCanvas(trackId: string | undefined, enabled: boolean) {
-  const [canvas, setCanvas] = useState<{ trackId: string; url: string }>();
+export function useCanvas(host: Host, trackId: string | undefined, enabled: boolean) {
+  const [canvas, setCanvas] = useState<{ trackId: string; info: CanvasInfo }>();
   useEffect(() => {
     if (!enabled || !trackId) return;
-    const find = () => {
-      const panel = document.querySelector(nowPlayingSelector);
-      const video = panel?.querySelector<HTMLVideoElement>('.main-nowPlayingView-canvasVisualEnhancement video, [data-canvas-surface] video, [data-testid="track-visual-enhancement"] video');
-      const src = video?.currentSrc || video?.src;
-      if (!src) return;
-      try {
-        const url = new URL(src);
-        if (url.protocol === "https:" && ["canvaz.scdn.co", "video-fa.scdn.co"].includes(url.hostname)) {
-          setCanvas((old) => old?.url === url.href ? old : { trackId, url: url.href });
-        }
-      } catch { /* Spotify has no usable Canvas URL yet. */ }
-    };
-    find();
-    const timer = window.setInterval(find, 500);
-    return () => clearInterval(timer);
-  }, [trackId, enabled]);
-  return enabled && canvas?.trackId === trackId ? canvas?.url : undefined;
+    let active = true;
+    let timer: number | undefined;
+    async function lookup(retry: boolean) {
+      const info = await host.trackCanvas(trackId!);
+      if (!active) return;
+      if (info && (!info.type || /^VIDEO(?:_|$)/i.test(info.type)) && (info.fileId || canvasUrl(info.url))) {
+        setCanvas({ trackId: trackId!, info });
+      } else if (info === undefined && retry) {
+        timer = window.setTimeout(() => void lookup(false), 1_500);
+      } else {
+        setCanvas((old) => old?.trackId === trackId ? undefined : old);
+      }
+    }
+    void lookup(true);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [host, trackId, enabled]);
+  return enabled && canvas?.trackId === trackId ? canvas?.info : undefined;
 }
 
-export function CanvasArtwork({ src, cover, playing }: { src: string; cover: string; playing: boolean }) {
+function canvasUrl(value?: string) {
+  try {
+    const url = new URL(value ?? "");
+    if (url.protocol === "https:" && /\.(?:scdn\.co|spotifycdn\.(?:com|net))$/i.test(url.hostname)) return url.href;
+  } catch { /* Keep the cover when Spotify has no usable Canvas URL. */ }
+}
+
+export function CanvasArtwork({ info, cover, playing }: { info: CanvasInfo; cover: string; playing: boolean }) {
   const ref = useRef<HTMLVideoElement>(null);
   const [failed, setFailed] = useState(false);
-  useEffect(() => setFailed(false), [src]);
+  useEffect(() => {
+    const video = ref.current;
+    if (!video) return;
+    const controller = new AbortController();
+    const direct = canvasUrl(info.url);
+    let usingDirect = false;
+    function useDirect() {
+      if (controller.signal.aborted) return;
+      if (usingDirect || !direct) { setFailed(true); return; }
+      usingDirect = true;
+      video!.src = direct;
+    }
+    video.addEventListener("error", useDirect);
+    if (info.fileId) void playCanvasMedia(video, info.fileId, controller.signal).catch(() => { if (!usingDirect) useDirect(); });
+    else useDirect();
+    return () => {
+      video.removeEventListener("error", useDirect);
+      controller.abort();
+      video.removeAttribute("src");
+      video.load();
+    };
+  }, [info.fileId, info.url]);
   useEffect(() => {
     if (playing) void ref.current?.play().catch(() => {});
     else ref.current?.pause();
-  }, [src, playing, failed]);
-  return failed ? <img className="cover" src={cover} alt="" /> : <video ref={ref} className="lyssna-canvas" src={src} data-canvas-video=""
-    poster={cover} muted loop playsInline onError={() => setFailed(true)} aria-label="Spotify Canvas" />;
+  }, [playing]);
+  return failed ? <img className="cover" src={cover} alt="" /> : <video ref={ref} className="lyssna-canvas" data-canvas-video=""
+    poster={cover || undefined} muted autoPlay={playing} loop playsInline
+    onCanPlay={(event) => { if (playing) void event.currentTarget.play().catch(() => {}); }} aria-label="Spotify Canvas" />;
 }
 
 export function SpotifyVisualiser({ host, trackId, playing, opacity }: { host: Host; trackId: string; playing: boolean; opacity: number }) {

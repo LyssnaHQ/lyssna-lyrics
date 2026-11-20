@@ -295,6 +295,7 @@ export function SettingsPanel({ settings, change, close, options, trackId, impor
     ["Credits", "Credits and licences", [
       <SettingRow key="inter" label="Inter" help="Lyrics typeface by the Inter Project Authors. SIL Open Font License." />,
       <SettingRow key="metropolis" label="Metropolis" help="Interface typeface by Chris Simpson. Unlicense." />,
+      <SettingRow key="adobe-blank" label="Adobe Blank 2" help="Detects missing characters in custom lyric fonts. SIL Open Font License." />,
       <SettingRow key="kawarp" label="Kawarp" help="Artwork ambience by Better Lyrics. MIT." />,
       <SettingRow key="lucide" label="Lucide" help="Interface icons by the Lucide contributors. ISC and MIT." />,
     ]],
