@@ -1,0 +1,225 @@
+:host {
+  --surface: #1b1b1d;
+  --ink: #f1f1f1;
+  --muted: #b3b3b3;
+  --tint: #303030;
+  --ease: cubic-bezier(0.23, 1, 0.32, 1);
+  font-family: var(--encore-body-font-stack, var(--fallback-fonts, sans-serif));
+  -webkit-font-smoothing: antialiased;
+}
+
+.release-dialog {
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  box-sizing: border-box;
+  padding: 28px;
+  width: min(38rem, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid color-mix(in oklab, var(--ink) 16%, transparent);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: inset 0 1px color-mix(in oklab, var(--ink) 22%, transparent), 0 20px 48px -20px #0009;
+  color: var(--ink);
+}
+
+.release-dialog[open] {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  animation: release-enter .22s var(--ease) both;
+}
+
+.release-dialog::backdrop {
+  background: rgb(0 0 0 / 55%);
+  backdrop-filter: blur(4px);
+  animation: release-fade .22s var(--ease) both;
+}
+
+.release-dialog > * {
+  animation: release-stagger .46s var(--ease) calc(60ms + var(--release-step) * 35ms) both;
+}
+
+.release-dialog.release-closing {
+  pointer-events: none;
+  animation: release-enter .16s ease-in reverse both;
+}
+
+.release-dialog.release-closing::backdrop {
+  animation: release-fade .16s ease-in reverse both;
+}
+
+@keyframes release-enter { from { opacity: 0; transform: scale(.96); } }
+@keyframes release-fade { from { opacity: 0; } }
+@keyframes release-stagger { from { opacity: 0; transform: translateY(8px); } }
+
+.release-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: .82rem;
+  font-weight: 600;
+}
+
+.release-dialog h2 {
+  margin: 0 0 2px;
+  font-size: 1.75rem;
+  line-height: 1.1;
+  font-weight: 700;
+  letter-spacing: -.025em;
+  overflow-wrap: anywhere;
+}
+
+.release-content > p {
+  margin: 0;
+  font-size: .9rem;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.release-content > .release-small { font-size: .82rem; }
+.release-content p strong { color: var(--ink); font-variant-numeric: tabular-nums; font-weight: 600; }
+.release-content a, .release-text-button {
+  color: var(--ink);
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklab, var(--ink) 45%, transparent);
+  text-underline-offset: 2px;
+}
+.release-content a:hover, .release-text-button:hover { text-decoration-color: currentColor; }
+
+.release-notes {
+  max-height: min(48vh, 480px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding: 14px 16px;
+  border: 1px solid color-mix(in oklab, var(--ink) 16%, transparent);
+  border-radius: 10px;
+  font-size: .82rem;
+  line-height: 1.5;
+}
+.release-notes h3 { margin: 0 0 10px; font-size: .88rem; }
+.release-notes p, .release-notes ul { margin: 0; }
+.release-notes ul { padding-inline-start: 1.25rem; }
+.release-notes li { overflow-wrap: anywhere; }
+.release-notes li + li { margin-top: 8px; }
+.release-text-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.release-actions, .release-actions-main {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.release-actions { margin-top: 8px; }
+.release-discord { margin-inline-end: auto; }
+
+.release-actions button, .release-toast button:not(.release-toast-dismiss) {
+  appearance: none;
+  box-sizing: border-box;
+  min-height: 44px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: 10px;
+  color: var(--ink);
+  font: inherit;
+  font-size: .875rem;
+  font-weight: 700;
+  letter-spacing: .01em;
+  cursor: pointer;
+  transition: background-color .15s, transform .12s ease;
+}
+.release-actions button:active, .release-toast button:active { transform: scale(.97); }
+.release-actions .release-primary, .release-toast .release-primary {
+  background: var(--ink);
+  color: #181818;
+}
+.release-actions .release-primary:hover, .release-toast .release-primary:hover { background: #fff; }
+.release-actions .release-secondary, .release-actions .release-discord {
+  background: var(--tint);
+  box-shadow: inset 0 0 0 1px #ffffff3d;
+}
+.release-actions .release-secondary:hover { background: #292929; }
+.release-actions .release-quiet, .release-toast-dismiss {
+  color: var(--muted);
+  background: transparent;
+}
+.release-actions .release-quiet:hover, .release-toast-dismiss:hover { background: #ffffff1f; color: var(--ink); }
+.release-dialog :is(button, a):focus-visible, .release-toast button:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--ink) 70%, transparent);
+  outline-offset: 3px;
+}
+.release-discord { position: relative; isolation: isolate; overflow: hidden; }
+.release-discord span { position: relative; }
+.release-discord::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 200%;
+  opacity: .3;
+  background: repeating-linear-gradient(90deg, #ff4069 0%, #ffbd48 7.14%, #efff82 14.28%, #57e89c 21.43%, #51bdff 28.57%, #9d80ff 35.71%, #ed78da 42.86%, #ff4069 50%);
+  animation: release-shine 4s linear infinite;
+}
+@keyframes release-shine { to { transform: translateX(-50%); } }
+
+.release-toast {
+  position: fixed;
+  inset: auto 24px 24px auto;
+  z-index: 10510;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: min(356px, calc(100vw - 48px));
+  padding: 14px 44px 14px 16px;
+  box-sizing: border-box;
+  border: 1px solid color-mix(in oklab, var(--ink) 16%, transparent);
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: inset 0 1px color-mix(in oklab, var(--ink) 22%, transparent), 0 12px 32px -12px #0009;
+  color: var(--ink);
+  animation: release-enter .4s var(--ease) both;
+}
+.release-toast-copy { flex: 1; min-width: 0; font-size: .875rem; line-height: 1.35; }
+.release-toast-copy strong { font-weight: 600; overflow-wrap: anywhere; }
+.release-toast-copy p { margin: 3px 0 0; color: var(--muted); font-size: .8rem; line-height: 1.45; }
+.release-toast > svg { flex: 0 0 18px; }
+.release-toast button:not(.release-toast-dismiss) {
+  min-height: 32px;
+  padding: 0 14px;
+  border-radius: 8px;
+  font-size: .8rem;
+}
+.release-toast-dismiss {
+  position: absolute;
+  inset: 50% 10px auto auto;
+  translate: 0 -50%;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .release-dialog[open], .release-dialog::backdrop, .release-dialog > *, .release-discord::before, .release-toast {
+    animation: none;
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .release-dialog::backdrop { backdrop-filter: none; }
+}

@@ -19,6 +19,17 @@ Open Lyssna from the microphone button in Spotify’s playbar. Older SpotiKit ve
 
 **Advanced → Build Channel** manages Stable, Beta, Canary and hidden build keys. Stable takes precedence on first launch, followed by Beta and Canary. Paste a hidden build key and choose **Apply and reload** to use that build on this Spotify client. **Remove key** reloads the public channel. The loader falls back to the public channel when the hidden build is unavailable.
 
+Public builds check their selected channel for updates. Add release notes to `PATCH_NOTES.md` under a heading like `## v0.1.0` using bullets. The update dialog shows notes between the previous and current versions.
+
+Preview the notices from Spotify’s DevTools console after Lyssna loads. These previews leave version history unchanged.
+
+```js
+LyssnaLyricsRewrite.showStartup()
+LyssnaLyricsRewrite.showFirstLoad()
+LyssnaLyricsRewrite.showUpdateAvailable()
+LyssnaLyricsRewrite.showUpdatedDialog()
+```
+
 **Cinema Lyrics Window** opens the full lyrics view in a separate, resizable window and follows Spotify playback. Run `spicetify enable-devtools` with Spicetify, then turn on **Enable Cinema Lyrics Window** in Lyssna’s **Layout** settings. Click **Cinema Lyrics Window** in the playbar to open it. The separate window requires Spotify DevTools to be enabled.
 
 Artist Header uses the lead artist’s Spotify banner and falls back to the album cover. Canvas uses Spotify’s video. Turn on **Animated covers** under **Appearance** to play Apple Music motion covers in the lyrics artwork slot when Canvas is absent. The lookup sends the album barcode to Lyssna. The visualiser uses Spotify’s track analysis.

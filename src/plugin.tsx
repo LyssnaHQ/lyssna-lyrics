@@ -45,6 +45,7 @@ import { AutoRecordPrompt } from "./creator/auto-record";
 import { dismissDraft, draftPreview, liveDraftChanged } from "./creator/ttml-working";
 import { trackLyssnaListens, useLyssnaPlay } from "./lyssna-plays";
 import { MotionArtwork, useAlbumMotionArtwork } from "./motion-artwork";
+import { startReleaseNotices } from "./release-notices";
 import fontCss from "./fonts/fonts.css?inline";
 import desktopCss from "./lyssna/lyrics.css?inline";
 import settingsCss from "./lyssna/settings.css?inline";
@@ -1180,9 +1181,11 @@ export default function start(options: BuildOptions) {
   const observer = new MutationObserver(syncHost);
   observer.observe(document.body, { childList: true, subtree: true });
   syncHost();
+  const stopReleaseNotices = startReleaseNotices(host, options);
   return {
     dispose() {
       disposed = true;
+      stopReleaseNotices();
       observer.disconnect();
       stopViewSwitch();
       removeCard?.();

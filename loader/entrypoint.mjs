@@ -21,6 +21,41 @@ async function ready(signal) {
   throw new Error("Spicetify did not become ready");
 }
 
+function showLoading() {
+  const label = "Loading Lyssna Lyrics";
+  const icon = '<svg class="lyssna-rewrite-loader-spinner" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9" opacity=".25"/><path d="M12 3a9 9 0 0 1 9 9" stroke-linecap="round"/></svg>';
+  const kit = globalThis.SpotiKit;
+  const spice = globalThis.Spicetify;
+  let element, remove;
+  if (kit) {
+    const button = (kit.Playbar ?? kit.Topbar).add({ label, icon, onClick() {} });
+    element = button.element;
+    remove = () => button.remove();
+  } else if (spice?.Playbar?.Button) {
+    const button = new spice.Playbar.Button(label, icon, () => {}, true, false, false);
+    element = button.element;
+    button.register();
+    remove = () => button.deregister();
+  } else return () => {};
+  element?.setAttribute("aria-label", label);
+  element?.setAttribute("aria-busy", "true");
+  element?.setAttribute("aria-disabled", "true");
+  element?.classList.add("lyssna-rewrite-loader-button");
+  const style = document.createElement("style");
+  style.textContent = `
+    [data-lyssna-playbar-lyrics] { display: none !important; }
+    .lyssna-rewrite-loader-button { display: inline-flex !important; align-items: center; justify-content: center; opacity: 1 !important; cursor: progress; }
+    .lyssna-rewrite-loader-spinner { width: 20px; height: 20px; flex: 0 0 auto; animation: lyssna-rewrite-loader-spin .9s linear infinite; }
+    @keyframes lyssna-rewrite-loader-spin { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) { .lyssna-rewrite-loader-spinner { animation: none; } }
+  `;
+  document.head.append(style);
+  return () => {
+    style.remove();
+    remove();
+  };
+}
+
 async function hiddenRelease(key, signal) {
   if (!keyPattern.test(key)) throw new Error("Enter the 32-character build key.");
   const folder = new URL(`builds/hidden/${key}/`, root);
@@ -41,8 +76,7 @@ async function hiddenRelease(key, signal) {
   return { version: release.version, url: new URL(`lyssna-lyrics@${release.version}.mjs`, folder) };
 }
 
-export async function start(signal) {
-  await ready(signal);
+async function readChannels(signal) {
   const response = await fetch(new URL("channels.json", import.meta.url), {
     cache: "no-store", signal: AbortSignal.any([signal, AbortSignal.timeout(8_000)]),
   });
@@ -53,7 +87,23 @@ export async function start(signal) {
     const version = catalog.channels?.[name];
     return [name, typeof version === "string" && versionPattern.test(version) ? version : null];
   }));
+  return { catalog, channels };
+}
 
+export async function start(signal) {
+  await ready(signal);
+  let stopLoading;
+  const timer = setTimeout(() => { stopLoading = showLoading(); }, 400);
+  try {
+    return await startBuild(signal);
+  } finally {
+    clearTimeout(timer);
+    stopLoading?.();
+  }
+}
+
+async function startBuild(signal) {
+  const { catalog, channels } = await readChannels(signal);
   const saved = localStorage.getItem(channelKey);
   const selected = names.includes(saved) && channels[saved] ? saved : names.find((name) => channels[name]);
   if (!selected) throw new Error("No Lyssna builds are published yet");
@@ -99,6 +149,9 @@ export async function start(signal) {
         channel, channels, selectChannel, lyssnaSignIn: catalog.lyssnaSignIn === true,
         hiddenVersion: hidden?.version, selectHiddenBuild,
         clearHiddenBuild: savedHiddenKey ? clearHiddenBuild : undefined,
+        patchNotesUrl: new URL("patch-notes.md", import.meta.url).href,
+        latestVersion: (checkSignal) => readChannels(AbortSignal.any([signal, checkSignal])).then(({ channels }) => channels[channel]),
+        showLoading,
       });
       stop();
       current = next;

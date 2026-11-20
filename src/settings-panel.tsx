@@ -25,6 +25,9 @@ export type BuildOptions = {
   selectHiddenBuild?: (key: string) => Promise<void>;
   clearHiddenBuild?: () => void;
   lyssnaSignIn?: boolean;
+  patchNotesUrl?: string;
+  latestVersion?: (signal: AbortSignal) => Promise<string | null>;
+  showLoading?: () => () => void;
 };
 
 const tabs = [
