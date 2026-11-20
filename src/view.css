@@ -444,12 +444,14 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
 }
 
 .lyssna-now-playing-card {
+  --npv-preview-height: 328px;
+  --npv-header-height: 52px;
   position: relative;
   display: flex;
   flex-direction: column;
   isolation: isolate;
   overflow: hidden;
-  height: 328px;
+  height: var(--npv-preview-height);
   background: var(--background-tinted-base, #ffffff12);
   backdrop-filter: blur(12px);
   border-radius: 14px;
@@ -541,6 +543,15 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   padding-inline: 8px;
 }
 
+.lyssna-now-playing-card:not(.expanded):has(.lyric-pinned-footer),
+.lyssna-now-playing-card:not(.expanded) .lyrics-display.has-pinned-footer {
+  height: auto;
+}
+
+.lyssna-now-playing-card:not(.expanded) .lyrics-display.has-pinned-footer {
+  grid-template-rows: calc(var(--npv-preview-height) - var(--npv-header-height)) auto;
+}
+
 @property --scrolled {
   syntax: "<length>";
   inherits: false;
@@ -556,6 +567,11 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
 .lyssna-npv .compact .lyric-line {
   padding-block: 3px;
   letter-spacing: -0.5px;
+}
+
+.lyssna-npv .compact .lyric-pinned-footer {
+  position: static;
+  padding: 8px 10px 14px;
 }
 
 .lyssna-npv-album-cover {
@@ -827,7 +843,7 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   app-region: no-drag;
 }
 
-.lyssna-lyrics-view.immersive:not(:fullscreen) .lyrics-page:not(.toolbar-bottom) > .lyrics-toolbar {
+.lyssna-lyrics-view.immersive:not(:fullscreen, .lyssna-cinema-window) .lyrics-page:not(.toolbar-bottom) > .lyrics-toolbar {
   top: 64px;
 }
 

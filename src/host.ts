@@ -39,6 +39,8 @@ type SpotifyTrack = {
 export type Spicetify = {
   Config?: HostConfig;
   Platform?: Record<string, unknown>;
+  _platform?: { isDeveloperMode?: boolean };
+  showNotification?(message: string, error?: boolean): void;
   CosmosAsync?: unknown;
   GraphQL?: {
     Definitions: Record<string, unknown>;
@@ -248,6 +250,14 @@ export function getHost() {
   }
 
   return {
+    get developerMode() {
+      const flag = kit?.Platform.isDeveloperMode ?? spice?.Platform?.isDeveloperMode ?? spice?._platform?.isDeveloperMode;
+      return typeof flag === "boolean" ? flag : undefined;
+    },
+    notifyError(message: string) {
+      if (spice?.showNotification) spice.showNotification(message, true);
+      else console.warn(`[Lyssna Lyrics] ${message}`);
+    },
     track(): Track | null {
       const track = kit ? kit.Player.track : spice?.Player.data?.item;
       const id = /^spotify:track:([A-Za-z0-9]+)$/.exec(track?.uri ?? "")?.[1];

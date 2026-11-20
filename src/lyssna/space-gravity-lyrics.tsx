@@ -470,17 +470,17 @@ function drawLinks(
     wanted.add(key);
     let link = drawn.get(key);
     if (!link) {
-      const path = document.createElementNS(SVG, "path");
+      const path = sheet.ownerDocument.createElementNS(SVG, "path");
       path.dataset.link = key;
       path.setAttribute("pathLength", "1");
       // Each link's own gradient carries its two words' strengths.
       const id = `gravity-link-${(linkCount += 1)}`;
-      const gradient = document.createElementNS(SVG, "linearGradient");
+      const gradient = sheet.ownerDocument.createElementNS(SVG, "linearGradient");
       gradient.id = id;
       gradient.setAttribute("gradientUnits", "userSpaceOnUse");
       // The two halves blend across the middle third.
       const stops = ["0", "0.33", "0.67", "1"].map((offset) => {
-        const stop = document.createElementNS(SVG, "stop");
+        const stop = sheet.ownerDocument.createElementNS(SVG, "stop");
         stop.setAttribute("offset", offset);
         gradient.append(stop);
         return stop;
@@ -749,11 +749,12 @@ export function SpaceGravityLyrics({
   useEffect(() => {
     const element = stage.current;
     if (!element) return;
+    const frameWindow = element.ownerDocument.defaultView ?? window;
     const view = stageView.current = trackGravityStage(element);
     for (const node of elements.current.values()) view.add(node);
     let frame = 0,
       renderFrame = 0,
-      last = performance.now(),
+      last = frameWindow.performance.now(),
       fieldAt = 0,
       field: Field | undefined,
       staticKey = "",
@@ -761,7 +762,7 @@ export function SpaceGravityLyrics({
       byKey = new Map<string, Entity>();
     const motion: WindowMotion = { vx: 0, vy: 0 };
     const tick = (now: number) => {
-      frame = requestAnimationFrame(tick);
+      frame = frameWindow.requestAnimationFrame(tick);
       if (!frameDue(last, now)) return;
       renderFrame += 1;
       const dt = Math.min(0.1, Math.max(0, (now - last) / 1000));
@@ -885,7 +886,7 @@ export function SpaceGravityLyrics({
       } else {
         trackWindow(
           motion,
-          windowPosition() ?? { x: window.screenX, y: window.screenY },
+          (frameWindow === window ? windowPosition() : undefined) ?? { x: frameWindow.screenX, y: frameWindow.screenY },
           dt,
         );
         step(active, dt, field, motion, exiting);
@@ -920,9 +921,9 @@ export function SpaceGravityLyrics({
           node.setAttribute("data-spawned", "");
       }
     };
-    frame = requestAnimationFrame(tick);
+    frame = frameWindow.requestAnimationFrame(tick);
     return () => {
-      cancelAnimationFrame(frame);
+      frameWindow.cancelAnimationFrame(frame);
       view.dispose();
       stageView.current = undefined;
     };

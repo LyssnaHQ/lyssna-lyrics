@@ -73,6 +73,7 @@ import { LyricCredits } from "../credits";`,
   slice(components, "function WriterCredits(", "/** The badge's E").replace("function WriterCredits(", "export function WriterCredits("),
   slice(components, "function creditsInView(", "/** Up next pops in"),
   slice(components, "/** Seek Fade-in Compensation", "const LyricCredits =")
+    .replace('compact ? "off" : (settings.lyrics_pinned_footer ?? "off")', 'settings.lyrics_pinned_footer ?? "off"')
     .replace("      data-following={following}", "      data-following={following}\n      data-animator={presetOf(settings.lyrics_animator)}")
     .replace("      !!settings.lyrics_simple,\n", "      !!settings.lyrics_simple,\n      scroll.current?.ownerDocument.defaultView ?? window,\n")
     .replace("}, [positionMs, lyrics, settings.reduce_motion]);", "}, [positionMs, lyrics, settings.reduce_motion, settings.lyrics_simple, tuning]);")
@@ -198,6 +199,7 @@ for (const [file, content] of snapshot) {
           stageView.current?.add(element);
         } else elements.current.delete(key);`)
     .replace("    if (!element) return;\n    let frame = 0,", `    if (!element) return;
+    const frameWindow = element.ownerDocument.defaultView ?? window;
     const view = stageView.current = trackGravityStage(element);
     for (const node of elements.current.values()) view.add(node);
     let frame = 0,`)
@@ -230,6 +232,12 @@ for (const [file, content] of snapshot) {
       view.dispose();
       stageView.current = undefined;
     };`)
+    .replaceAll("document.createElementNS(SVG,", "sheet.ownerDocument.createElementNS(SVG,")
+    .replace("last = performance.now(),", "last = frameWindow.performance.now(),")
+    .replaceAll("requestAnimationFrame(tick)", "frameWindow.requestAnimationFrame(tick)")
+    .replace("cancelAnimationFrame(frame)", "frameWindow.cancelAnimationFrame(frame)")
+    .replace("windowPosition() ?? { x: window.screenX, y: window.screenY }",
+      "(frameWindow === window ? windowPosition() : undefined) ?? { x: frameWindow.screenX, y: frameWindow.screenY }")
     .replace("}, [time, lyrics]);", "}, [time, lyrics, reduceMotion, tuningKey]);")
     .replace("  // The normal lyrics animator drives the syllables, exactly as in the\n  // regular lyrics view.", "  // Let the sung syllables stand out against the words' floating motion.")
     .replace("      reduceMotion,\n    );\n    animator.current = instance;", "      reduceMotion,\n      false,\n      stage.current?.ownerDocument.defaultView ?? window,\n      1.45,\n    );\n    animator.current = instance;")

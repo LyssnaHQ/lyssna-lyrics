@@ -50,6 +50,7 @@ export const defaults = {
   gravity_link_width: 100,
   lyrics_compact: false,
   cinema_lyrics: true,
+  cinema_window: false,
   lyrics_hide_artwork: false,
   lyrics_artwork_right: false,
   lyrics_up_next: true,

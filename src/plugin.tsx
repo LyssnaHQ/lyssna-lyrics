@@ -8,7 +8,7 @@ import { FullscreenPauseIcon, FullscreenPlayIcon, FullscreenVolumeIcon, SkipNext
 import { LyricsDisplay, LyricsSkeleton, WriterCredits } from "./lyssna/renderer";
 import { markerColour } from "./lyssna/highlighter";
 import { SpaceGravityLyrics } from "./lyssna/space-gravity-lyrics";
-import { CompactIcon, FullScreenIcon, HideArtworkIcon, PopoutIcon, RetryIcon, SwapSidesIcon, TranslateIcon, UploadIcon, WordSyncIcon } from "./lyssna/toolbar-icons";
+import { CompactIcon, FullScreenIcon, HideArtworkIcon, RetryIcon, SwapSidesIcon, TranslateIcon, UploadIcon, WordSyncIcon } from "./lyssna/toolbar-icons";
 import type { Lyrics } from "./lyssna/types";
 import { setWindowActivity, setWindowPosition } from "./lyssna/window-activity";
 import { filterWords } from "./lyssna/word-filter";
@@ -88,22 +88,22 @@ function useTrackLyrics(track: Track, duration: number, view: Window, settings: 
   return { lyrics, waiting };
 }
 
-function LyricsForTrack({ track, host, playing, settings, view = window }: {
-  track: Track; host: Host; playing: boolean; settings: Settings; view?: Window;
+function LyricsForTrack({ track, host, playing, settings, view = window, fullView = view === window }: {
+  track: Track; host: Host; playing: boolean; settings: Settings; view?: Window; fullView?: boolean;
 }) {
   const duration = host.duration();
   const data = useTrackLyrics(track, duration, view, settings);
-  return <TrackLyrics track={track} host={host} playing={playing} settings={settings} view={view}
+  return <TrackLyrics track={track} host={host} playing={playing} settings={settings} view={view} fullView={fullView}
     duration={duration} {...data} />;
 }
 
-function TrackLyrics({ track, host, playing, settings, compact = false, view = window, duration, lyrics, waiting }: {
-  track: Track; host: Host; playing: boolean; settings: Settings; compact?: boolean; view?: Window;
+function TrackLyrics({ track, host, playing, settings, compact = false, view = window, fullView = !compact, duration, lyrics, waiting }: {
+  track: Track; host: Host; playing: boolean; settings: Settings; compact?: boolean; view?: Window; fullView?: boolean;
   duration: number; lyrics?: Lyrics; waiting: boolean;
 }) {
   const position = usePosition(host, playing, view);
   const time = position + settings.lyric_offset_ms + (settings.lyric_song_offsets[track.id] ?? 0);
-  const gravity = view === window && settings.space_gravity && !compact && !!lyrics &&
+  const gravity = fullView && settings.space_gravity && !!lyrics &&
     !lyrics.instrumental && (lyrics.synced || duration > 0);
   const estimateTiming = settings.experimental_word_sync || gravity || (!lyrics?.synced && settings.lyrics_highlighter);
   const [analysis, setAnalysis] = useState<AudioAnalysisData>();
@@ -121,7 +121,7 @@ function TrackLyrics({ track, host, playing, settings, compact = false, view = w
   [lyrics, duration, estimateTiming, settings.romanized, settings.romanization_below, gravity, settings.lyrics_word_filter, analysis]);
   const defaultFont = useDefaultLyricsFont(settings.lyric_font, rendered, view.document);
   const fontClass = defaultFont ? "lyssna-default-lyrics-font" : undefined;
-  const upcoming = view === window && !compact && settings.lyrics_up_next && duration > 0 && position >= duration - 30_000 ? host.upcoming() : undefined;
+  const upcoming = fullView && settings.lyrics_up_next && duration > 0 && position >= duration - 30_000 ? host.upcoming() : undefined;
   const upNext = upcoming && <div className="lyrics-up-next">
     <button type="button" className="lyrics-up-next-body first" onClick={host.next}>
       {upcoming.image && <img className="cover" src={upcoming.image} alt="" />}
@@ -233,8 +233,8 @@ function PopoutView({ host, view, close }: { host: Host; view: Window; close: ()
   </LyricsPopout>;
 }
 
-function FullscreenControls({ host, playing, settings }: { host: Host; playing: boolean; settings: Settings }) {
-  const position = usePosition(host, playing);
+function FullscreenControls({ host, playing, settings, view }: { host: Host; playing: boolean; settings: Settings; view: Window }) {
+  const position = usePosition(host, playing, view);
   const duration = host.duration();
   const [volume, setVolume] = useState(host.volume);
   const audible = useRef(volume || 0.5);
@@ -290,18 +290,18 @@ function requestDisplayFullscreen(parent: HTMLElement) {
   void parent.requestFullscreen().then(() => parent.focus({ preventScroll: true })).catch(() => {});
 }
 
-function LyricsView({ host, options, close, parent, openPopout, fullscreenRequest, onSidebarCover }: {
-  host: Host; options: BuildOptions; close: () => void; parent: HTMLElement; openPopout: () => Promise<void>;
-  fullscreenRequest: number;
-  onSidebarCover(cover?: string): void;
+function LyricsView({ host, options, close, parent, view = window, fullscreenRequest = 0, onSidebarCover }: {
+  host: Host; options: BuildOptions; close: () => void; parent: HTMLElement; view?: Window;
+  fullscreenRequest?: number;
+  onSidebarCover?(cover?: string): void;
 }) {
+  const externalCinema = view !== window;
   const { track, playing } = usePlayback(host);
   const settings = useLiveSettings();
   const [showSettings, setShowSettings] = useState(false);
   const [fullscreen, setFullscreen] = useState(fullscreenRequest > 0);
   const [leaving, setLeaving] = useState(false);
   const [narrow, setNarrow] = useState(false);
-  const [popoutError, setPopoutError] = useState(false);
   const [notice, setNotice] = useState("");
   const [artistHeader, setArtistHeader] = useState<{ uri: string; url: string }>();
   const [albumYear, setAlbumYear] = useState<{ uri: string; year: string }>();
@@ -311,14 +311,14 @@ function LyricsView({ host, options, close, parent, openPopout, fullscreenReques
   const lyricsPage = useRef<HTMLElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const importTrack = useRef<Track | null>(null);
-  const fonts = useAppFonts(settings);
+  const fonts = useAppFonts(settings, view.document);
   const coverColour = useArtworkColor(track?.cover);
   const canvasEnabled = settings.canvas_lyrics && !settings.lyrics_hide_artwork;
   const canvasInfo = useCanvas(host, track?.id, canvasEnabled);
   const [unavailableCanvas, setUnavailableCanvas] = useState<CanvasInfo>();
   const canvas = canvasInfo === unavailableCanvas ? undefined : canvasInfo;
   useEffect(() => setUnavailableCanvas(undefined), [track?.id, canvasEnabled]);
-  useLayoutEffect(() => { onSidebarCover(canvas ? track?.cover : undefined); }, [canvas, track?.cover, onSidebarCover]);
+  useLayoutEffect(() => { onSidebarCover?.(canvas ? track?.cover : undefined); }, [canvas, track?.cover, onSidebarCover]);
   const background = settings.lyrics_background;
   const artistUri = track?.artistUri;
   const trackId = track?.id;
@@ -385,6 +385,11 @@ function LyricsView({ host, options, close, parent, openPopout, fullscreenReques
   }
 
   function toggleFullscreen(cinema = false) {
+    if (externalCinema) {
+      if (parent.matches(":fullscreen")) void view.document.exitFullscreen().catch(() => {});
+      else requestDisplayFullscreen(parent);
+      return;
+    }
     if (!fullscreen) {
       setFullscreen(true);
       if (!cinema) requestDisplayFullscreen(parent);
@@ -419,6 +424,10 @@ function LyricsView({ host, options, close, parent, openPopout, fullscreenReques
     let wasFullscreen = parent.matches(":fullscreen");
     const sync = () => {
       const active = parent.matches(":fullscreen");
+      if (externalCinema) {
+        setFullscreen(active);
+        return;
+      }
       if (wasFullscreen && !active) {
         const exitedByView = exitingDisplay.current;
         exitingDisplay.current = false;
@@ -431,7 +440,7 @@ function LyricsView({ host, options, close, parent, openPopout, fullscreenReques
     };
     page.addEventListener("fullscreenchange", sync);
     return () => page.removeEventListener("fullscreenchange", sync);
-  }, [parent, close]);
+  }, [parent, close, externalCinema]);
   useEffect(() => () => clearTimeout(timer.current), []);
   useEffect(() => {
     const observer = new ResizeObserver(([entry]) => setNarrow(entry.contentRect.width < 650));
@@ -439,16 +448,17 @@ function LyricsView({ host, options, close, parent, openPopout, fullscreenReques
     return () => observer.disconnect();
   }, [parent]);
   useEffect(() => {
-    parent.classList.toggle("immersive", fullscreen);
+    parent.classList.toggle("immersive", fullscreen || externalCinema);
     parent.classList.toggle("lyssna-slide-away", leaving);
-  }, [parent, fullscreen, leaving]);
+  }, [parent, fullscreen, externalCinema, leaving]);
   useEffect(() => {
+    if (externalCinema) return;
     const update = () => setWindowPosition(window.screenX, window.screenY);
     update();
     if (!settings.space_gravity || settings.reduce_motion) return;
     const id = window.setInterval(update, 100);
     return () => clearInterval(id);
-  }, [settings.space_gravity, settings.reduce_motion]);
+  }, [externalCinema, settings.space_gravity, settings.reduce_motion]);
   useEffect(() => {
     const keyboard = (event: KeyboardEvent) => {
       if (event.key !== "Escape" && event.key !== "F11") return;
@@ -458,8 +468,8 @@ function LyricsView({ host, options, close, parent, openPopout, fullscreenReques
       else if (event.key === "F11" || (fullscreen && !settings.lyrics_escape_exits)) toggleFullscreen(event.shiftKey);
       else close();
     };
-    document.addEventListener("keydown", keyboard);
-    return () => document.removeEventListener("keydown", keyboard);
+    view.document.addEventListener("keydown", keyboard);
+    return () => view.document.removeEventListener("keydown", keyboard);
   });
 
   const hasAmbience = track?.cover && (background === "animated" || background === "static");
@@ -487,7 +497,7 @@ function LyricsView({ host, options, close, parent, openPopout, fullscreenReques
               key={track.cover} src={track.cover} alt="" /></div>}
           <TrackMetadata host={host} track={track} year={year} yearPosition={settings.lyrics_year_position} reduceMotion={settings.reduce_motion} />
         </div>
-        <div className="lyrics-body"><LyricsForTrack key={track.id} track={track} host={host} playing={playing} settings={settings} /></div>
+        <div className="lyrics-body"><LyricsForTrack key={track.id} track={track} host={host} playing={playing} settings={settings} view={view} fullView /></div>
       </> : <div className="lyrics-message"><Music2 /><h2>Play something you love</h2><p>Your lyrics will appear here.</p></div>}
       {track && settings.lyrics_visualiser && <SpotifyVisualiser key={track.id} host={host} trackId={track.id}
         opacity={settings.lyrics_visualiser_opacity} playing={playing && !settings.reduce_motion} />}
@@ -506,20 +516,15 @@ function LyricsView({ host, options, close, parent, openPopout, fullscreenReques
           disabled={!track} onClick={importTtml}><UploadIcon /></button>
         {settings.lyrics_cache_button && <button type="button" className="icon-button" data-icon="retry" title="Refresh lyrics" aria-label="Refresh lyrics"
           disabled={!track} onClick={() => { refreshLyrics(track?.id, settings.lyrics_cache_action); setNotice("Refreshing lyrics…"); }}><RetryIcon /></button>}
-        <button type="button" className="icon-button" data-icon="fullscreen" title={fullscreen ? "Exit full screen" : "Full screen (Shift for cinema)"}
+        <button type="button" className="icon-button" data-icon="fullscreen" title={fullscreen ? "Exit full screen" : externalCinema ? "Full screen" : "Full screen (Shift for cinema)"}
           aria-label={fullscreen ? "Exit full screen" : "Full screen"}
           aria-pressed={fullscreen} onClick={(event) => toggleFullscreen(event.shiftKey)}><FullScreenIcon /></button>
-        {pictureInPicture && settings.cinema_lyrics && <button type="button" className="icon-button" title="Pop out lyrics" aria-label="Pop out lyrics" onClick={() => {
-          setPopoutError(false);
-          void openPopout().catch(() => setPopoutError(true));
-        }}><PopoutIcon /></button>}
         <button type="button" className="icon-button" data-icon="settings" title="Lyssna settings" aria-label="Lyssna settings"
           onClick={() => { setNotice(""); setShowSettings(true); }}><GearIcon size={18} /></button>
         <button type="button" className="icon-button" title="Close lyrics" aria-label="Close lyrics" onClick={close}><X size={18} /></button>
       </div>
-      {popoutError && <div className="lyssna-popout-error" role="status">Spotify couldn’t open the lyrics pop-out.</div>}
       {!showSettings && notice && <div className="lyssna-popout-error" role="status">{notice}</div>}
-      {fullscreen && <FullscreenControls host={host} playing={playing} settings={settings} />}
+      {(fullscreen || externalCinema) && <FullscreenControls host={host} playing={playing} settings={settings} view={view} />}
     </section>
     <input ref={fileInput} type="file" hidden accept=".ttml,.xml,application/ttml+xml" onChange={(event) => {
       const file = event.currentTarget.files?.[0];
@@ -528,7 +533,7 @@ function LyricsView({ host, options, close, parent, openPopout, fullscreenReques
       if (file && song) void loadTtml(file, song);
     }} />
     {showSettings && <SettingsPanel settings={settings} change={change} close={() => { setNotice(""); setShowSettings(false); }}
-      options={options} trackId={track?.id} importTtml={importTtml} notice={notice} setNotice={setNotice} />}
+      options={options} trackId={track?.id} importTtml={importTtml} notice={notice} setNotice={setNotice} view={view} developerMode={host.developerMode} />}
   </>;
 }
 
@@ -541,10 +546,15 @@ export default function start(options: BuildOptions) {
   let stopProvider: (() => void) | undefined;
   let playbarButtons: ReturnType<typeof playbarViewButtons> | undefined;
   let showPlaybarPopout = false;
+  let showPlaybarCinema = false;
+  function syncPlaybar() {
+    playbarButtons?.sync(showPlaybarPopout, showPlaybarCinema && host.developerMode !== false);
+  }
   function applyRuntimeSettings() {
     const settings = readSettings();
     showPlaybarPopout = settings.cinema_lyrics;
-    playbarButtons?.sync(showPlaybarPopout);
+    showPlaybarCinema = settings.cinema_window;
+    syncPlaybar();
     setFrameCap(settings.animation_fps_cap_enabled ? settings.animation_fps_cap : 0);
     const disabled = settings.lyrics_sources_disabled;
     if (!disabled.includes("spicy") || !disabled.includes("apple")) {
@@ -570,7 +580,8 @@ export default function start(options: BuildOptions) {
   let mutedPreviewPanel: HTMLElement | undefined;
   let backdrop: { panel: HTMLElement; container: HTMLElement; dispose(): void } | undefined;
   let sidebarCover: string | undefined;
-  let closePopout: (() => void) | undefined;
+  type DetachedMode = "popout" | "cinema";
+  let detached: { mode: DetachedMode; view: Window; dismiss(): void } | undefined;
   let opening = false;
   let switchingLyricsView = false;
   let disposed = false;
@@ -583,34 +594,52 @@ export default function start(options: BuildOptions) {
     sidebarArtwork.sync(findNowPlaying(), cover);
   }
 
-  async function openPopout() {
-    if (!pictureInPicture || opening || disposed) return;
-    if (closePopout) { closePopout(); return; }
+  async function openDetached(mode: DetachedMode) {
+    if (opening || disposed) return;
+    const cinema = mode === "cinema";
+    if (detached?.mode === mode) {
+      if (cinema) detached.view.focus();
+      else detached.dismiss();
+      return;
+    }
+    if (cinema ? host.developerMode === false : !pictureInPicture) return;
     opening = true;
     try {
-      const view = await pictureInPicture.requestWindow({ width: 900, height: 640, disallowReturnToOpener: true });
+      const view = cinema ? window.open("", "_blank", "popup=yes,width=1280,height=720")
+        : await pictureInPicture?.requestWindow({ width: 900, height: 640, disallowReturnToOpener: true });
+      if (!view) throw new Error("Spotify did not create the requested lyrics window.");
       if (disposed) { view.close(); return; }
+      detached?.dismiss();
       try {
         view.document.head.append(stylesheet.cloneNode(true));
         const parent = view.document.createElement("div");
-        parent.className = "lyssna-lyrics-view lyssna-popout-view";
+        parent.className = cinema ? "lyssna-lyrics-view lyssna-cinema-window immersive" : "lyssna-lyrics-view lyssna-popout-view";
+        if (cinema) view.document.title = "Cinema Lyrics · Lyssna";
         view.document.body.append(parent);
         const root = host.mount(parent);
-        function release() {
+        const release = () => {
+          if (detached?.view !== view) return;
           view.removeEventListener("pagehide", release);
-          closePopout = undefined;
+          window.removeEventListener("pagehide", dismiss);
+          detached = undefined;
           playbarButtons?.setPopoutActive(false);
+          playbarButtons?.setCinemaActive(false);
           root.unmount();
           syncNowPlaying();
-        }
+        };
         const dismiss = () => { release(); view.close(); };
-        view.addEventListener("pagehide", release);
-        closePopout = dismiss;
-        playbarButtons?.setPopoutActive(true);
+        view.addEventListener("pagehide", release, { once: true });
+        window.addEventListener("pagehide", dismiss, { once: true });
+        detached = { mode, view, dismiss };
+        playbarButtons?.setPopoutActive(!cinema);
+        playbarButtons?.setCinemaActive(cinema);
+        if (cinema) close?.();
         syncNowPlaying();
-        root.render(<PopoutView host={host} view={view} close={dismiss} />);
+        root.render(cinema
+          ? <LyricsView host={host} options={options} close={dismiss} parent={parent} view={view} />
+          : <PopoutView host={host} view={view} close={dismiss} />);
       } catch (error) {
-        if (closePopout) closePopout();
+        if (detached?.view === view) detached.dismiss();
         else view.close();
         throw error;
       }
@@ -664,7 +693,7 @@ export default function start(options: BuildOptions) {
     let fullscreenRequest = 0;
     const closeView = () => dismiss();
     const render = () => root.render(<LyricsView host={host} options={options} close={closeView} parent={parent}
-      openPopout={openPopout} fullscreenRequest={fullscreenRequest} onSidebarCover={setSidebarCover} />);
+      fullscreenRequest={fullscreenRequest} onSidebarCover={setSidebarCover} />);
     enterFullscreen = (next) => {
       fullscreenRequest++;
       render();
@@ -687,7 +716,14 @@ export default function start(options: BuildOptions) {
   }
   const viewButtons = playbarButtons = playbarViewButtons(host,
     (event) => void open(event.shiftKey ? "cinema" : "display"),
-    pictureInPicture ? () => void openPopout().catch((error) => console.warn("[Lyssna Lyrics] Could not open pop-out", error)) : undefined,
+    pictureInPicture ? () => void openDetached("popout").catch((error) => {
+      console.warn("[Lyssna Lyrics] Could not open pop-out", error);
+      host.notifyError("Spotify couldn’t open the lyrics pop-out.");
+    }) : undefined,
+    () => void openDetached("cinema").catch((error) => {
+      console.warn("[Lyssna Lyrics] Could not open Cinema Lyrics", error);
+      host.notifyError("Spotify couldn’t open the Cinema Lyrics window. Check that Spotify DevTools is enabled.");
+    }),
   );
   const stopEnhancementStartup = startEnhancements();
   const updateActivity = () => setWindowActivity({ minimized: document.hidden, focused: document.hasFocus() });
@@ -747,7 +783,7 @@ export default function start(options: BuildOptions) {
   }
   function syncNowPlaying(panel = findNowPlaying()) {
     if (disposed) return;
-    const lyricsOpen = !!(mainContainer || closePopout);
+    const lyricsOpen = !!(mainContainer || detached);
     const mute = lyricsOpen ? panel ?? undefined : undefined;
     if (mute !== mutedPreviewPanel) {
       mutedPreviewPanel?.classList.remove("lyssna-npv-hide-lyrics");
@@ -757,7 +793,7 @@ export default function start(options: BuildOptions) {
     attachCard(lyricsOpen ? null : panel);
   }
   function syncHost() {
-    viewButtons.sync(showPlaybarPopout);
+    syncPlaybar();
     if (restorePending && host.mainView()) void open();
     if (mainContainer && !mainContainer.isConnected) close?.();
     const panel = findNowPlaying();
@@ -776,7 +812,7 @@ export default function start(options: BuildOptions) {
       removeCard?.();
       backdrop?.dispose();
       mutedPreviewPanel?.classList.remove("lyssna-npv-hide-lyrics");
-      closePopout?.();
+      detached?.dismiss();
       close?.(false);
       button?.remove();
       viewButtons.dispose();

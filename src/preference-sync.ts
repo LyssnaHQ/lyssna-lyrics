@@ -40,6 +40,8 @@ function convert(settings: SettingsRecord, uiState: SettingsRecord, offsets: Set
       songOffsets: (offsets ?? {}) as Record<string, number>, enhancements: {}, playlistFolders: [],
     },
   });
+  input.cinema_lyrics = settings.popupLyricsAllowed;
+  input.cinema_window = settings.externalCinemaLyricsAllowed;
   if (!offsets) delete input.lyric_song_offsets;
   return validatePreferences(input);
 }

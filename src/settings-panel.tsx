@@ -63,7 +63,7 @@ function visualRowKey(row: ReactNode) {
   return isValidElement(row) && row.key !== null ? String(row.key) : "";
 }
 
-export function SettingsPanel({ settings, change, close, options, trackId, importTtml, notice, setNotice }: {
+export function SettingsPanel({ settings, change, close, options, trackId, importTtml, notice, setNotice, view = window, developerMode }: {
   settings: Settings;
   change: (patch: Partial<Settings>) => void;
   close: () => void;
@@ -72,6 +72,8 @@ export function SettingsPanel({ settings, change, close, options, trackId, impor
   importTtml: () => void;
   notice: string;
   setNotice: (message: string) => void;
+  view?: Window;
+  developerMode?: boolean;
 }) {
   const [initial] = useState(() => readPlace(settings.settings_remember_place));
   const [tab, setTab] = useState(initial.tab);
@@ -90,7 +92,7 @@ export function SettingsPanel({ settings, change, close, options, trackId, impor
   const transferInput = useRef<HTMLInputElement>(null);
   const searching = !!query.trim();
   const visuals = visualRows(settings, change, () => setTuning(true));
-  const fonts = useAppFonts(settings);
+  const fonts = useAppFonts(settings, view.document);
   const { flag, range } = visuals;
   const version = options.channels[options.channel];
   const hidden = new Set(settings.hidden_settings);
@@ -105,10 +107,10 @@ export function SettingsPanel({ settings, change, close, options, trackId, impor
     if (scroll.current) scroll.current.scrollTop = submenu ? submenuScroll.current : mainScroll.current;
     if (submenu) backButton.current?.focus({ preventScroll: true });
     else if (openedFrom.current) {
-      document.getElementById(`lyssna-open-${openedFrom.current}`)?.focus({ preventScroll: true });
+      view.document.getElementById(`lyssna-open-${openedFrom.current}`)?.focus({ preventScroll: true });
       openedFrom.current = undefined;
     }
-  }, [submenu, tuning]);
+  }, [submenu, tuning, view]);
   useLayoutEffect(() => {
     const button = tabButtons.current[tabs.findIndex(([label]) => label === tab)];
     const list = button?.parentElement;
@@ -157,9 +159,9 @@ export function SettingsPanel({ settings, change, close, options, trackId, impor
       event.stopImmediatePropagation();
       back();
     }
-    window.addEventListener("keydown", onEscape, true);
-    return () => window.removeEventListener("keydown", onEscape, true);
-  }, [submenu, tab, settings.settings_remember_place]);
+    view.addEventListener("keydown", onEscape, true);
+    return () => view.removeEventListener("keydown", onEscape, true);
+  }, [submenu, tab, settings.settings_remember_place, view]);
 
   function submenuButton(menu: Submenu, title: string) {
     return <button type="button" className="pill outline" id={`lyssna-open-${menu}`} onClick={() => openSubmenu(menu)}>{title}</button>;
@@ -233,8 +235,12 @@ export function SettingsPanel({ settings, change, close, options, trackId, impor
       ...visuals.Display,
     ]],
     ["Layout", "Lyrics layout", [
-      flag("cinema_lyrics", "Enable lyrics pop-out", "Show the pop-out button in the playbar and lyrics toolbar.",
+      flag("cinema_lyrics", "Enable lyrics pop-out", "Show the Picture-in-Picture button in the playbar.",
         "cinema window external popup", pictureInPicture ? undefined : "This Spotify client does not support Picture-in-Picture windows."),
+      flag("cinema_window", "Enable Cinema Lyrics Window", developerMode === true
+        ? "Add a playbar button that opens the full lyrics view in a separate window."
+        : "Add a separate cinema window to the playbar. Enable Spotify DevTools with spicetify enable-devtools.",
+      "cinema window external popup devtools"),
       ...visuals.Layout,
       visualRowsByKey.get("year"),
     ]],

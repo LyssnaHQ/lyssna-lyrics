@@ -87,7 +87,7 @@ export function LyricsDisplay({
   const [following, setFollowing] = useState(true);
   const [atEnd, setAtEnd] = useState(false);
   const [returnDirection, setReturnDirection] = useState<"up" | "down">("down");
-  const footerMode = compact ? "off" : (settings.lyrics_pinned_footer ?? "off");
+  const footerMode = settings.lyrics_pinned_footer ?? "off";
   const writerCredits = (
     <WriterCredits
       names={lyrics.songwriters?.length ? lyrics.songwriters : writers}
