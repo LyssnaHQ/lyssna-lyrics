@@ -4,14 +4,19 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFil
 import { join } from "node:path";
 import { build } from "vite";
 
-const args = process.argv.slice(2);
-if (args.length > 1 || (args.length && !["--test", "--hidden"].includes(args[0]))) {
-  throw new Error("Usage: npm run build [-- --test|--hidden]");
+const [mode, hiddenVersion, ...extra] = process.argv.slice(2);
+if (extra.length || (mode !== undefined && !["--test", "--hidden"].includes(mode)) ||
+  (hiddenVersion !== undefined && mode !== "--hidden")) {
+  throw new Error("Usage: npm run build [-- --test | --hidden [version]]");
 }
 
-const testBuild = args[0] === "--test";
-const hiddenBuild = args[0] === "--hidden";
-const { version } = JSON.parse(readFileSync("package.json", "utf8"));
+const testBuild = mode === "--test";
+const hiddenBuild = mode === "--hidden";
+const { version: packageVersion } = JSON.parse(readFileSync("package.json", "utf8"));
+const version = hiddenVersion ?? packageVersion;
+if (typeof version !== "string" || !/^\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$/.test(version)) {
+  throw new Error("Expected a build version like 7.2.7.");
+}
 const filename = `lyssna-lyrics@${version}.mjs`;
 const output = "dist";
 const host = testBuild || hiddenBuild ? "Y:/website/lyssna-plugin" : output;
@@ -52,8 +57,9 @@ if (hiddenBuild) {
 } else {
   const channels = existsSync(channelsFile)
     ? JSON.parse(readFileSync(channelsFile, "utf8"))
-    : { protocol: 1, channels: { stable: null, beta: null, canary: null } };
+    : { protocol: 1, channels: { beta: null, canary: null } };
   if (channels.protocol !== 1 || !channels.channels) throw new Error(`Invalid manifest at ${channelsFile}`);
+  delete channels.channels.stable;
   channels.channels.canary = version;
 
   mkdirSync(join(output, "spotikit"), { recursive: true });
@@ -63,6 +69,7 @@ if (hiddenBuild) {
   copyFileSync("loader/spotikit.json", join(output, "spotikit", "spotikit.json"));
   write(join(host, "builds", filename), bundle);
   copy("PATCH_NOTES.md", join(entrypoint, "patch-notes.md"));
+  copy("loader/github-stable.mjs", join(entrypoint, "github-stable.mjs"));
   copy("loader/entrypoint.mjs", join(entrypoint, "entrypoint.mjs"));
   copy("loader/lyssna-lyrics.mjs", join(host, "rewrite", "lyssna-lyrics.mjs"));
   write(channelsFile, JSON.stringify(channels, null, 2) + "\n");

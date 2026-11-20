@@ -1,3 +1,5 @@
+import { importStableRelease, readStableRelease } from "./github-stable.mjs";
+
 const root = new URL("../../", import.meta.url);
 const channelKey = "lyssna-lyrics.v1.channel";
 const hiddenKey = "lyssna-lyrics.v1.hidden-build";
@@ -83,10 +85,10 @@ async function readChannels(signal) {
   if (!response.ok) throw new Error(`Build channels HTTP ${response.status}`);
   const catalog = await response.json();
   if (catalog?.protocol !== 1) throw new Error("Unrecognized build channel manifest");
-  const channels = Object.fromEntries(names.map((name) => {
+  const channels = { stable: null, ...Object.fromEntries(["beta", "canary"].map((name) => {
     const version = catalog.channels?.[name];
     return [name, typeof version === "string" && versionPattern.test(version) ? version : null];
-  }));
+  })) };
   return { catalog, channels };
 }
 
@@ -103,7 +105,15 @@ export async function start(signal) {
 }
 
 async function startBuild(signal) {
-  const { catalog, channels } = await readChannels(signal);
+  const [{ catalog, channels }, stable] = await Promise.all([
+    readChannels(signal),
+    readStableRelease(signal).catch((error) => {
+      signal.throwIfAborted();
+      console.warn("[Lyssna Lyrics] Could not check GitHub Stable:", error);
+      return null;
+    }),
+  ]);
+  channels.stable = stable?.version ?? null;
   const saved = localStorage.getItem(channelKey);
   const selected = names.includes(saved) && channels[saved] ? saved : names.find((name) => channels[name]);
   if (!selected) throw new Error("No Lyssna builds are published yet");
@@ -142,15 +152,31 @@ async function startBuild(signal) {
   async function load(channel, reopen, hidden) {
     switching = true;
     try {
+      let build;
+      if (!hidden && channel === "stable") {
+        try {
+          build = await importStableRelease(stable, signal);
+        } catch (error) {
+          signal.throwIfAborted();
+          const fallback = !reopen && names.find((name) => name !== "stable" && channels[name]);
+          if (!fallback) throw error;
+          console.warn("[Lyssna Lyrics] GitHub Stable unavailable. Loading the next public channel.", error);
+          channel = fallback;
+        }
+      }
       const url = hidden?.url ?? new URL(`builds/lyssna-lyrics@${channels[channel]}.mjs`, root);
-      const build = await import(url.href);
+      build ??= await import(url.href);
       signal.throwIfAborted();
       const next = build.default({
         channel, channels, selectChannel, lyssnaSignIn: catalog.lyssnaSignIn === true,
         hiddenVersion: hidden?.version, selectHiddenBuild,
         clearHiddenBuild: savedHiddenKey ? clearHiddenBuild : undefined,
         patchNotesUrl: new URL("patch-notes.md", import.meta.url).href,
-        latestVersion: (checkSignal) => readChannels(AbortSignal.any([signal, checkSignal])).then(({ channels }) => channels[channel]),
+        latestVersion: async (checkSignal) => {
+          const check = AbortSignal.any([signal, checkSignal]);
+          if (channel === "stable") return (await readStableRelease(check))?.version ?? null;
+          return (await readChannels(check)).channels[channel];
+        },
         showLoading,
       });
       stop();

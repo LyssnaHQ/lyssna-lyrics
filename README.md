@@ -6,9 +6,11 @@ Community lyrics provided by [Lyssna](https://lyssna.org). Imported TTML takes p
 
 ## Build
 
-With Node.js LTS installed, run `npm ci` and `npm run build`. `dist/` contains the versioned payload, the v1.0 entrypoint, and the host loaders. `npm run build -- --test` also deploys the payload to `Y:/website/lyssna-plugin/builds/` and points Canary at it. Stable and Beta get their own version fields in `rewrite/v1.0/channels.json`.
+With Node.js LTS installed, run `npm ci` and `npm run build`. `dist/` contains the versioned payload, the v1.0 entrypoint, and the host loaders.
 
-Run `npm run build -- --hidden` to publish a standalone build under `builds/hidden/<key>/` and print its access key. Share the key with testers. Anyone with the key can load the build. Keep directory listings disabled for `builds/hidden/`. To retire a key, remove its `release.json` and bundle from the host.
+- **Stable** uses the latest public [GitHub Release](https://github.com/LyssnaHQ/lyssna-lyrics/releases). Attach `dist/builds/lyssna-lyrics@<version>.mjs` to a matching `v<version>` release. The loader verifies the asset against GitHub’s SHA-256 digest.
+- **Beta and Canary** use `rewrite/v1.0/channels.json` on ipixelgalaxy.com. `npm run build -- --test` deploys the payload to `Y:/website/lyssna-plugin/builds/` and updates Canary. To publish Beta, copy its versioned payload there and set the manifest’s `beta` version.
+- **Private** builds use `npm run build -- --hidden`. Pass a version after `--hidden`, for example `npm run build -- --hidden 7.2.7`, to override the private build’s version. The command publishes to `builds/hidden/<key>/` on ipixelgalaxy.com and prints the key. Anyone with the key can load the build. Keep directory listings disabled for that directory. To retire a key, remove its `release.json` and bundle from the host.
 
 ## Install the loader
 
