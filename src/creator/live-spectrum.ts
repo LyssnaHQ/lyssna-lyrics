@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { spectrumFrequency } from "./audio";
 import { useCreatorEnvironment } from "./environment";
 import { spotifyWindowMarker } from "./spotify-window";
+import processorSource from "./live-spectrum-processor.js?raw";
 import {
   hasLiveSpectrum, INTERPOLATED_COLUMN, LIVE_COLUMNS, LIVE_ROWS, LIVE_SAMPLE_MS, MEASURED_COLUMN, mergeLiveTile,
   readLiveTiles, saveLiveTiles, type LiveTile,
@@ -22,6 +23,7 @@ type DisplayOptions = DisplayMediaStreamOptions & {
 };
 type BufferedTile = { tile: LiveTile; revision: number; savedRevision: number };
 type CaptureStatus = "idle" | "selecting" | "live";
+type FrameBatch = { first: number; levels: Uint16Array; signals: Uint8Array };
 
 function captureError(error: unknown) {
   if (!(error instanceof Error)) return "Spotify couldn’t start audio sharing.";
@@ -104,6 +106,7 @@ export function useLiveSpectrum(uri: string, duration: number, canCapture: boole
     let context: AudioContext | undefined;
     let timer = 0;
     let saveTimer = 0;
+    let worklet: AudioWorkletNode | undefined;
     let configured = false;
     const flush = () => {
       const changed = [...dirty].flatMap((index) => {
@@ -126,6 +129,10 @@ export function useLiveSpectrum(uri: string, duration: number, canCapture: boole
       session.current = undefined;
       view.clearInterval(timer);
       view.clearInterval(saveTimer);
+      if (worklet) {
+        worklet.port.close();
+        worklet.disconnect();
+      }
       verification.abort();
       marker?.remove();
       stream?.getTracks().forEach((track) => track.stop());
@@ -205,38 +212,28 @@ export function useLiveSpectrum(uri: string, duration: number, canCapture: boole
       video.addEventListener("ended", stopped, { once: true });
       audio.addEventListener("ended", stopped, { once: true });
       video.addEventListener("capturehandlechange", () => { if (!isSpotify()) stop("Spotify audio sharing ended when the source changed."); });
-      const analyser = context.createAnalyser();
-      analyser.fftSize = 4096;
-      analyser.smoothingTimeConstant = 0;
       // Only connect the verified audio track. Captured video is never stored.
       const source = context.createMediaStreamSource(new view.MediaStream([audio]));
-      source.connect(analyser);
-      const bins = new Float32Array(analyser.frequencyBinCount);
-      const hzPerBin = context.sampleRate / analyser.fftSize;
-      const edges = Uint16Array.from({ length: LIVE_ROWS + 1 }, (_, row) =>
-        Math.min(bins.length, Math.round(spectrumFrequency(1 - row / LIVE_ROWS) / hzPerBin)));
-      const halfWindowMs = 500 / hzPerBin;
-      let levels = new Uint16Array(LIVE_ROWS);
-      let previousLevels = new Uint16Array(LIVE_ROWS);
-      let previousSample = -1;
-      let previousSampleAt = 0;
-      let previousSamplePosition = 0;
-      let previous = -Infinity;
-      let previousAt = 0;
-      let previousTransport: number | undefined;
-      let settleUntil = 0;
+      const audioContext = context;
+      const fftSize = 4096;
+      const halfWindowMs = 500 * fftSize / audioContext.sampleRate;
+      const frequencies = Array.from({ length: LIVE_ROWS + 1 }, (_, row) => spectrumFrequency(1 - row / LIVE_ROWS));
+      let previousClock: { ms: number; audioMs: number; transportRevision: number } | undefined;
+      let captureFrom = 0;
+      let columnOffset: number | undefined;
       let noSignalSince = 0;
       let suspendedSince = 0;
       let heard = false;
       let frames = 0;
       setStatus("live");
       setMessage("");
-      const audioContext = context;
-      timer = view.setInterval(() => {
+      const captureClock = () => {
+        if (session.current !== active) return;
         if (!isSpotify()) { stop("Spotify audio sharing ended when the source changed."); return; }
         const now = view.performance.now();
+        const audioMs = audioContext.currentTime * 1000;
         if (audioContext.state !== "running") {
-          previousSample = -1;
+          previousClock = undefined;
           suspendedSince ||= now;
           if (now - suspendedSince > 3000) stop("Spotify couldn’t start the audio analyser.");
           return;
@@ -244,79 +241,136 @@ export function useLiveSpectrum(uri: string, duration: number, canCapture: boole
         suspendedSince = 0;
         const playback = readCapturePosition(uri);
         if (!playback || !Number.isFinite(playback.ms)) {
-          previous = -Infinity;
-          previousSample = -1;
+          previousClock = undefined;
           noSignalSince = 0;
           return;
         }
-        const { ms, transportRevision } = playback;
-        const delta = ms - previous;
-        if (transportRevision !== previousTransport || delta < -40 || delta > now - previousAt + 160) {
-          settleUntil = now + 160;
-          previousSample = -1;
+        if (!previousClock || playback.transportRevision !== previousClock.transportRevision || playback.ms < previousClock.ms - 40 ||
+          Math.abs(playback.ms - previousClock.ms - (audioMs - previousClock.audioMs)) > 100) {
+          captureFrom = audioMs + 160;
+          columnOffset = undefined;
         }
-        previous = ms;
-        previousAt = now;
-        previousTransport = transportRevision;
-        const position = ms - halfWindowMs;
-        if (now < settleUntil || position < 0 || position >= duration) return;
-
-        if (audio.muted) {
-          previousSample = -1;
-          if (heard) return;
-          bins.fill(-Infinity);
-        } else analyser.getFloatFrequencyData(bins);
-        const signal = bins.some((level) => level > -82);
+        previousClock = { ...playback, audioMs };
+        return { ms: playback.ms, now, audioMs };
+      };
+      const acceptSignal = (signal: boolean, now: number) => {
         if (signal) noSignalSince = 0;
         else if (!heard) {
           noSignalSince ||= now;
           if (now - noSignalSince > 5000) stop("Spotify audio sharing stopped after five seconds of silence.");
-          return;
+          return false;
         }
         if (!heard) { heard = true; setHasSaved(true); }
-
+        return true;
+      };
+      const writeFrame = (frame: number, levels: Uint16Array, start = 0, before?: Uint16Array, weight = 1) => {
+        if (frame < 0 || frame * LIVE_SAMPLE_MS >= duration) return;
+        const index = Math.floor(frame / LIVE_COLUMNS);
+        const column = frame % LIVE_COLUMNS;
+        let entry = tiles.current.get(index);
+        if (!entry) {
+          entry = {
+            tile: { uri, index, levels: new Uint16Array(LIVE_ROWS * LIVE_COLUMNS), filled: new Uint8Array(LIVE_COLUMNS) },
+            revision: 0, savedRevision: 0,
+          };
+          tiles.current.set(index, entry);
+        }
+        if (before && entry.tile.filled[column] === MEASURED_COLUMN) return;
         for (let row = 0; row < LIVE_ROWS; row++) {
-          const first = edges[row + 1];
-          const last = Math.min(bins.length, Math.max(first + 1, edges[row]));
-          let peak = -95;
-          for (let bin = first; bin < last; bin++) peak = Math.max(peak, bins[bin]);
-          levels[row] = Math.round(Math.min(1, (peak + 95) / 70) * 5400);
+          const level = levels[start + row];
+          entry.tile.levels[row * LIVE_COLUMNS + column] = before ? Math.round(before[row] + (level - before[row]) * weight) : level;
         }
-        const sample = Math.floor(position / LIVE_SAMPLE_MS);
-        const elapsed = now - previousSampleAt;
-        const distance = sample - previousSample;
-        // Timer drift can skip columns. Interpolate only between nearby frames on the same stretch of playback.
-        const interpolate = previousSample >= 0 && distance > 1 && distance <= 4 && elapsed <= 100 &&
-          Math.abs(position - previousSamplePosition - elapsed) < 35;
-        for (let frame = interpolate ? previousSample + 1 : sample; frame <= sample; frame++) {
-          const index = Math.floor(frame / LIVE_COLUMNS);
-          const column = frame % LIVE_COLUMNS;
-          let entry = tiles.current.get(index);
-          if (!entry) {
-            entry = {
-              tile: { uri, index, levels: new Uint16Array(LIVE_ROWS * LIVE_COLUMNS), filled: new Uint8Array(LIVE_COLUMNS) },
-              revision: 0, savedRevision: 0,
-            };
-            tiles.current.set(index, entry);
-          }
-          const measured = frame === sample;
-          if (!measured && entry.tile.filled[column] === MEASURED_COLUMN) continue;
-          const weight = measured ? 1 : (frame - previousSample) / distance;
-          for (let row = 0; row < LIVE_ROWS; row++) {
-            entry.tile.levels[row * LIVE_COLUMNS + column] = measured ? levels[row] :
-              Math.round(previousLevels[row] + (levels[row] - previousLevels[row]) * weight);
-          }
-          entry.tile.filled[column] = measured ? MEASURED_COLUMN : INTERPOLATED_COLUMN;
-          entry.revision++;
-          dirty.add(index);
-        }
-        previousSample = sample;
-        previousSampleAt = now;
-        previousSamplePosition = position;
-        [previousLevels, levels] = [levels, previousLevels];
+        entry.tile.filled[column] = before ? INTERPOLATED_COLUMN : MEASURED_COLUMN;
+        entry.revision++;
+        dirty.add(index);
         if (++frames % 4 === 1) redraw((value) => value + 1);
-      }, LIVE_SAMPLE_MS);
+      };
+      const sampleOnTimer = () => {
+        setMessage("Sharing Spotify audio in compatibility mode.");
+        const analyser = audioContext.createAnalyser();
+        analyser.fftSize = fftSize;
+        analyser.smoothingTimeConstant = 0;
+        source.connect(analyser);
+        const bins = new Float32Array(analyser.frequencyBinCount);
+        const edges = Uint16Array.from(frequencies, (hz) => Math.min(bins.length, Math.round(hz * fftSize / audioContext.sampleRate)));
+        let levels = new Uint16Array(LIVE_ROWS);
+        let previousLevels = new Uint16Array(LIVE_ROWS);
+        let previousSample = -1;
+        let previousSampleAt = 0;
+        timer = view.setInterval(() => {
+          const clock = captureClock();
+          if (!clock || clock.audioMs < captureFrom || audio.muted) {
+            previousSample = -1;
+            if (clock && audio.muted) acceptSignal(false, clock.now);
+            return;
+          }
+          analyser.getFloatFrequencyData(bins);
+          if (!acceptSignal(bins.some((level) => level > -82), clock.now)) return;
+          for (let row = 0; row < LIVE_ROWS; row++) {
+            const first = edges[row + 1];
+            const last = Math.min(bins.length, Math.max(first + 1, edges[row]));
+            let peak = -95;
+            for (let bin = first; bin < last; bin++) peak = Math.max(peak, bins[bin]);
+            levels[row] = Math.round(Math.min(1, (peak + 95) / 70) * 5400);
+          }
+          const sample = Math.floor((clock.ms - halfWindowMs) / LIVE_SAMPLE_MS);
+          const elapsed = clock.now - previousSampleAt;
+          const distance = sample - previousSample;
+          if (previousSample >= 0 && distance > 1 && distance <= 4 && elapsed <= 100 &&
+            Math.abs(distance * LIVE_SAMPLE_MS - elapsed) < 35) {
+            for (let missing = 1; missing < distance; missing++) writeFrame(previousSample + missing, levels, 0, previousLevels, missing / distance);
+          }
+          writeFrame(sample, levels);
+          previousLevels.set(levels);
+          previousSample = sample;
+          previousSampleAt = clock.now;
+        }, LIVE_SAMPLE_MS);
+      };
       saveTimer = view.setInterval(flush, 1000);
+      try {
+        const url = view.URL.createObjectURL(new view.Blob([processorSource], { type: "text/javascript" }));
+        try { await audioContext.audioWorklet.addModule(url); }
+        finally { view.URL.revokeObjectURL(url); }
+        if (session.current !== active) return;
+        const node = new view.AudioWorkletNode(audioContext, "lyssna-live-spectrum", {
+          processorOptions: { frequencies, interval: LIVE_SAMPLE_MS },
+          outputChannelCount: [1],
+        });
+        worklet = node;
+        const output = audioContext.createGain();
+        output.gain.value = 0;
+        node.port.onmessage = ({ data }: MessageEvent<FrameBatch>) => {
+          const clock = captureClock();
+          if (!clock) return;
+          if (audio.muted) { acceptSignal(false, clock.now); return; }
+          // Map the worklet's continuous audio clock to the Spotify playhead once per uninterrupted stretch.
+          const offset = columnOffset ??= Math.round((clock.ms - clock.audioMs - halfWindowMs) / LIVE_SAMPLE_MS);
+          for (let i = 0; i < data.signals.length; i++) {
+            if (session.current !== active) break;
+            const sequence = data.first + i;
+            if (sequence * LIVE_SAMPLE_MS < captureFrom || !acceptSignal(!!data.signals[i], clock.now)) continue;
+            writeFrame(sequence + offset, data.levels, i * LIVE_ROWS);
+          }
+        };
+        node.onprocessorerror = () => {
+          if (session.current !== active) return;
+          node.port.close();
+          source.disconnect(node);
+          node.disconnect();
+          worklet = undefined;
+          view.clearInterval(timer);
+          sampleOnTimer();
+        };
+        source.connect(node).connect(output).connect(audioContext.destination);
+        timer = view.setInterval(captureClock, 250);
+      } catch {
+        if (session.current === active) {
+          worklet?.port.close();
+          worklet?.disconnect();
+          worklet = undefined;
+          sampleOnTimer();
+        }
+      }
     } catch (error) {
       stop(captureError(error));
     }

@@ -56,6 +56,21 @@ function timestamp(value: string | null): number | undefined {
 const attribute = (element: Element, name: string) => Array.from(element.attributes).find((attribute) => attribute.localName === name)?.value;
 const role = (element: Element) => attribute(element, "role") ?? "";
 
+function backgroundWrapper(text: string) {
+  const pair = ["()", "[]", "（）", "［］"].find(([first, last]) => text.startsWith(first) && text.endsWith(last));
+  if (!pair) return;
+  const [first, last] = pair;
+  let depth = 0;
+  for (let index = 0; index < text.length; index++) {
+    if (text[index] === first) depth++;
+    else if (text[index] === last) {
+      depth--;
+      if (depth === 0 && index !== text.length - 1) return;
+    }
+  }
+  if (depth === 0) return { first, last };
+}
+
 function lyricLine(element: Element, start: number, end: number, background: boolean, opposite: boolean): Line {
   let text = "";
   let translation = "";
@@ -88,8 +103,21 @@ function lyricLine(element: Element, start: number, end: number, background: boo
     }
   }
   element.childNodes.forEach(collect);
+  text = text.trim();
+  if (background) {
+    const wrapper = backgroundWrapper(text);
+    if (wrapper) {
+      text = text.slice(1, -1).trim();
+      const first = words.find((word) => word.text.trim());
+      const last = words.findLast((word) => word.text.trim());
+      if (first?.text.trimStart().startsWith(wrapper.first)) first.text = first.text.trimStart().slice(1);
+      if (last?.text.trimEnd().endsWith(wrapper.last)) last.text = last.text.trimEnd().slice(0, -1);
+    }
+    if (backgroundWrapper(romanization)) romanization = romanization.slice(1, -1).trim();
+  }
   return {
-    text: text.trim(), words, start_ms: start, end_ms: Math.max(start, end, words.at(-1)?.end_ms ?? 0),
+    text, words: background ? words.filter((word) => word.text.trim()) : words,
+    start_ms: start, end_ms: Math.max(start, end, words.at(-1)?.end_ms ?? 0),
     background, opposite, translation, romanization,
   };
 }
