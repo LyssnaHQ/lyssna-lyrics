@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { copyFileSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { build } from "vite";
 
@@ -22,6 +22,7 @@ const output = "dist";
 const host = testBuild || hiddenBuild ? "Y:/website/lyssna-plugin" : output;
 const entrypoint = join(output, "rewrite", "v1.0");
 const channelsFile = join("loader", "channels.json");
+const testChannelsFile = join(host, "rewrite", "v1.0", "channels.json");
 
 function write(target, content) {
   const temp = `${target}.${process.pid}.tmp`;
@@ -55,8 +56,14 @@ if (hiddenBuild) {
   write(join(folder, "release.json"), JSON.stringify({ protocol: 1, version }) + "\n");
   console.log(`Hidden build ${version} access key: ${key}`);
 } else {
-  const channels = JSON.parse(readFileSync(channelsFile, "utf8"));
-  if (channels.protocol !== 1 || !channels.channels) throw new Error(`Invalid manifest at ${channelsFile}`);
+  const stableCatalog = JSON.parse(readFileSync(channelsFile, "utf8"));
+  if (stableCatalog.protocol !== 1) throw new Error(`Invalid manifest at ${channelsFile}`);
+  const testCatalog = testBuild && (existsSync(testChannelsFile)
+    ? JSON.parse(readFileSync(testChannelsFile, "utf8"))
+    : { protocol: 1, channels: { beta: null, canary: null } });
+  if (testCatalog && (testCatalog.protocol !== 1 || !testCatalog.channels)) {
+    throw new Error(`Invalid manifest at ${testChannelsFile}`);
+  }
 
   mkdirSync(join(output, "spotikit"), { recursive: true });
   mkdirSync(join(host, "builds"), { recursive: true });
@@ -68,11 +75,12 @@ if (hiddenBuild) {
   copy("loader/github-stable.mjs", join(entrypoint, "github-stable.mjs"));
   copy("loader/entrypoint.mjs", join(entrypoint, "entrypoint.mjs"));
   copy("loader/lyssna-lyrics.mjs", join(output, "rewrite", "lyssna-lyrics.mjs"));
-  if (testBuild) {
-    channels.channels.canary = version;
-    write(channelsFile, JSON.stringify(channels, null, 2) + "\n");
+  if (testCatalog) {
+    mkdirSync(join(host, "rewrite", "v1.0"), { recursive: true });
+    testCatalog.channels.canary = version;
+    write(testChannelsFile, JSON.stringify(testCatalog, null, 2) + "\n");
+    console.log(`Canary ${version} published in ${testChannelsFile}`);
   }
   copy(channelsFile, join(entrypoint, "channels.json"));
   console.log(`Built ${version} to ${join(host, "builds", filename)}`);
-  if (testBuild) console.log(`Commit and push ${channelsFile} to publish the Canary version.`);
 }

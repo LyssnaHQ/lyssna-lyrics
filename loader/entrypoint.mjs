@@ -2,6 +2,8 @@ import { importBundle, importStableRelease, readStableRelease } from "./github-s
 
 const website = new URL("https://ipixelgalaxy.com/lyssna-plugin/");
 const repository = "https://raw.githubusercontent.com/LyssnaHQ/lyssna-lyrics/refs/heads/master/";
+const stableCatalogUrl = new URL("loader/channels.json", repository);
+const testCatalogUrl = new URL("rewrite/v1.0/channels.json", website);
 const channelKey = "lyssna-lyrics.v1.channel";
 const hiddenKey = "lyssna-lyrics.v1.hidden-build";
 const names = ["stable", "beta", "canary"];
@@ -79,19 +81,27 @@ async function hiddenRelease(key, signal) {
   return { version: release.version, url: new URL(`lyssna-lyrics@${release.version}.mjs`, folder) };
 }
 
-async function readChannels(signal) {
-  const response = await fetch(new URL("loader/channels.json", repository), {
-    cache: "no-store", signal: AbortSignal.any([signal, AbortSignal.timeout(8_000)]),
+async function readCatalog(url, signal, timeout) {
+  const response = await fetch(url, {
+    credentials: "omit", cache: "no-store", signal: AbortSignal.any([signal, AbortSignal.timeout(timeout)]),
   });
   if (!response.ok) throw new Error(`Build channels HTTP ${response.status}`);
   const catalog = await response.json();
   if (catalog?.protocol !== 1) throw new Error("Unrecognized build channel manifest");
-  const stable = await readStableRelease(signal, catalog);
-  const channels = { stable: stable?.version ?? null, ...Object.fromEntries(["beta", "canary"].map((name) => {
-    const version = catalog.channels?.[name];
-    return [name, typeof version === "string" && versionPattern.test(version) ? version : null];
-  })) };
-  return { lyssnaSignIn: catalog.lyssnaSignIn === true, channels, stable };
+  return catalog;
+}
+
+async function readTestChannels(signal) {
+  try {
+    const catalog = await readCatalog(testCatalogUrl, signal, 3_000);
+    return Object.fromEntries(["beta", "canary"].map((name) => {
+      const version = catalog.channels?.[name];
+      return [name, typeof version === "string" && versionPattern.test(version) ? version : null];
+    }));
+  } catch (error) {
+    if (!signal.aborted) console.warn("[Lyssna Lyrics] Beta and Canary catalog unavailable:", error);
+    return { beta: null, canary: null };
+  }
 }
 
 async function importWebsiteBuild(url, signal) {
@@ -115,8 +125,15 @@ export async function start(signal) {
 }
 
 async function startBuild(signal) {
-  const { lyssnaSignIn, channels, stable } = await readChannels(signal);
   const saved = localStorage.getItem(channelKey);
+  const channels = { stable: null, beta: null, canary: null };
+  const testChannels = readTestChannels(signal).then((available) => Object.assign(channels, available));
+  const catalog = await readCatalog(stableCatalogUrl, signal, 8_000);
+  const stable = await readStableRelease(signal, catalog);
+  channels.stable = stable?.version ?? null;
+  // Stable can start while the optional test-channel request is still pending.
+  if (!stable || saved === "beta" || saved === "canary") await testChannels;
+  signal.throwIfAborted();
   const selected = names.includes(saved) && channels[saved] ? saved : names.find((name) => channels[name]);
   if (!selected) throw new Error("No Lyssna builds are published yet");
   const savedHiddenKey = localStorage.getItem(hiddenKey);
@@ -163,6 +180,8 @@ async function startBuild(signal) {
           build = await importPublic(channel);
         } catch (error) {
           signal.throwIfAborted();
+          if (!reopen && channel === "stable") await testChannels;
+          signal.throwIfAborted();
           const fallback = !reopen && names.find((name) => name !== channel && channels[name]);
           if (!fallback) throw error;
           console.warn(`[Lyssna Lyrics] ${channel} unavailable. Loading ${fallback}.`, error);
@@ -172,11 +191,16 @@ async function startBuild(signal) {
       }
       signal.throwIfAborted();
       const next = build.default({
-        channel, channels, selectChannel, lyssnaSignIn,
+        channel, channels, selectChannel, lyssnaSignIn: catalog.lyssnaSignIn === true,
         hiddenVersion: hidden?.version, selectHiddenBuild,
         clearHiddenBuild: savedHiddenKey ? clearHiddenBuild : undefined,
         patchNotesUrl: new URL(".change_notes/PATCH_NOTES.md", repository).href,
-        latestVersion: async (checkSignal) => (await readChannels(AbortSignal.any([signal, checkSignal]))).channels[channel],
+        latestVersion: async (checkSignal) => {
+          const check = AbortSignal.any([signal, checkSignal]);
+          if (channel !== "stable") return (await readTestChannels(check))[channel];
+          const latest = await readCatalog(stableCatalogUrl, check, 8_000);
+          return (await readStableRelease(check, latest))?.version ?? null;
+        },
         showLoading,
       });
       stop();
