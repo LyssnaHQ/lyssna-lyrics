@@ -165,4 +165,6 @@ export function sendLyssnaPlay(songId: string, accessToken?: string) {
     save(clientKey, playClient);
   }
   void lyssnaRequest(`/v1/songs/${songId}/play`, { body: { client_id: playClient }, accessToken }).catch(() => {});
+  // Counted once per install per song a day, for the views on lyssna.org/stats.
+  void lyssnaRequest(`/v1/songs/${songId}/views`, { body: { client: "plugin" } }).catch(() => {});
 }
