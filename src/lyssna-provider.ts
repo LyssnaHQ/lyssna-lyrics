@@ -89,10 +89,15 @@ export function clearLyssnaCache() {
   }).catch(() => {});
 }
 
+// One track is one lookup: the ISRC rides along and the server tries it when the Spotify id
+// matches nothing, so there is no second request.
+const lyricsPath = (trackId: string, isrc?: string) => `/v1/lyrics/spotify/${trackId}${isrc ? `?isrc=${isrc}` : ""}`;
+
 export function revalidateLyssnaSong(trackId: string, isrc?: string, approved?: ApprovedUpload) {
-  const paths = [`/v1/lyrics/spotify/${trackId}`];
   const normalizedIsrc = normalizeIsrc(isrc) ?? trackIsrc.get(trackId);
-  if (normalizedIsrc) paths.push(`/v1/lyrics/isrc/${normalizedIsrc}`);
+  // The address a lookup used depends on whether the ISRC was known then, so both are refreshed.
+  const paths = [lyricsPath(trackId, normalizedIsrc)];
+  if (normalizedIsrc) paths.push(lyricsPath(trackId));
   for (const path of paths) {
     pending.delete(path);
     cooling.delete(path);
@@ -172,7 +177,7 @@ async function lookupRefreshed(path: string, current: () => boolean, refresh: bo
       if (current()) approvals.delete(path);
       return value;
     }
-    const link = song.links?.find(({ platform, external_id }) => platform === "spotify" && path === `/v1/lyrics/spotify/${external_id}`);
+    const link = song.links?.find(({ platform, external_id }) => platform === "spotify" && path.split("?")[0] === `/v1/lyrics/spotify/${external_id}`);
     if (!link || !Number.isFinite(link.offset_ms) || !current()) return value;
     const [file, credits] = await Promise.all([
       lyssnaRequest(`/v1/revisions/${approval.revision}/ttml`),
@@ -190,8 +195,8 @@ async function lookupRefreshed(path: string, current: () => boolean, refresh: bo
   }
 }
 
-function read(platform: "spotify" | "isrc", id: string) {
-  const path = `/v1/lyrics/${platform}/${id}`;
+function read(trackId: string, isrc?: string) {
+  const path = lyricsPath(trackId, isrc);
   const existing = pending.get(path);
   if (existing) return existing;
   const generation = cacheGeneration;
@@ -206,14 +211,12 @@ function read(platform: "spotify" | "isrc", id: string) {
 
 export async function readLyssnaLyrics(track: Track, lookupIsrc: Host["lookupIsrc"]): Promise<Lyrics | undefined> {
   if (!/^[A-Za-z0-9]{22}$/.test(track.id)) return;
-  let value = await read("spotify", track.id);
-  if (value === null) {
-    const isrc = normalizeIsrc(track.isrc) ?? trackIsrc.get(track.id) ?? await lookupIsrc(track.id);
-    if (!isrc) return;
+  const isrc = normalizeIsrc(track.isrc) ?? trackIsrc.get(track.id) ?? normalizeIsrc(await lookupIsrc(track.id).catch(() => undefined));
+  if (isrc) {
     trackIsrc.set(track.id, isrc);
     if (trackIsrc.size > cacheLimit) trackIsrc.delete(trackIsrc.keys().next().value!);
-    value = await read("isrc", isrc);
   }
+  const value = await read(track.id, isrc);
   if (!value) return;
   const previous = parsed.get(value);
   if (previous) return previous;
