@@ -6,6 +6,13 @@ import { gibberishLine, gibberishSyllables } from "./gibberish";
  *  Translations and readings are left alone. */
 export type WordFilter = "off" | "gibberish" | "lower" | "upper";
 
+export const WORD_FILTER_OPTIONS = [
+  ["off", "Off"],
+  ["gibberish", "Gibberish"],
+  ["lower", "all lowercase"],
+  ["upper", "ALL UPPERCASE"],
+] as const satisfies readonly (readonly [WordFilter, string])[];
+
 const filtered = {
   gibberish: new WeakMap<Lyrics, Lyrics>(),
   lower: new WeakMap<Lyrics, Lyrics>(),

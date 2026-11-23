@@ -1,4 +1,8 @@
-import { ChartNoAxesColumn } from "lucide-react";
+import { useLayoutEffect, useRef } from "react";
+import { CaseSensitive, ChartNoAxesColumn, ChevronLeft, SlidersHorizontal } from "lucide-react";
+import { ANIMATOR_PRESETS, ANIMATOR_PRESET_LABELS, choosePreset, presetOf } from "./lyssna/animator-tuning";
+import { WORD_FILTER_OPTIONS } from "./lyssna/word-filter";
+import type { Settings } from "./settings";
 
 function GravityIcon() {
   return <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} aria-hidden="true">
@@ -22,7 +26,59 @@ function HighlighterIcon() {
 }
 
 export const quickEffects = [
-  { id: "space_gravity", label: "Space Gravity", Icon: GravityIcon },
-  { id: "lyrics_highlighter", label: "Highlighter", Icon: HighlighterIcon },
-  { id: "lyrics_visualiser", label: "Visualiser", Icon: () => <ChartNoAxesColumn size={18} strokeWidth={1.8} aria-hidden="true" /> },
+  { id: "space_gravity", kind: "toggle", label: "Space Gravity", Icon: GravityIcon },
+  { id: "lyrics_highlighter", kind: "toggle", label: "Highlighter", Icon: HighlighterIcon },
+  { id: "lyrics_visualiser", kind: "toggle", label: "Visualiser", Icon: () => <ChartNoAxesColumn size={18} strokeWidth={1.8} aria-hidden="true" /> },
+  { id: "animator", kind: "picker", label: "Animator Presets", Icon: () => <SlidersHorizontal size={18} strokeWidth={1.8} aria-hidden="true" /> },
+  { id: "word-filter", kind: "picker", label: "Unique word filters", Icon: () => <CaseSensitive size={18} strokeWidth={1.8} aria-hidden="true" /> },
 ] as const;
+
+export type QuickEffectChoice = Extract<(typeof quickEffects)[number], { kind: "picker" }>;
+
+export function QuickEffectPicker({ effect, settings, change, close }: {
+  effect: QuickEffectChoice;
+  settings: Settings;
+  change: (patch: Partial<Settings>) => void;
+  close: () => void;
+}) {
+  const options = useRef<HTMLDivElement>(null);
+  const choices = effect.id === "animator"
+    ? ANIMATOR_PRESETS.map((value) => ({
+        value,
+        label: ANIMATOR_PRESET_LABELS[value],
+        selected: value === presetOf(settings.lyrics_animator),
+        apply: () => change({ lyrics_animator: choosePreset(settings.lyrics_animator, value) }),
+      }))
+    : WORD_FILTER_OPTIONS.map(([value, label]) => ({
+        value,
+        label,
+        selected: value === settings.lyrics_word_filter,
+        apply: () => change({ lyrics_word_filter: value }),
+      }));
+
+  useLayoutEffect(() => {
+    const active = options.current?.querySelector<HTMLButtonElement>('[aria-pressed="true"]');
+    (active ?? options.current?.querySelector("button"))?.focus({ preventScroll: true });
+  }, [effect]);
+
+  return <div className="lyssna-quick-picker">
+    <button className="icon-button" type="button" title="Back to lyric controls" aria-label="Back to lyric controls" onClick={close}>
+      <ChevronLeft size={18} aria-hidden="true" />
+    </button>
+    <div className="lyssna-quick-choices" role="group" aria-label={effect.label} ref={options} onKeyDown={(event) => {
+      const { key, currentTarget, target } = event;
+      if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(key)) return;
+      const buttons = Array.from(currentTarget.querySelectorAll("button"));
+      const index = buttons.findIndex((button) => button === target);
+      if (index < 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const next = key === "Home" ? 0 : key === "End" ? buttons.length - 1
+        : (index + (key === "ArrowLeft" ? -1 : 1) + buttons.length) % buttons.length;
+      buttons[next]?.focus({ preventScroll: true });
+    }}>
+      {choices.map(({ value, label, selected, apply }) => <button className="lyssna-quick-choice" type="button" key={value}
+        aria-pressed={selected} onClick={() => { apply(); close(); }}>{label}</button>)}
+    </div>
+  </div>;
+}

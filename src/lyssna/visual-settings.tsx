@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
-import { AnimatorPresetRow } from "./animator-settings";
+import { AnimatorPresetControl } from "./animator-settings";
+import { WORD_FILTER_OPTIONS } from "./word-filter";
 import { DEFAULT_MARKER, MARKER_COLOURS } from "./highlighter";
 import { SettingRow, Toggle } from "./setting-row";
 import { defaults, gravityDensityRange, type Settings } from "../settings";
@@ -365,12 +366,18 @@ return { flag, range, Look: [
               ),
             ]
           : []),
-        <AnimatorPresetRow
+        <SettingRow
           key="animator"
-          animator={settings.lyrics_animator}
-          onChange={(lyrics_animator) => onSettings({ lyrics_animator })}
-          onManage={onManageAnimator}
-        />,
+          label="Animator Presets"
+          help="Lyssna (Default) is the standard animation, Lyssna (Legacy) the earlier one. Custom stores live tuning."
+          keywords="animator preset default custom tuning spring"
+        >
+          <AnimatorPresetControl
+            animator={settings.lyrics_animator}
+            onChange={(lyrics_animator) => onSettings({ lyrics_animator })}
+            onManage={onManageAnimator}
+          />
+        </SettingRow>,
         <SettingRow
           key="word-filter"
           label="Unique word filters"
@@ -388,10 +395,7 @@ return { flag, range, Look: [
               })
             }
           >
-            <option value="off">Off</option>
-            <option value="gibberish">Gibberish</option>
-            <option value="lower">all lowercase</option>
-            <option value="upper">ALL UPPERCASE</option>
+            {WORD_FILTER_OPTIONS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
           </select>
         </SettingRow>,
         flag(

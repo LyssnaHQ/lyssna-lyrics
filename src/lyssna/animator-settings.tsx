@@ -31,11 +31,8 @@ import {
 const readClipboard = () =>
   navigator.clipboard.readText();
 
-const PRESET_HELP =
-  "Lyssna (Default) is the standard animation, Lyssna (Legacy) the earlier one. Custom stores live tuning.";
-
-/** The Animator Presets row, with Manage for Custom tuning. */
-export function AnimatorPresetRow({
+/** Preset selection, with Manage for Custom tuning. */
+export function AnimatorPresetControl({
   animator = {},
   onChange,
   onManage,
@@ -46,35 +43,29 @@ export function AnimatorPresetRow({
 }) {
   const preset = presetOf(animator);
   return (
-    <SettingRow
-      label="Animator Presets"
-      help={PRESET_HELP}
-      keywords="animator preset default custom tuning spring"
-    >
-      <span className="animator-preset-control">
-        <select
-          className="settings-select"
-          aria-label="Animator preset"
-          value={preset}
-          onChange={(event) =>
-            onChange(
-              choosePreset(animator, event.target.value as AnimatorPreset),
-            )
-          }
-        >
-          {ANIMATOR_PRESETS.map((name) => (
-            <option key={name} value={name}>
-              {ANIMATOR_PRESET_LABELS[name]}
-            </option>
-          ))}
-        </select>
-        {preset === "Custom" && (
-          <button className="pill outline" onClick={onManage}>
-            Manage
-          </button>
-        )}
-      </span>
-    </SettingRow>
+    <span className="animator-preset-control">
+      <select
+        className="settings-select"
+        aria-label="Animator preset"
+        value={preset}
+        onChange={(event) =>
+          onChange(
+            choosePreset(animator, event.target.value as AnimatorPreset),
+          )
+        }
+      >
+        {ANIMATOR_PRESETS.map((name) => (
+          <option key={name} value={name}>
+            {ANIMATOR_PRESET_LABELS[name]}
+          </option>
+        ))}
+      </select>
+      {preset === "Custom" && (
+        <button className="pill outline" onClick={onManage}>
+          Manage
+        </button>
+      )}
+    </span>
   );
 }
 

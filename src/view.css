@@ -1333,6 +1333,62 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   background: currentColor;
 }
 
+.lyssna-lyrics-view .lyrics-page > .lyrics-toolbar[data-effect-picker] {
+  opacity: 1;
+  background: light-dark(#f2f2f0e6, #0d0d0fcc);
+  border-radius: 20px;
+}
+
+.lyssna-lyrics-view .lyrics-toolbar[data-effect-picker] > :not(.lyssna-quick-picker) {
+  display: none;
+}
+
+.lyssna-lyrics-view .lyssna-quick-picker,
+.lyssna-lyrics-view .lyssna-quick-choices {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.lyssna-lyrics-view .lyssna-quick-picker > .icon-button {
+  flex: none;
+  width: 30px;
+  height: 30px;
+}
+
+.lyssna-lyrics-view .lyssna-quick-choices {
+  flex-wrap: wrap;
+}
+
+.lyssna-lyrics-view .lyssna-quick-choice {
+  min-height: 28px;
+  padding: 3px 10px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: light-dark(#404040, #dedede);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.lyssna-lyrics-view .lyssna-quick-choice:hover {
+  background: light-dark(#0001, #fff2);
+}
+
+.lyssna-lyrics-view .lyssna-quick-choice[aria-pressed="true"] {
+  border-color: light-dark(#0002, #fff3);
+  background: light-dark(#0002, #fff3);
+  color: light-dark(#151515, #fff);
+}
+
+.lyssna-lyrics-view .lyssna-quick-choice:focus-visible {
+  outline: 1px solid currentColor;
+  outline-offset: -2px;
+}
+
 .lyssna-lyrics-view .plugin-settings .setting-pin {
   width: 28px;
   height: 28px;
