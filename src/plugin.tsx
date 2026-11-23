@@ -590,7 +590,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
   const lyrics = draft ?? foundLyrics.lyrics;
   const waiting = !draft && foundLyrics.waiting;
   const missing = !lyrics && !waiting;
-  const coverOnly = immersive && !!track && missing;
+  const coverOnly = !!track && (lyrics?.instrumental || (immersive && missing));
   const [leaving, setLeaving] = useState(false);
   const [narrow, setNarrow] = useState(false);
   const [notice, setNotice] = useState("");
@@ -860,6 +860,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
   const pageStyle = { ...fonts, "--lyric-size": `${Math.round(settings.lyric_size * 1.6)}px`,
     "--lyrics-cover-color": coverColour, "--hero": coverColour } as CSSProperties;
   const artworkDock = immersive && !!track?.cover && !canvas && !compact && !hideArtwork && !narrating;
+  const toolbarOnCover = coverOnly && artworkDock;
   const details = track && <TrackMetadata host={host} track={track} year={year} yearPosition={settings.lyrics_year_position}
     reduceMotion={settings.reduce_motion} orderByWidth={!!canvas} />;
   const toolbar = <div className={`lyrics-toolbar${settings.liquid_glass ? " liquid-glass" : ""}`} ref={quickToolbar} data-effect-picker={shownQuickPicker?.id}
@@ -916,7 +917,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
       key={track.cover} src={track.cover} alt="" />}
     <MotionArtwork cover={motion} playing={playing} />
     {controls}
-    {coverOnly && toolbar}
+    {toolbarOnCover && toolbar}
   </div>;
   const playback = immersive && (track || narrating) && <FullscreenControls host={host} playing={playing} settings={settings}
     view={view} trackId={trackId} narrating={narrating} localPlayback={localPlayback} coverOnly={coverOnly}
@@ -945,7 +946,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
       }} />
     </div>}
     {!showCreator && <section ref={lyricsPage} className={className} aria-label="Lyssna Lyrics" style={pageStyle}
-      data-always-show={coverOnly ? "both" : immersive && settings.fullscreen_always_show !== "none" ? settings.fullscreen_always_show : undefined}
+      data-always-show={immersive && coverOnly ? "both" : immersive && settings.fullscreen_always_show !== "none" ? settings.fullscreen_always_show : undefined}
       onPointerMove={wakeTools} onPointerLeave={sleepTools} onKeyDownCapture={wakeTools}>
       {narrating && <DJInterlude playing={playing} reduceMotion={settings.reduce_motion} />}
       {!narrating && (track ? <>
@@ -981,7 +982,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
       </> : <div className="lyrics-message"><Music2 /><h2>Play something you love</h2><p>Your lyrics will appear here.</p></div>)}
       {track && showVisualiser && !coverOnly && <SpotifyVisualiser key={track.id} host={host} trackId={track.id}
         opacity={settings.lyrics_visualiser_opacity} playing={playing} capture={capture} motion={visualiser} read={localPlayback?.read} />}
-      {(!coverOnly || !artworkDock) && toolbar}
+      {!toolbarOnCover && toolbar}
       {!showSettings && notice && <div className="lyssna-popout-error" role="status">{notice}</div>}
       {!artworkDock && playback}
     </section>}

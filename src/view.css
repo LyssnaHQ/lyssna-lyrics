@@ -2566,7 +2566,8 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   cursor: default;
 }
 
-.lyssna-lyrics-view.immersive .lyrics-page.no-lyrics {
+.lyssna-lyrics-view .lyrics-page.no-lyrics {
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
   padding-block: 0;
 }
@@ -2579,7 +2580,7 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   max-width: calc(100% - 100px);
 }
 
-.lyssna-lyrics-view.immersive .lyrics-page.no-lyrics .lyrics-media > .cover {
+.lyssna-lyrics-view .lyrics-page.no-lyrics .lyrics-media > .cover {
   width: 100%;
 }
 
