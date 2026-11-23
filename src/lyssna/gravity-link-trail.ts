@@ -16,12 +16,28 @@ function bezier(start: Point, first: Point, second: Point, end: Point, t: number
 const distance = (a: Point, b: Point) => Math.hypot(b.x - a.x, b.y - a.y);
 const pair = ({ x, y }: Point) => `${x.toFixed(1)} ${y.toFixed(1)}`;
 
+export function interpolatePoint(a: Point, b: Point, fraction: number): Point {
+  return { x: a.x + (b.x - a.x) * fraction, y: a.y + (b.y - a.y) * fraction };
+}
+
+/** A cubic prefix that starts where the existing stroke ends. */
+export function cubicCommand(start: Point, first: Point, second: Point, end: Point, fraction: number) {
+  if (fraction <= 0) return "";
+  if (fraction >= 1) return `C${pair(first)} ${pair(second)} ${pair(end)}`;
+  const left = interpolatePoint(start, first, fraction);
+  const middle = interpolatePoint(first, second, fraction);
+  const right = interpolatePoint(second, end, fraction);
+  const control = interpolatePoint(left, middle, fraction);
+  const tip = interpolatePoint(control, interpolatePoint(middle, right, fraction), fraction);
+  return `C${pair(left)} ${pair(control)} ${pair(tip)}`;
+}
+
 /** Neighbouring spring knots pass motion along the trail while the ends
  *  stay fixed to the ink. The original curve is its resting shape. */
 export class GravityLinkTrail {
   private knots?: Knot[];
 
-  draw(start: Point, first: Point, second: Point, end: Point, out: number, into: number, dt: number) {
+  draw(start: Point, first: Point, second: Point, end: Point, out: number, into: number, dt: number, fraction: number) {
     const rest = Array.from({ length: segments + 1 }, (_, index) => bezier(start, first, second, end, index / segments));
     const knots = this.knots ??= rest.slice(1, -1).map(({ x, y }) => ({ x: new Spring(x, 4, 0.57), y: new Spring(y, 4, 0.57) }));
     const points = [start, ...knots.map(({ x, y }) => ({ x: x.position, y: y.position })), end];
@@ -59,11 +75,18 @@ export class GravityLinkTrail {
       const gain = Math.min(1 / 6, reach / (Math.hypot(x, y) || 1));
       return { x: x * gain, y: y * gain };
     });
+    const lengths = fraction < 1 ? points.slice(1).map((point, index) => distance(points[index], point)) : undefined;
+    let remaining = lengths ? lengths.reduce((sum, length) => sum + length, 0) * fraction : Infinity;
     let path = "";
     for (let index = 0; index < segments; index++) {
+      if (remaining <= 0) break;
       const a = points[index], b = points[index + 1];
       const outgoing = handles[index], incoming = handles[index + 1];
-      path += `C${pair({ x: a.x + outgoing.x, y: a.y + outgoing.y })} ${pair({ x: b.x - incoming.x, y: b.y - incoming.y })} ${pair(b)}`;
+      const length = lengths?.[index] ?? 0;
+      const visible = length > 0 ? Math.min(1, remaining / length) : 1;
+      path += cubicCommand(a, { x: a.x + outgoing.x, y: a.y + outgoing.y },
+        { x: b.x - incoming.x, y: b.y - incoming.y }, b, visible);
+      remaining -= length;
     }
     return path;
   }

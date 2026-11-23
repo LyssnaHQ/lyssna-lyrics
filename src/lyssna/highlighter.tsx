@@ -359,6 +359,15 @@ function fullInkAnchor(layout: Layout, lane: Lane, seed: number, entry: boolean)
   };
 }
 
+function setFloatingAnchors(word: HTMLElement, layout: Layout, seed: number) {
+  const last = layout.lanes.length - 1;
+  if (last < 0) highlighterAnchors.delete(word);
+  else highlighterAnchors.set(word, {
+    entry: fullInkAnchor(layout, layout.lanes[0], seed, true),
+    exit: fullInkAnchor(layout, layout.lanes[last], seed + last, false),
+  });
+}
+
 /** Shows the ink revealed up to `path` along the pen's path. Each row has
  *  a continuous band that splits where sung pieces move, so the opening
  *  mark and the whole painted tail stay under their words. */
@@ -369,22 +378,12 @@ function paint(
   path: number,
   time: number,
   seed: number,
-  floating: HTMLElement | null,
 ) {
   const { em } = layout;
   const lead = INK_LEAD_EM * em,
     tail = INK_TAIL_EM * em,
     nib = 0.42 * em;
   const shown = layout.lanes.filter((lane) => path > lane.start + 0.5);
-  if (floating) {
-    const last = layout.lanes.length - 1;
-    if (last >= 0) {
-      highlighterAnchors.set(floating, {
-        entry: fullInkAnchor(layout, layout.lanes[0], seed, true),
-        exit: fullInkAnchor(layout, layout.lanes[last], seed + last, false),
-      });
-    } else highlighterAnchors.delete(floating);
-  }
   while (ink.children.length > shown.length) ink.lastChild!.remove();
   shown.forEach((lane, index) => {
     const row =
@@ -533,6 +532,9 @@ export const HighlighterWords = memo(function HighlighterWords({
       const now = performance.now();
       const resized = !layout.current;
       const current = (layout.current ??= measure(element, pieces, !!floating));
+      if (latest.current === -Infinity && floating) {
+        return () => setFloatingAnchors(floating, current, seed);
+      }
       const target = pathAt(current, pieces, latest.current);
       const elapsed = state.at ? Math.min(100, now - state.at) : 1000 / 60;
       state.at = now;
@@ -552,19 +554,21 @@ export const HighlighterWords = memo(function HighlighterWords({
         state.at = 0;
       }
       return () => {
-        paint(sheet, current, pieces, state.path, latest.current, seed, floating);
+        if (floating) setFloatingAnchors(floating, current, seed);
+        paint(sheet, current, pieces, state.path, latest.current, seed);
         if (moving) step();
       };
     };
     const step = () => batched(element, read);
     redraw.current = step;
-    // Lines not yet sung have no ink and need no measuring.
+    // Upcoming floating words need an anchor before the pen arrives.
     if (time === -Infinity) {
       if (floating) highlighterAnchors.delete(floating);
       sheet.replaceChildren();
       state.path = 0;
       state.at = 0;
       state.drawn = false;
+      if (floating) step();
     } else {
       // The animator writes transforms before this batch paints.
       step();
@@ -587,7 +591,7 @@ export const HighlighterWords = memo(function HighlighterWords({
     const floating = element.closest<HTMLElement>(".gravity-word");
     const observer = new ResizeObserver(() => {
       layout.current = undefined;
-      if (latest.current !== -Infinity) redraw.current();
+      if (floating || latest.current !== -Infinity) redraw.current();
     });
     observer.observe(element);
     return () => {

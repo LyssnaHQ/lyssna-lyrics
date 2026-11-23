@@ -47,7 +47,7 @@ import { HighlighterWords, highlighterAnchors, nextMarkerStarts, type InkAnchor 
 import { frameDue } from "./frame-cap";
 import { trackGravityStage } from "../gravity-frame";
 import { collideWithVisualiser, type VisualiserFrame } from "./visualiser-frame";
-import { GravityLinkTrail } from "./gravity-link-trail";
+import { cubicCommand, GravityLinkTrail, interpolatePoint } from "./gravity-link-trail";
 
 const LINK_LEAD_MS = 28;
 const MAX_LINK_TRAVEL_MS = 680;
@@ -346,12 +346,15 @@ interface TrailLink {
   from: Entity;
   to: Entity;
   begin: number;
+  finish: number;
+  wordAt: number;
   trail?: GravityLinkTrail;
 }
 
 interface TrailStroke {
   path: SVGPathElement;
   links: TrailLink[];
+  time: number;
   geometry?: string;
   leavingAt?: number;
 }
@@ -384,17 +387,25 @@ function wordPose(body: GravityBody, word: HTMLElement): TrailPose {
   };
 }
 
-function linkBegin(from: Entity, to: Entity, a: TrailPose, b: TrailPose) {
+function timeLink(from: Entity, to: Entity, a: TrailPose, b: TrailPose): TrailLink {
   const distance = Math.hypot(b.entry.x - a.exit.x, b.entry.y - a.exit.y);
   const travel = Math.min(MAX_LINK_TRAVEL_MS, Math.max(135, 90 + distance * 1.1));
-  const depart = from.start + Math.min(90, (from.end - from.start) * 0.28);
-  return Math.max(depart, to.start - LINK_LEAD_MS - travel);
+  const finish = Math.max(from.start + 16, to.start - LINK_LEAD_MS);
+  const depart = Math.min(from.start + Math.min(90, (from.end - from.start) * 0.28),
+    Math.max(from.start, finish - 70));
+  const wordLength = Math.hypot(b.exit.x - b.entry.x, b.exit.y - b.entry.y);
+  const curveLength = Math.max(1, distance * 1.2);
+  return {
+    from, to, finish,
+    begin: Math.max(depart, finish - travel),
+    wordAt: Math.min(0.9, Math.max(0.45, curveLength / (curveLength + wordLength))),
+  };
 }
 
 const coordinates = (point: { x: number; y: number }) =>
   `${point.x.toFixed(1)} ${point.y.toFixed(1)}`;
 
-function trailCurve(link: TrailLink, a: TrailPose, b: TrailPose, dt?: number) {
+function trailCurve(link: TrailLink, a: TrailPose, b: TrailPose, fraction: number, dt?: number) {
   const start = a.exit, end = b.entry;
   const reach = Math.min(160, Math.hypot(end.x - start.x, end.y - start.y) * 0.45);
   const swing = ((link.from.seed % 200) / 100 - 1) * Math.PI / 12;
@@ -403,10 +414,10 @@ function trailCurve(link: TrailLink, a: TrailPose, b: TrailPose, dt?: number) {
   const second = { x: end.x - Math.cos(into - swing) * reach, y: end.y - Math.sin(into - swing) * reach };
   if (dt === undefined) {
     link.trail = undefined;
-    return `C${coordinates(first)} ${coordinates(second)} ${coordinates(end)}`;
+    return cubicCommand(start, first, second, end, fraction);
   }
   const trail = link.trail ??= new GravityLinkTrail();
-  return trail.draw(start, first, second, end, out, into, dt);
+  return trail.draw(start, first, second, end, out, into, dt, fraction);
 }
 
 /** Each connected run is one SVG stroke beneath and between its words. */
@@ -430,10 +441,19 @@ function paintTrail(stroke: TrailStroke, pose: (key: string) => TrailPose | unde
     strength = Math.max(strength, a.opacity);
     for (let link: TrailLink | undefined = first; link; link = next.get(link.to.key)) {
       const b = pose(link.to.key)!;
-      geometry += trailCurve(link, a, b, dt) + `L${coordinates(b.exit)}`;
-      connected.add(link.to.key);
-      band = Math.min(band, b.band);
-      strength = Math.max(strength, b.opacity);
+      const progress = Math.min(1, Math.max(0, (stroke.time - link.begin) / (link.finish - link.begin)));
+      const reveal = progress * progress * (3 - 2 * progress);
+      geometry += trailCurve(link, a, b, Math.min(1, reveal / link.wordAt), dt);
+      if (reveal >= link.wordAt) {
+        const throughWord = (reveal - link.wordAt) / (1 - link.wordAt);
+        const tip = throughWord >= 1 ? b.exit : interpolatePoint(b.entry, b.exit, throughWord);
+        geometry += `L${coordinates(tip)}`;
+        connected.add(link.to.key);
+        band = Math.min(band, b.band);
+        strength = Math.max(strength, b.opacity);
+      }
+      // Later links share this path. Revealing one independently would leave a gap.
+      if (progress < 1) break;
       a = b;
     }
   }
@@ -486,7 +506,7 @@ function drawLinks(
       const a = pose(from.key), b = pose(to.key);
       if (!a || !b) continue;
       const key = `${from.key}>${to.key}`;
-      const link = state.links.get(key) ?? { from, to, begin: linkBegin(from, to, a, b) };
+      const link = state.links.get(key) ?? timeLink(from, to, a, b);
       if (time < link.begin) continue;
       if (!to.background) current = Math.max(current, to.lead);
       candidates.set(key, link);
@@ -513,7 +533,7 @@ function drawLinks(
     if (!stroke) {
       const path = sheet.ownerDocument.createElementNS(SVG, "path");
       sheet.append(path);
-      stroke = { path, links };
+      stroke = { path, links, time };
       state.strokes.set(scope, stroke);
     }
     if (stroke.leavingAt !== undefined) {
@@ -521,6 +541,7 @@ function drawLinks(
       stroke.path.classList.remove("leaving");
     }
     stroke.links = links;
+    stroke.time = time;
     paintTrail(stroke, pose, connected, width, dt);
   }
   for (const [scope, stroke] of state.strokes) {

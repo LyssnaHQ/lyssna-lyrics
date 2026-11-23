@@ -1448,7 +1448,7 @@
   border-radius: 0.08em;
   background: color-mix(in srgb, var(--highlighter-ink) 76%, #fff 24%);
   clip-path: inset(0 calc(100% - var(--sync-ink, 0%)) 0 0);
-  opacity: 0.32;
+  opacity: var(--sync-layer-opacity, 0.32);
   pointer-events: none;
   content: "";
 }
@@ -1662,7 +1662,7 @@
 .gravity-links path {
   fill: none;
   stroke: var(--highlighter-ink);
-  /* The same ink as the words' bands; its width is set per link. */
+  /* The same ink as the words' bands; each trail sets its width. */
   stroke-width: 11px;
   stroke-linecap: round;
   stroke-linejoin: round;
@@ -1672,6 +1672,9 @@
   opacity: 0;
 }
 /* The shared trail paints the connected words. The timed layer stays on top. */
+.gravity-lyrics.linked .gravity-word[data-marker-connected] {
+  --sync-layer-opacity: 0.72;
+}
 .gravity-lyrics.linked .gravity-word[data-marker-connected] .highlighter-ink {
   visibility: hidden;
 }
