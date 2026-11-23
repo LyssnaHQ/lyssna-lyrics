@@ -158,8 +158,8 @@ interface Layout {
   inkOrigin?: { x: number; y: number };
 }
 
-/** Measures the rows and pieces. Strokes are revealed over this fixed
- *  layout, so ink already laid never moves or stretches. */
+/** Measures the unanimated rows and pieces once per layout. The ink can
+ *  follow syllable transforms without measuring the text again. */
 function measure(root: HTMLElement, pieces: Piece[], floating: boolean): Layout {
   const spans = [...root.querySelectorAll<HTMLElement>(".highlighter-piece")];
   const em = parseFloat(getComputedStyle(root).fontSize) || 16;
@@ -336,10 +336,6 @@ function stretchMotion(layout: Layout, stretch: Stretch) {
   return { scale, x: pivotX * (1 - scale), y: lift + pivotY * (1 - scale) };
 }
 
-function strokeFollow(motion: ReturnType<typeof stretchMotion>) {
-  return motion ? `matrix(${motion.scale}, 0, 0, ${motion.scale}, ${motion.x}, ${motion.y}) ` : "";
-}
-
 /** Links attach to the full word, so the sync highlight can sweep over it
  *  without pulling either end of the trail across the text. */
 function fullInkAnchor(layout: Layout, lane: Lane, seed: number, entry: boolean): InkAnchor {
@@ -368,9 +364,87 @@ function setFloatingAnchors(word: HTMLElement, layout: Layout, seed: number) {
   });
 }
 
-/** Shows the ink revealed up to `path` along the pen's path. Each row has
- *  a continuous band that splits where sung pieces move, so the opening
- *  mark and the whole painted tail stay under their words. */
+type InkSection = {
+  from: number;
+  to: number;
+  motion: ReturnType<typeof stretchMotion>;
+};
+
+type InkEdge = { x: number; top: number; bottom: number };
+
+/** Draw one outline through the painted sections. At a join the band bends
+ *  from one syllable's height to the next without drawing overlapping caps. */
+function movingOutline(sections: InkSection[], left: number, top: number, tall: number,
+  full: number, end: number, angle: number, em: number) {
+  const cos = Math.cos(angle), sin = Math.sin(angle);
+  const bands = sections.map(({ from, to, motion }) => {
+    const scale = motion?.scale ?? 1;
+    // Express the syllable's transform in the rotated and skewed row's space.
+    const x = (motion?.x ?? 0) + left * (scale - 1);
+    const y = (motion?.y ?? 0) + top * (scale - 1);
+    const dy = -sin * x + cos * y;
+    const dx = cos * x + sin * y - INK_SKEW_TANGENT * dy;
+    return { from, to, dx, scale, top: dy, bottom: dy + tall * scale };
+  });
+  const edge = ({ dx, scale, top, bottom }: typeof bands[number], at: number): InkEdge =>
+    ({ x: at * scale + dx, top, bottom });
+  const first = edge(bands[0], bands[0].from);
+  const edges = [first];
+  const add = (edge: InkEdge) => {
+    const last = edges.at(-1)!;
+    const x = Math.max(last.x, edge.x);
+    if (x > last.x || edge.top !== last.top || edge.bottom !== last.bottom) {
+      edges.push({ ...edge, x });
+    }
+  };
+  let tipInJoin = false;
+  for (let index = 1; index < bands.length; index++) {
+    const before = bands[index - 1], after = bands[index];
+    if (before.top === after.top && before.bottom === after.bottom && before.dx === after.dx) continue;
+    const cut = after.from;
+    const spread = Math.min(0.32 * em, (cut - before.from) * 0.4, (after.to - cut) * 0.4);
+    if (end <= cut - spread) break;
+    const a = edge(before, cut - spread);
+    const b = edge(after, cut + spread);
+    add(a);
+    const blend = (t: number) => {
+      const eased = t * t * (3 - 2 * t);
+      add({
+        x: a.x + (Math.max(a.x, b.x) - a.x) * t,
+        top: a.top + (b.top - a.top) * eased,
+        bottom: a.bottom + (b.bottom - a.bottom) * eased,
+      });
+    };
+    const progress = Math.min(1, (end - cut + spread) / (2 * spread));
+    for (let step = 0.25; step < progress; step += 0.25) blend(step);
+    blend(progress);
+    if (progress < 1) {
+      tipInJoin = true;
+      break;
+    }
+  }
+  if (!tipInJoin) add(edge(bands.findLast((band) => band.from < end)!, end));
+  const tip = edges.at(-1)!;
+
+  const x = Math.min(0, first.x);
+  const y = Math.min(0, ...edges.map((edge) => edge.top));
+  const width = Math.max(full, tip.x) - x;
+  const height = Math.max(tall, ...edges.map((edge) => edge.bottom)) - y;
+  const point = (px: number, py: number) => `${(px - x).toFixed(2)} ${(py - y).toFixed(2)}`;
+  const startRadius = Math.min(0.14 * em, ((edges[1] ?? tip).x - first.x) / 2, (first.bottom - first.top) / 2);
+  const endRadius = Math.min(0.14 * em, (tip.x - (edges.at(-2) ?? first).x) / 2, (tip.bottom - tip.top) / 2);
+  const middle = edges.slice(1, -1);
+  const upper = middle.map(({ x, top }) => `L${point(x, top)}`).join("");
+  const lower = middle.reverse().map(({ x, bottom }) => `L${point(x, bottom)}`).join("");
+  const open = `M${point(first.x + startRadius, first.top)}`;
+  const turn = `L${point(tip.x - endRadius, tip.top)}Q${point(tip.x, tip.top)} ${point(tip.x, tip.top + endRadius)}`
+    + `L${point(tip.x, tip.bottom - endRadius)}Q${point(tip.x, tip.bottom)} ${point(tip.x - endRadius, tip.bottom)}`;
+  const close = `L${point(first.x + startRadius, first.bottom)}Q${point(first.x, first.bottom)} ${point(first.x, first.bottom - startRadius)}`
+    + `L${point(first.x, first.top + startRadius)}Q${point(first.x, first.top)} ${point(first.x + startRadius, first.top)}Z`;
+  return { x, y, width, height, tip, clip: `path("${open}${upper}${turn}${lower}${close}")` };
+}
+
+/** Shows the ink revealed up to `path`, bending the band under moving words. */
 function paint(
   ink: HTMLElement,
   layout: Layout,
@@ -393,6 +467,8 @@ function paint(
       (row.firstElementChild as HTMLElement | null) ??
       row.appendChild(document.createElement("span"));
     tip.className = "highlighter-tip";
+    const band = (row.children[1] as HTMLElement | undefined) ?? row.appendChild(document.createElement("span"));
+    band.className = "highlighter-stroke";
     const width = lane.right - lane.left,
       height = lane.bottom - lane.top;
     const reveal = Math.max(0, Math.min(width, path - lane.start));
@@ -409,54 +485,42 @@ function paint(
     const end = lead + reveal + closing;
     // A hand drifts a little across a row.
     const tilt = laneTilt(seed + index),
-      angle = Number(tilt) * Math.PI / 180,
-      drift = Math.tan(angle);
+      angle = Number(tilt) * Math.PI / 180;
     const stroke = `translate(${left}px, ${top}px) rotate(${tilt}deg) skewX(${INK_SKEW}deg)`;
-    const shade = laneShade(lane, left, pieces, em, time);
-    const mask = `${laneMask(lane, left, pieces, em, time)}, ${WAVER}`;
-    const size = `100% 100%, ${(2.8 * em).toFixed(1)}px 100%`;
-    const place = `0 0, ${((wobble(seed - index) + 0.5) * 2.8 * em).toFixed(1)}px 0`;
     const start = lead - opening;
-    let output = 1;
-    function fill(from: number, to: number, motion?: ReturnType<typeof stretchMotion>) {
-      if (to <= from) return;
-      const part = (row.children[output++] as HTMLElement | undefined) ?? row.appendChild(document.createElement("span"));
-      part.className = "highlighter-stroke";
-      part.style.transform = strokeFollow(motion) + stroke;
-      part.style.width = `${full}px`;
-      part.style.height = `${tall}px`;
-      const radius = `${(0.14 * em).toFixed(1)}px`;
-      const leftRadius = from === start ? radius : "0";
-      const rightRadius = to === end ? radius : "0";
-      part.style.clipPath = `inset(0 ${Math.max(0, full - to).toFixed(1)}px 0 ${from.toFixed(1)}px round ${leftRadius} ${rightRadius} ${rightRadius} ${leftRadius})`;
-      part.style.setProperty("--shade", shade);
-      part.style.maskImage = part.style.webkitMaskImage = mask;
-      part.style.maskSize = part.style.webkitMaskSize = size;
-      part.style.maskPosition = part.style.webkitMaskPosition = place;
-    }
-    let painted = start;
-    let follow = "";
+    const sections: InkSection[] = [];
     for (const [slot, stretch] of lane.stretches.entries()) {
-      if (stretch.left >= lane.left + reveal) break;
       const previous = lane.stretches[slot - 1], next = lane.stretches[slot + 1];
       const from = previous ? (previous.right + stretch.left) / 2 - left : start;
-      const to = next ? Math.min(end, (stretch.right + next.left) / 2 - left) : end;
-      const motion = stretchMotion(layout, stretch);
-      if (to === end) follow = strokeFollow(motion);
-      if (!motion) continue;
-      fill(painted, from);
-      fill(from, to, motion);
-      painted = to;
+      if (from >= end + 0.32 * em) break;
+      const to = next ? (stretch.right + next.left) / 2 - left : full;
+      if (to > from) sections.push({ from, to, motion: stretchMotion(layout, stretch) });
     }
-    fill(painted, end);
-    while (row.children.length > output) row.lastChild!.remove();
+    const outline = sections.some((section) => section.motion)
+      ? movingOutline(sections, left, top, tall, full, end, angle, em)
+      : undefined;
+    const origin = left + (outline?.x ?? 0);
+    const shade = laneShade(lane, origin, pieces, em, time);
+    const mask = `${laneMask(lane, origin, pieces, em, time)}, ${WAVER}`;
+    const size = `100% 100%, ${(2.8 * em).toFixed(1)}px 100%`;
+    const place = `0 0, ${((wobble(seed - index) + 0.5) * 2.8 * em).toFixed(1)}px 0`;
+    band.style.transform = outline ? `${stroke} translate(${outline.x}px, ${outline.y}px)` : stroke;
+    band.style.width = `${outline?.width ?? full}px`;
+    band.style.height = `${outline?.height ?? tall}px`;
+    band.style.clipPath = outline?.clip
+      ?? `inset(0 ${Math.max(0, full - end).toFixed(1)}px 0 ${start.toFixed(1)}px round ${(0.14 * em).toFixed(1)}px)`;
+    band.style.setProperty("--shade", shade);
+    band.style.maskImage = band.style.webkitMaskImage = mask;
+    band.style.maskSize = band.style.webkitMaskSize = size;
+    band.style.maskPosition = band.style.webkitMaskPosition = place;
     // The tip rides just past the ink's edge, so a finished word ends with
     // the tip after its last letter rather than on it.
-    const nibWidth = nib;
-    const along = end - 0.12 * em;
-    tip.style.transform = `${follow}translate(${left + along}px, ${top + along * drift}px) rotate(${tilt}deg) skewX(${INK_SKEW}deg)`;
+    const tipHeight = outline ? outline.tip.bottom - outline.tip.top : tall;
+    const nibWidth = nib * (tipHeight / tall);
+    const along = (outline?.tip.x ?? end) - nibWidth * (0.12 / 0.42);
+    tip.style.transform = `${stroke} translate(${along}px, ${outline?.tip.top ?? 0}px)`;
     tip.style.width = `${nibWidth}px`;
-    tip.style.height = `${tall}px`;
+    tip.style.height = `${tipHeight}px`;
     tip.style.setProperty(
       "--tip-opacity",
       `${Math.min(1, (opening + reveal) / nibWidth)}`,
@@ -573,14 +637,7 @@ export const HighlighterWords = memo(function HighlighterWords({
       // The animator writes transforms before this batch paints.
       step();
     }
-    const settling = time === Infinity ? new MutationObserver(step) : undefined;
-    if (settling) {
-      for (const piece of element.querySelectorAll(".highlighter-piece")) {
-        settling.observe(piece, { attributes: true, attributeFilter: ["style"] });
-      }
-    }
     return () => {
-      settling?.disconnect();
       cancelBatched(element);
     };
   }, [pieces, time, seed]);
@@ -594,8 +651,15 @@ export const HighlighterWords = memo(function HighlighterWords({
       if (floating || latest.current !== -Infinity) redraw.current();
     });
     observer.observe(element);
+    const moving = new MutationObserver(() => {
+      if (latest.current !== -Infinity) redraw.current();
+    });
+    for (const piece of element.querySelectorAll(".highlighter-piece")) {
+      moving.observe(piece, { attributes: true, attributeFilter: ["style"] });
+    }
     return () => {
       observer.disconnect();
+      moving.disconnect();
       if (floating) highlighterAnchors.delete(floating);
       cancelBatched(element);
       layout.current = undefined;
