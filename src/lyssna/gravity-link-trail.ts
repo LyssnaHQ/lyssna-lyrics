@@ -59,7 +59,7 @@ export class GravityLinkTrail {
       const gain = Math.min(1 / 6, reach / (Math.hypot(x, y) || 1));
       return { x: x * gain, y: y * gain };
     });
-    let path = `M${pair(start)}`;
+    let path = "";
     for (let index = 0; index < segments; index++) {
       const a = points[index], b = points[index + 1];
       const outgoing = handles[index], incoming = handles[index + 1];

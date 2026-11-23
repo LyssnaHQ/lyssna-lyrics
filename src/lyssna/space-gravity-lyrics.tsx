@@ -334,126 +334,122 @@ type GravityBody = Body & { spawned: boolean; entryFrame?: number };
 let kept: { signature: string; bodies: Map<string, GravityBody> } | undefined;
 
 const SVG = "http://www.w3.org/2000/svg";
-let linkCount = 0;
+interface TrailPose {
+  entry: { x: number; y: number };
+  exit: { x: number; y: number };
+  angle: number;
+  band: number;
+  opacity: number;
+}
 
-/** A drawn link's elements and state, kept per sheet so frames never
- *  search the DOM for them. */
-interface Link {
-  path: SVGPathElement;
-  gradient: SVGLinearGradientElement;
-  stops: SVGStopElement[];
-  /** How far the pen has drawn, 0 to 1, and when it last moved. */
-  drawn: number;
-  at: number;
-  /** Each half's eased strength. */
-  strengths: [number, number];
-  leavingAt?: number;
-  /** The two words it joins, and the seed that sets its swing. */
-  from: string;
-  to: string;
-  seed: number;
+interface TrailLink {
+  from: Entity;
+  to: Entity;
   begin: number;
-  finish: number;
   trail?: GravityLinkTrail;
+}
+
+interface TrailStroke {
+  path: SVGPathElement;
+  links: TrailLink[];
   geometry?: string;
-  axis?: string;
-  dash?: string;
-}
-const sheets = new WeakMap<SVGSVGElement, Map<string, Link>>();
-
-/** How strongly a word shows, from its role, the way the stylesheet sets
- *  its opacity; read from classes, never computed style, so no frame
- *  forces a style recalculation. */
-function strengthOf(entity: Entity, elements: Map<string, HTMLElement>) {
-  const classes = elements.get(entity.key)?.classList;
-  if (!classes || classes.contains("exiting")) return 0;
-  return classes.contains("current")
-    ? 1
-    : classes.contains("next")
-      ? 0.34
-      : 0.22;
+  leavingAt?: number;
 }
 
-function wordInk(elements: Map<string, HTMLElement>, key: string) {
-  const word = elements.get(key);
-  return word && highlighterAnchors.get(word);
-}
+const sheets = new WeakMap<SVGSVGElement, {
+  links: Map<string, TrailLink>;
+  strokes: Map<number, TrailStroke>;
+  connected: Set<string>;
+}>();
 
-/** Convert a point under the word's ink to stage coordinates. For a word
- *  still waiting to be sung, land just inside its text box. */
-function linkPoint(body: GravityBody, side: -1 | 1, anchor?: InkAnchor) {
+function wordPose(body: GravityBody, word: HTMLElement): TrailPose {
   const angle = body.angle * Math.PI / 180;
-  const localX = anchor ? anchor.x - body.width / 2
-    : side * Math.max(0, body.width / 2 - body.height * 0.2);
-  const x = localX * body.scale;
-  const y = anchor ? (anchor.y - body.height / 2) * body.scale : 0;
+  const cos = Math.cos(angle), sin = Math.sin(angle);
+  const ink = highlighterAnchors.get(word);
+  const reach = body.width / 2 - Math.min(body.width / 4, body.height * 0.2);
+  const project = (anchor: InkAnchor | undefined, side: -1 | 1) => {
+    const x = (anchor ? anchor.x - body.width / 2 : side * reach) * body.scale;
+    const y = anchor ? (anchor.y - body.height / 2) * body.scale : 0;
+    return { x: body.x + cos * x - sin * y, y: body.y + sin * x + cos * y };
+  };
+  const classes = word.classList;
+  const opacity = classes.contains("exiting") ? 0
+    : classes.contains("current") ? 1 : classes.contains("next") ? 0.34 : 0.22;
   return {
-    x: body.x + Math.cos(angle) * x - Math.sin(angle) * y,
-    y: body.y + Math.sin(angle) * x + Math.cos(angle) * y,
+    entry: project(ink?.entry, -1),
+    exit: project(ink?.exit, 1),
+    angle,
+    opacity,
+    band: body.height * body.scale * 0.84,
   };
 }
 
-/** The shortest pause between lines that shows the waiting dots. */
-const BREAK_MS = 2500;
-
-function linkTiming(from: Entity, to: Entity, a: GravityBody, b: GravityBody, startInk: InkAnchor, endInk?: InkAnchor) {
-  const start = linkPoint(a, 1, startInk), end = linkPoint(b, -1, endInk);
-  const distance = Math.hypot(end.x - start.x, end.y - start.y);
+function linkBegin(from: Entity, to: Entity, a: TrailPose, b: TrailPose) {
+  const distance = Math.hypot(b.entry.x - a.exit.x, b.entry.y - a.exit.y);
   const travel = Math.min(MAX_LINK_TRAVEL_MS, Math.max(135, 90 + distance * 1.1));
   const depart = from.start + Math.min(90, (from.end - from.start) * 0.28);
-  const finish = Math.max(depart + 55, to.start - LINK_LEAD_MS);
-  return { begin: Math.max(depart, finish - travel), finish };
+  return Math.max(depart, to.start - LINK_LEAD_MS - travel);
 }
 
-/** Lays a link beneath the two strokes as their words drift. */
-function shapeLink(link: Link, a: GravityBody, b: GravityBody, width: number, startInk: InkAnchor,
-  endInk: InkAnchor | undefined, dt?: number) {
-  const { path, gradient } = link;
-  const stroke = width * Math.min(startInk.height * a.scale, (endInk?.height ?? b.height * 0.84) * b.scale);
-  const start = linkPoint(a, 1, startInk), end = linkPoint(b, -1, endInk);
-  const dx = end.x - start.x, dy = end.y - start.y;
-  const length = Math.hypot(dx, dy);
-  // Leave and arrive along each word's slant, with a seeded lift so
-  // links swing their own way.
-  const reach = Math.min(160, length * 0.45);
-  const lift = ((link.seed % 200) / 100 - 1) * 0.5;
-  const out = a.angle * Math.PI / 180, into = b.angle * Math.PI / 180;
-  const swing = lift * Math.PI / 6;
-  const c1 = {
-      x: start.x + Math.cos(out + swing) * reach,
-      y: start.y + Math.sin(out + swing) * reach,
-    },
-    c2 = {
-      x: end.x - Math.cos(into - swing) * reach,
-      y: end.y - Math.sin(into - swing) * reach,
-    };
-  const point = (p: { x: number; y: number }) =>
-    `${p.x.toFixed(1)} ${p.y.toFixed(1)}`;
-  let geometry: string;
+const coordinates = (point: { x: number; y: number }) =>
+  `${point.x.toFixed(1)} ${point.y.toFixed(1)}`;
+
+function trailCurve(link: TrailLink, a: TrailPose, b: TrailPose, dt?: number) {
+  const start = a.exit, end = b.entry;
+  const reach = Math.min(160, Math.hypot(end.x - start.x, end.y - start.y) * 0.45);
+  const swing = ((link.from.seed % 200) / 100 - 1) * Math.PI / 12;
+  const out = a.angle, into = b.angle;
+  const first = { x: start.x + Math.cos(out + swing) * reach, y: start.y + Math.sin(out + swing) * reach };
+  const second = { x: end.x - Math.cos(into - swing) * reach, y: end.y - Math.sin(into - swing) * reach };
   if (dt === undefined) {
     link.trail = undefined;
-    geometry = `M${point(start)}C${point(c1)} ${point(c2)} ${point(end)}`;
-  } else {
-    const trail = link.trail ??= new GravityLinkTrail();
-    geometry = trail.draw(start, c1, c2, end, out, into, dt);
+    return `C${coordinates(first)} ${coordinates(second)} ${coordinates(end)}`;
   }
-  if (geometry !== link.geometry) {
-    link.geometry = geometry;
-    path.setAttribute("d", geometry);
-  }
-  const strokeWidth = `${stroke.toFixed(1)}px`;
-  if (path.style.strokeWidth !== strokeWidth) path.style.strokeWidth = strokeWidth;
-  // Move both ends of a unit gradient with a single attribute write.
-  const x = (length < 0.05 ? 1 : dx).toFixed(1), y = dy.toFixed(1);
-  const axis = `matrix(${x} ${y} ${(-dy).toFixed(1)} ${x} ${point(start)})`;
-  if (axis !== link.axis) {
-    link.axis = axis;
-    gradient.setAttribute("gradientTransform", axis);
-  }
+  const trail = link.trail ??= new GravityLinkTrail();
+  return trail.draw(start, first, second, end, out, into, dt);
 }
 
-/** Keep the current and previous lead trails. Backing trails connect only
- *  words in the same phrase and fade when that phrase ends. */
+/** Each connected run is one SVG stroke beneath and between its words. */
+function paintTrail(stroke: TrailStroke, pose: (key: string) => TrailPose | undefined,
+  connected: Set<string>, width: number, dt?: number) {
+  const next = new Map<string, TrailLink>();
+  const incoming = new Set<string>();
+  for (const link of stroke.links) {
+    if (!pose(link.from.key) || !pose(link.to.key)) continue;
+    next.set(link.from.key, link);
+    incoming.add(link.to.key);
+  }
+  let geometry = "";
+  let band = Infinity, strength = 0;
+  for (const [head, first] of next) {
+    if (incoming.has(head)) continue;
+    let a = pose(head)!;
+    geometry += `M${coordinates(a.entry)}L${coordinates(a.exit)}`;
+    connected.add(head);
+    band = Math.min(band, a.band);
+    strength = Math.max(strength, a.opacity);
+    for (let link: TrailLink | undefined = first; link; link = next.get(link.to.key)) {
+      const b = pose(link.to.key)!;
+      geometry += trailCurve(link, a, b, dt) + `L${coordinates(b.exit)}`;
+      connected.add(link.to.key);
+      band = Math.min(band, b.band);
+      strength = Math.max(strength, b.opacity);
+      a = b;
+    }
+  }
+  if (!geometry) return;
+  const { path } = stroke;
+  if (stroke.geometry !== geometry) {
+    stroke.geometry = geometry;
+    path.setAttribute("d", geometry);
+  }
+  const size = `${(band * width).toFixed(1)}px`;
+  if (path.style.strokeWidth !== size) path.style.strokeWidth = size;
+  const opacity = (strength * 0.64).toFixed(2);
+  if (path.style.strokeOpacity !== opacity) path.style.strokeOpacity = opacity;
+}
+
+/** Lead words share a trail. Each backing phrase has its own trail. */
 function drawLinks(
   sheet: SVGSVGElement,
   entities: ReadonlyMap<string, Entity>,
@@ -464,143 +460,90 @@ function drawLinks(
   now: number,
   dt?: number,
 ) {
-  const wanted = new Set<string>();
-  let drawn = sheets.get(sheet);
-  if (!drawn) sheets.set(sheet, (drawn = new Map()));
+  let state = sheets.get(sheet);
+  if (!state) sheets.set(sheet, state = { links: new Map(), strokes: new Map(), connected: new Set() });
+  const poses = new Map<string, TrailPose>();
+  const pose = (key: string) => {
+    const cached = poses.get(key);
+    if (cached) return cached;
+    const body = bodies.get(key), word = elements.get(key);
+    if (!body?.spawned || !word) return;
+    const next = wordPose(body, word);
+    poses.set(key, next);
+    return next;
+  };
   let current = -1;
+  const candidates = new Map<string, TrailLink>();
   if (width > 0) {
     for (const key of elements.keys()) {
       const entity = entities.get(key);
       if (entity && !entity.background && entity.start <= time) current = Math.max(current, entity.lead);
     }
+    for (const word of elements.keys()) {
+      const to = entities.get(word), from = to?.previous;
+      if (!to || !from || to.start - time > MAX_LINK_TRAVEL_MS + LINK_LEAD_MS) continue;
+      if (to.background ? time >= to.phraseEnd : to.lead < current - 1) continue;
+      const a = pose(from.key), b = pose(to.key);
+      if (!a || !b) continue;
+      const key = `${from.key}>${to.key}`;
+      const link = state.links.get(key) ?? { from, to, begin: linkBegin(from, to, a, b) };
+      if (time < link.begin) continue;
+      if (!to.background) current = Math.max(current, to.lead);
+      candidates.set(key, link);
+    }
   }
-  const connections: { from: Entity; to: Entity; a: GravityBody; b: GravityBody;
-    startInk: InkAnchor; endInk?: InkAnchor; key: string; begin: number; finish: number }[] = [];
-  for (const word of elements.keys()) {
-    if (width <= 0) break;
-    const to = entities.get(word), from = to?.previous;
-    if (!to || !from || !elements.has(from.key) || to.start - time > MAX_LINK_TRAVEL_MS + LINK_LEAD_MS) continue;
-    if (to.background ? time >= to.phraseEnd : to.lead < current - 1) continue;
-    const a = bodies.get(from.key), b = bodies.get(to.key);
-    if (!a?.spawned || !b?.spawned) continue;
-    const startInk = wordInk(elements, from.key)?.exit;
-    if (!startInk) continue;
-    const endInk = wordInk(elements, to.key)?.entry;
-    const key = `${from.key}>${to.key}`;
-    const { begin, finish } = drawn.get(key) ?? linkTiming(from, to, a, b, startInk, endInk);
-    if (time < begin) continue;
-    if (!to.background) current = Math.max(current, to.lead);
-    connections.push({ from, to, a, b, startInk, endInk, key, begin, finish });
-  }
-  for (const { from, to, a, b, startInk, endInk, key, begin, finish } of connections) {
-    // Links within the sung line and the one before, and the link from
-    // that earlier line into the sung one.
-    const within =
-      from.lead === to.lead && (to.lead === current || to.lead === current - 1);
-    const across = !to.background && from.lead === current - 1 && to.lead === current;
+
+  const wanted = new Map<number, TrailLink[]>();
+  state.links.clear();
+  for (const [key, link] of candidates) {
+    const { from, to } = link;
+    const within = from.lead === to.lead && (to.lead === current || to.lead === current - 1);
+    const across = from.lead === current - 1 && to.lead === current;
     if (!(to.background || within || across)) continue;
-    wanted.add(key);
-    let link = drawn.get(key);
-    if (!link) {
+    state.links.set(key, link);
+    const scope = to.background ? to.line : -1;
+    const links = wanted.get(scope);
+    if (links) links.push(link);
+    else wanted.set(scope, [link]);
+  }
+
+  const connected = new Set<string>();
+  for (const [scope, links] of wanted) {
+    let stroke = state.strokes.get(scope);
+    if (!stroke) {
       const path = sheet.ownerDocument.createElementNS(SVG, "path");
-      path.dataset.link = key;
-      path.setAttribute("pathLength", "1");
-      // Each link's own gradient carries its two words' strengths.
-      const id = `gravity-link-${(linkCount += 1)}`;
-      const gradient = sheet.ownerDocument.createElementNS(SVG, "linearGradient");
-      gradient.id = id;
-      gradient.setAttribute("gradientUnits", "userSpaceOnUse");
-      gradient.setAttribute("x2", "1");
-      // The two halves blend across the middle third.
-      const stops = ["0", "0.33", "0.67", "1"].map((offset) => {
-        const stop = sheet.ownerDocument.createElementNS(SVG, "stop");
-        stop.setAttribute("offset", offset);
-        gradient.append(stop);
-        return stop;
-      });
-      path.dataset.gradient = id;
-      path.style.stroke = `url(#${id})`;
-      sheet.append(gradient, path);
-      link = {
-        path,
-        gradient,
-        stops,
-        drawn: time >= finish ? 1 : 0,
-        at: now,
-        strengths: [strengthOf(from, elements), strengthOf(to, elements)],
-        from: from.key,
-        to: to.key,
-        seed: from.seed,
-        begin,
-        finish,
-      };
-      drawn.set(key, link);
+      sheet.append(path);
+      stroke = { path, links };
+      state.strokes.set(scope, stroke);
     }
-    if (link.leavingAt !== undefined) {
-      link.leavingAt = undefined;
-      link.path.classList.remove("leaving");
+    if (stroke.leavingAt !== undefined) {
+      stroke.leavingAt = undefined;
+      stroke.path.classList.remove("leaving");
     }
-    const fromWord = elements.get(from.key);
-    if (begin < from.end && fromWord && !fromWord.hasAttribute("data-marker-handoff")) {
-      fromWord.setAttribute("data-marker-handoff", "");
+    stroke.links = links;
+    paintTrail(stroke, pose, connected, width, dt);
+  }
+  for (const [scope, stroke] of state.strokes) {
+    if (wanted.has(scope)) continue;
+    if (stroke.leavingAt === undefined) {
+      stroke.leavingAt = now;
+      stroke.path.classList.add("leaving");
     }
-    if (from.background && fromWord && !fromWord.hasAttribute("data-backing-trail")) {
-      fromWord.setAttribute("data-backing-trail", "");
-    }
-    shapeLink(link, a, b, width, startInk, endInk, dt);
-    const elapsed = Math.min(100, now - link.at);
-    link.at = now;
-    // The link dims with its words: each half eases toward its own word's
-    // strength, matching that word's ink, so a link from a dim word to the
-    // sung one is half and half.
-    // Across a break long enough for the waiting dots, both words are dim,
-    // so the link drawing over it shows brighter, still split in two.
-    const pause = across && time < finish && to.start - from.end >= BREAK_MS;
-    const settle = 1 - Math.exp(-elapsed / 120);
-    [from, to].forEach((entity, side) => {
-      const strength = strengthOf(entity, elements);
-      const goal = pause ? Math.min(1, strength * 2.5) : strength;
-      const opacity = (link.strengths[side] +=
-        (goal - link.strengths[side]) * settle).toFixed(2);
-      for (let index = side * 2; index < side * 2 + 2; index++) {
-        const stop = link.stops[index];
-        if (stop.getAttribute("stop-opacity") !== opacity)
-          stop.setAttribute("stop-opacity", opacity);
-      }
-    });
-    // The pen follows song time softly, so coarse time updates don't step,
-    // but it is always whole once it should have landed.
-    const progress = Math.min(1, (time - begin) / (finish - begin));
-    const target = progress * progress * (3 - 2 * progress);
-    link.drawn = progress === 1 ? 1 : link.drawn + (target - link.drawn) * (1 - Math.exp(-elapsed / 15));
-    const dash = (1 - link.drawn).toFixed(3);
-    if (dash !== link.dash) {
-      link.dash = dash;
-      link.path.style.strokeDashoffset = dash;
+    if (now - stroke.leavingAt >= 1200) {
+      stroke.path.remove();
+      state.strokes.delete(scope);
+    } else if (width > 0) {
+      paintTrail(stroke, pose, connected, width, dt);
     }
   }
-  for (const [key, link] of drawn) {
-    if (wanted.has(key)) continue;
-    if (link.leavingAt === undefined) {
-      link.leavingAt = now;
-      link.path.classList.add("leaving");
-    }
-    if (now - link.leavingAt >= 1200) {
-      link.gradient.remove();
-      link.path.remove();
-      const word = elements.get(link.from);
-      word?.removeAttribute("data-marker-handoff");
-      word?.removeAttribute("data-backing-trail");
-      drawn.delete(key);
-      continue;
-    }
-    // A fading link keeps following its words while they drift.
-    const a = bodies.get(link.from), b = bodies.get(link.to);
-    const startInk = wordInk(elements, link.from)?.exit;
-    if (width > 0 && a?.spawned && b?.spawned && startInk) {
-      shapeLink(link, a, b, width, startInk, wordInk(elements, link.to)?.entry, dt);
-    }
+  for (const key of state.connected) {
+    if (!connected.has(key)) elements.get(key)?.removeAttribute("data-marker-connected");
   }
+  for (const key of connected) {
+    const word = elements.get(key);
+    if (word && !word.hasAttribute("data-marker-connected")) word.setAttribute("data-marker-connected", "");
+  }
+  state.connected = connected;
 }
 
 /** One floating word. Memoised: while a song plays only the words whose
@@ -760,6 +703,9 @@ export function SpaceGravityLyrics({
     visualiser,
   };
   const links = useRef<SVGSVGElement>(null);
+  useLayoutEffect(() => {
+    for (const word of elements.current.values()) word.removeAttribute("data-marker-connected");
+  }, [highlighter, signature]);
   // A stable seek handler, so floating words skip re-rendering.
   const seekTo = useRef(onSeek);
   seekTo.current = onSeek;

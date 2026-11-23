@@ -1441,7 +1441,7 @@
 }
 /* An early handoff leaves a softer trail. This pass fills at the word's
    actual timing and inherits its spring transform. */
-:is(.highlighter-piece[data-sync-layer], .gravity-lyrics.linked .gravity-word[data-marker-handoff] .highlighter-piece)::before {
+:is(.highlighter-piece[data-sync-layer], .gravity-lyrics.linked .gravity-word[data-marker-connected] .highlighter-piece)::before {
   position: absolute;
   inset: 9% 0;
   z-index: -1;
@@ -1666,18 +1666,14 @@
   stroke-width: 11px;
   stroke-linecap: round;
   stroke-linejoin: round;
-  stroke-dasharray: 1 1;
-  transition: opacity 1.2s ease-out;
+  transition: opacity 1.2s ease-out, stroke-opacity 180ms ease-out;
 }
 .gravity-links path.leaving {
   opacity: 0;
 }
-.gravity-links stop {
-  stop-color: var(--highlighter-ink);
-}
-/* Lead words and backing words with an outgoing trail use the line as their pen tip. */
-.gravity-lyrics.linked .gravity-word:is(:not(.background), [data-backing-trail]) .highlighter-tip {
-  display: none;
+/* The shared trail paints the connected words. The timed layer stays on top. */
+.gravity-lyrics.linked .gravity-word[data-marker-connected] .highlighter-ink {
+  visibility: hidden;
 }
 /* Lyrics popout window, after Spicy Lyrics' popup lyrics: lyrics over the
    ambience, the song in the top corner, a seek bar along the bottom. */

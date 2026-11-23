@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from "react";
 import { ChevronUp, Disc3, FoldVertical, MicVocal, Music2, PanelLeftOpen, Settings as GearIcon, UnfoldVertical, X } from "lucide-react";
 import { getHost, type CanvasInfo, type Host, type Track } from "./host";
 import { useArtworkColor } from "./lyssna/artwork-color";
@@ -473,8 +473,13 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
     if (trigger) view.requestAnimationFrame(() => trigger.focus({ preventScroll: true }));
   }
   function closeQuickPicker() {
+    const trigger = quickPickerTrigger.current;
     setQuickPicker(undefined);
-    view.requestAnimationFrame(() => quickPickerTrigger.current?.focus({ preventScroll: true }));
+    view.requestAnimationFrame(() => {
+      if (quickPickerTrigger.current === trigger && trigger?.getAttribute("aria-expanded") === "false") {
+        trigger.focus({ preventScroll: true });
+      }
+    });
   }
   useEffect(() => {
     if (!quickPicker) return;
@@ -735,15 +740,19 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
             onClick={() => change({ [key]: !settings[key] })}><Icon /></button>)}
           {quickEffects.filter(({ id }) => settings.pinned_lyric_effects.includes(id)).map((effect) => {
             const { id, label, Icon } = effect;
-            if (effect.kind === "picker") return (
-              <button className="icon-button" type="button" key={id} data-icon={id}
+            if (effect.kind === "picker") return <Fragment key={id}>
+              <button className="icon-button" type="button" data-icon={id}
                 title={label} aria-label={label} aria-expanded={shownQuickPicker?.id === id}
                 onClick={(event) => {
                   quickPickerTrigger.current = event.currentTarget;
                   if (shownQuickPicker === effect) closeQuickPicker();
                   else setQuickPicker(effect);
                 }}><Icon /></button>
-            );
+              {shownQuickPicker === effect && <div className="lyssna-quick-expansion">
+                <QuickEffectPicker effect={effect} settings={preferences} change={change} close={closeQuickPicker}
+                  view={view} vertical={compact && !narrow} />
+              </div>}
+            </Fragment>;
             const active = settings[effect.id];
             return <button type="button" key={id} data-icon={id} title={label} aria-label={label} aria-pressed={active}
               className={`icon-button${active ? " active" : ""}`}
@@ -762,10 +771,6 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
           <button type="button" className="icon-button" title={returnToLyrics ? "Leave full screen" : "Close lyrics"}
             aria-label={returnToLyrics ? "Leave full screen" : "Close lyrics"} onClick={closeLyrics}><X size={18} /></button>
         </div>
-        {shownQuickPicker && <div className="lyssna-quick-expansion">
-          <QuickEffectPicker effect={shownQuickPicker} settings={preferences} change={change} close={closeQuickPicker}
-            view={view} vertical={compact && !narrow} />
-        </div>}
       </div>
       {!showSettings && notice && <div className="lyssna-popout-error" role="status">{notice}</div>}
       {!artworkDock && playback}

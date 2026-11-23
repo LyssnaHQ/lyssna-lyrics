@@ -317,10 +317,14 @@ function wobble(seed: number) {
   return value - Math.floor(value) - 0.5;
 }
 
-export type InkAnchor = { x: number; y: number; height: number };
+export type InkAnchor = { x: number; y: number };
 export const highlighterAnchors = new WeakMap<HTMLElement, { entry: InkAnchor; exit: InkAnchor }>();
 const INK_SKEW = -8;
 const INK_SKEW_TANGENT = Math.tan(INK_SKEW * Math.PI / 180);
+const INK_LEAD_EM = 0.16;
+const INK_TAIL_EM = 0.1;
+
+const laneTilt = (seed: number) => (wobble(seed) * 0.6).toFixed(2);
 
 function stretchMotion(layout: Layout, stretch: Stretch) {
   const { style } = layout.spans[stretch.index];
@@ -336,6 +340,25 @@ function strokeFollow(motion: ReturnType<typeof stretchMotion>) {
   return motion ? `matrix(${motion.scale}, 0, 0, ${motion.scale}, ${motion.x}, ${motion.y}) ` : "";
 }
 
+/** Links attach to the full word, so the sync highlight can sweep over it
+ *  without pulling either end of the trail across the text. */
+function fullInkAnchor(layout: Layout, lane: Lane, seed: number, entry: boolean): InkAnchor {
+  const { em, inkOrigin } = layout;
+  const left = lane.left - INK_LEAD_EM * em;
+  const width = lane.right - left + INK_TAIL_EM * em;
+  const overlap = Math.min(0.24 * em, width / 2);
+  const height = (lane.bottom - lane.top) * 0.84;
+  const y = height / 2;
+  const x = (entry ? overlap : width - overlap) + INK_SKEW_TANGENT * y;
+  const angle = Number(laneTilt(seed)) * Math.PI / 180;
+  const motion = stretchMotion(layout, entry ? lane.stretches[0] : lane.stretches.at(-1)!);
+  const scale = motion?.scale ?? 1;
+  return {
+    x: (inkOrigin?.x ?? 0) + (left + Math.cos(angle) * x - Math.sin(angle) * y) * scale + (motion?.x ?? 0),
+    y: (inkOrigin?.y ?? 0) + (lane.top + (lane.bottom - lane.top) * 0.09 + Math.sin(angle) * x + Math.cos(angle) * y) * scale + (motion?.y ?? 0),
+  };
+}
+
 /** Shows the ink revealed up to `path` along the pen's path. Each row has
  *  a continuous band that splits where sung pieces move, so the opening
  *  mark and the whole painted tail stay under their words. */
@@ -349,13 +372,19 @@ function paint(
   floating: HTMLElement | null,
 ) {
   const { em } = layout;
-  const lead = 0.16 * em,
-    tail = 0.1 * em,
+  const lead = INK_LEAD_EM * em,
+    tail = INK_TAIL_EM * em,
     nib = 0.42 * em;
   const shown = layout.lanes.filter((lane) => path > lane.start + 0.5);
-  const origin = layout.inkOrigin;
-  let entry: InkAnchor | undefined;
-  let exit: InkAnchor | undefined;
+  if (floating) {
+    const last = layout.lanes.length - 1;
+    if (last >= 0) {
+      highlighterAnchors.set(floating, {
+        entry: fullInkAnchor(layout, layout.lanes[0], seed, true),
+        exit: fullInkAnchor(layout, layout.lanes[last], seed + last, false),
+      });
+    } else highlighterAnchors.delete(floating);
+  }
   while (ink.children.length > shown.length) ink.lastChild!.remove();
   shown.forEach((lane, index) => {
     const row =
@@ -380,10 +409,9 @@ function paint(
       closing = tail * Math.max(0, Math.min(1, (reveal - width + ramp) / ramp));
     const end = lead + reveal + closing;
     // A hand drifts a little across a row.
-    const tilt = (wobble(seed + index) * 0.6).toFixed(2),
+    const tilt = laneTilt(seed + index),
       angle = Number(tilt) * Math.PI / 180,
       drift = Math.tan(angle);
-    const cos = origin ? Math.cos(angle) : 1, sin = origin ? Math.sin(angle) : 0;
     const stroke = `translate(${left}px, ${top}px) rotate(${tilt}deg) skewX(${INK_SKEW}deg)`;
     const shade = laneShade(lane, left, pieces, em, time);
     const mask = `${laneMask(lane, left, pieces, em, time)}, ${WAVER}`;
@@ -391,16 +419,6 @@ function paint(
     const place = `0 0, ${((wobble(seed - index) + 0.5) * 2.8 * em).toFixed(1)}px 0`;
     const start = lead - opening;
     let output = 1;
-    function anchor(at: number, motion?: ReturnType<typeof stretchMotion>): InkAnchor {
-      const y = tall / 2;
-      const x = at + INK_SKEW_TANGENT * y;
-      const scale = motion?.scale ?? 1;
-      return {
-        x: (origin?.x ?? 0) + (left + cos * x - sin * y) * scale + (motion?.x ?? 0),
-        y: (origin?.y ?? 0) + (top + sin * x + cos * y) * scale + (motion?.y ?? 0),
-        height: tall * scale,
-      };
-    }
     function fill(from: number, to: number, motion?: ReturnType<typeof stretchMotion>) {
       if (to <= from) return;
       const part = (row.children[output++] as HTMLElement | undefined) ?? row.appendChild(document.createElement("span"));
@@ -416,12 +434,6 @@ function paint(
       part.style.maskImage = part.style.webkitMaskImage = mask;
       part.style.maskSize = part.style.webkitMaskSize = size;
       part.style.maskPosition = part.style.webkitMaskPosition = place;
-      if (origin) {
-        // Keep the curve under the painted band even while it is only partly revealed.
-        const overlap = Math.min(0.24 * em, (to - from) / 2);
-        entry ??= anchor(from + overlap, motion);
-        exit = anchor(to - overlap, motion);
-      }
     }
     let painted = start;
     let follow = "";
@@ -454,10 +466,6 @@ function paint(
     // as the pen moves on, rather than vanishing.
     tip.classList.toggle("lifted", index !== shown.length - 1);
   });
-  if (floating) {
-    if (entry && exit) highlighterAnchors.set(floating, { entry, exit });
-    else highlighterAnchors.delete(floating);
-  }
 }
 
 /** Read every line before drawing any ink, including animation and resize

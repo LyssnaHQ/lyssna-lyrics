@@ -1,5 +1,5 @@
 import { useId, useLayoutEffect, useRef, useState } from "react";
-import { Ban, CaseLower, CaseSensitive, CaseUpper, ChartNoAxesColumn, ChevronLeft, History, Shuffle, SlidersHorizontal, Sparkles, Type } from "lucide-react";
+import { Ban, CaseLower, CaseSensitive, CaseUpper, ChartNoAxesColumn, ChevronDown, History, Shuffle, SlidersHorizontal, Sparkles, Type } from "lucide-react";
 import { useAnchoredPopover } from "./anchored-popover";
 import { FontControl } from "./font-settings";
 import { ANIMATOR_PRESETS, ANIMATOR_PRESET_LABELS, choosePreset, presetOf } from "./lyssna/animator-tuning";
@@ -64,7 +64,7 @@ function VerticalFontPicker({ settings, change, view }: {
   return <>
     <button className="lyssna-quick-choice" type="button" ref={trigger} title="Choose lyrics font"
       aria-label="Choose lyrics font" aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)}>
-      <Type size={16} aria-hidden="true" />
+      <ChevronDown size={16} aria-hidden="true" />
     </button>
     <div className="lyssna-quick-font-popover" id={id} ref={panel} popover="auto"
       onToggle={(event) => { if (event.newState === "closed" && !panel.current?.matches(":popover-open")) setOpen(false); }}>
@@ -112,9 +112,6 @@ export function QuickEffectPicker({ effect, settings, change, close, view, verti
   }, [effect, vertical]);
 
   return <div className="lyssna-quick-picker">
-    <button className="icon-button" type="button" title="Back to lyric controls" aria-label="Back to lyric controls" onClick={close}>
-      <ChevronLeft size={18} aria-hidden="true" />
-    </button>
     {effect.id === "lyric-font" ? <div className="lyssna-quick-font" ref={options}>
       {vertical ? <VerticalFontPicker settings={settings} change={change} view={view} />
         : <FontControl field="lyric_font" settings={settings} change={change} view={view} />}
