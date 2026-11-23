@@ -75,7 +75,7 @@ export function SongSheet({ url, onClose }: { url: string; onClose: () => void }
         <button type="button" onClick={onClose} aria-label="Close Lyssna song page"><X size={18} /></button>
       </div>
       {status && <p role="status">{status}</p>}
-      <iframe ref={frame} src={address} title="Lyssna song page"
+      <iframe key={address} ref={frame} src={address} title="Lyssna song page"
         sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox" />
     </div>
   </dialog>;
