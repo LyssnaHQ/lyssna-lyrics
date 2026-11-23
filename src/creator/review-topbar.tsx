@@ -4,7 +4,7 @@ import { accountChanged, hasLyssnaSession, readLyssnaProfile } from "../lyssna-a
 import { lyssnaInstallReady } from "../lyssna-api";
 import { canReview } from "./review-api";
 
-const navSelector = "#global-nav-bar, .main-globalNav-contentRight, .main-topBar-topbarContentRight";
+const controlsSelector = ".main-globalNav-contentRight, .main-topBar-topbarContentRight";
 const friendsSelector = '[data-restore-focus-key="buddy_feed"], button[aria-label="Friend Activity" i]';
 const bellSelector = `[data-testid="whats-new-feed-button"], button[aria-label="What's New" i], button[aria-label="Notifications" i]`;
 
@@ -17,7 +17,7 @@ export function reviewTopbar(host: Host, toggle: () => void, close: () => void) 
   button.setAttribute("aria-label", label);
   button.addEventListener("click", toggle);
   const root = host.mount(button);
-  root.render(<ClipboardCheck size={16} aria-hidden="true" />);
+  root.render(<ClipboardCheck size={20} aria-hidden="true" />);
 
   let allowed = false;
   let pressed = false;
@@ -26,15 +26,15 @@ export function reviewTopbar(host: Host, toggle: () => void, close: () => void) 
     pressed = open;
     if (button.getAttribute("aria-pressed") !== String(open)) button.setAttribute("aria-pressed", String(open));
     if (!allowed) { button.remove(); return; }
-    const nav = document.querySelector(navSelector);
-    const friends = nav?.querySelector(friendsSelector);
-    if (friends) {
-      if (friends.previousElementSibling !== button) friends.before(button);
-      return;
-    }
+    const nav = document.getElementById("global-nav-bar");
     const bell = nav?.querySelector(bellSelector);
-    const anchor = bell?.closest("[data-restore-focus-key]") ?? bell;
-    if (anchor && anchor.nextElementSibling !== button) anchor.after(button);
+    const anchor = (bell?.closest("[data-restore-focus-key]") ?? bell) ?? nav?.querySelector(friendsSelector);
+    const controls = document.querySelector(controlsSelector) ?? anchor?.parentElement;
+    if (controls && controls !== nav) {
+      if (controls.firstElementChild !== button) controls.prepend(button);
+    } else if (anchor && anchor.previousElementSibling !== button) {
+      anchor.before(button);
+    }
   };
   const updateAccess = () => {
     const id = ++request;

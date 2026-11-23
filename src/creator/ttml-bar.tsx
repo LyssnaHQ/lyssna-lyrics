@@ -14,7 +14,11 @@ export function CreatorSpeed({ speed, min, max, disabled, onChange, openAudio, s
     <label className="lyssna-editor-speed" title={disabled ? "Share Spotify audio or open a local file to change speed" : "Playback speed"}>
       <Gauge size={15} aria-hidden="true" />
       <input type="range" aria-label="Playback speed" min={min} max={max} step={0.05}
-        value={speed} disabled={disabled} onChange={(event) => onChange(event.currentTarget.valueAsNumber)} />
+        value={speed} disabled={disabled}
+        style={{ ["--range" as string]: `${((speed - min) / (max - min)) * 100}%` }}
+        onChange={(event) => onChange(event.currentTarget.valueAsNumber)}
+        onDoubleClick={() => onChange(1)}
+        onPointerUp={(event) => event.currentTarget.blur()} />
       <output>{speed.toFixed(2)}×</output>
     </label>
     {showAudioPicker && <button type="button" className="lyssna-playbar-view-button" aria-label="Open local audio"

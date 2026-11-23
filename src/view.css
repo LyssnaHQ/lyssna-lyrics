@@ -240,11 +240,29 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
 .lyssna-editor-speed:has(input:disabled) { opacity: .42; }
 .lyssna-editor-speed svg { flex-shrink: 0; }
 .lyssna-editor-speed input {
-  width: clamp(38px, 5vw, 90px);
+  --speed-fill: #e5e5e5;
+  width: clamp(38px, 5vw, 88px);
+  min-width: 0;
+  height: 4px;
   margin: 0;
-  accent-color: var(--spice-text, #fff);
+  appearance: none;
+  border-radius: 5px;
+  outline: 0;
+  background: linear-gradient(90deg, var(--speed-fill) var(--range), #ffffff25 var(--range));
+  cursor: pointer;
 }
-.lyssna-editor-speed output { font-size: 11px; font-variant-numeric: tabular-nums; }
+.lyssna-editor-speed input:disabled { cursor: default; }
+.lyssna-editor-speed input:enabled:is(:hover, :focus-visible) { --speed-fill: #fff; }
+.lyssna-editor-speed input::-webkit-slider-thumb {
+  appearance: none;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: #fff;
+  opacity: 0;
+}
+.lyssna-editor-speed input:enabled:is(:hover, :focus-visible)::-webkit-slider-thumb { opacity: 1; }
+.lyssna-editor-speed output { min-width: 38px; font-size: 12px; font-variant-numeric: tabular-nums; }
 .lyssna-editor-audio-controls .lyssna-playbar-view-button:disabled { opacity: .42; cursor: default; }
 .lyssna-editor-play-slot:empty,
 .lyssna-editor-play-slot:not(:empty) + [data-testid="control-button-playpause"] { display: none; }
@@ -1029,6 +1047,7 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
 
 .lyssna-lyrics-view .lyrics-page .lyrics-album .lyrics-details .lyrics-title .song-title {
   font-size: 36px;
+  font-weight: 780;
 }
 
 .lyssna-lyrics-view .lyrics-page .lyrics-album .lyrics-details .lyrics-artists {
