@@ -867,7 +867,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
       </> : <div className="lyrics-message"><Music2 /><h2>Play something you love</h2><p>Your lyrics will appear here.</p></div>)}
       {track && showVisualiser && !coverOnly && <SpotifyVisualiser key={track.id} host={host} trackId={track.id}
         opacity={settings.lyrics_visualiser_opacity} playing={playing} capture={capture} motion={visualiser} read={localPlayback?.read} />}
-      <div className="lyrics-toolbar" ref={quickToolbar} data-effect-picker={shownQuickPicker?.id}
+      <div className={`lyrics-toolbar${settings.liquid_glass ? " liquid-glass" : ""}`} ref={quickToolbar} data-effect-picker={shownQuickPicker?.id}
         data-vertical={compact && !narrow || undefined} role="toolbar" aria-label="View controls">
         <div className="lyrics-toolbar-actions">
           {([

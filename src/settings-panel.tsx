@@ -240,7 +240,7 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
       </SettingRow>,
     ]],
     ["Appearance", "Appearance", [
-      flag("liquid_glass", "Liquid Glass", "Use translucent glass for settings, source management, and the TTML database.", "theme glass blur translucent"),
+      flag("liquid_glass", "Liquid Glass", "Use translucent glass for the lyrics toolbar and dialogs.", "theme glass blur translucent"),
       visualRowsByKey.get("background"),
       range("lyrics_background_brightness", "Dynamic background brightness", "Adjust the brightness of animated and still artwork backgrounds.",
         "background brightness ambience dynamic animated artwork dim", [0, maxBackgroundBrightness, 1], defaults.lyrics_background_brightness, "%"),
