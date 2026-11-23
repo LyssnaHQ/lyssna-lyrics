@@ -1,6 +1,7 @@
 import type { Host, Track } from "./host";
 import { hasLyssnaSession, lyssnaAccountRequest } from "./lyssna-account";
 import { lyssnaRetryAt } from "./lyssna-api";
+import { readLyssnaLyrics } from "./lyssna-provider";
 import type { AppleOriginal } from "./lyssna/types";
 
 export const publishingRoles = ["uploader", "reviewer", "moderator", "admin"];
@@ -37,12 +38,20 @@ export async function submitLyssnaTtml(file: File, track: Track, host: Host, con
   if (submissions.length === 0 && !await confirmFirstUpload()) return;
 
   const validIsrc = appleOriginal?.isrc ?? await host.lookupIsrc(track.id, track.isrc).catch(() => undefined);
+  let original = appleOriginal;
+  if (original && original.timing_kind !== "word") {
+    // Older drafts kept the source reference without its timing kind.
+    const source = await readLyssnaLyrics({ ...track, isrc: original.isrc }, host.lookupIsrc, "apple_music").catch(() => undefined);
+    if (source === undefined) throw new Error("Couldn’t check the original Apple Music sync. Your draft is still saved. Try again later.");
+    const verified = source?.appleOriginal;
+    original = verified?.apple_id === original.apple_id && verified.sha256 === original.sha256 ? verified : undefined;
+  }
   const links = validIsrc ? [{ platform: "isrc", external_id: validIsrc }] : [];
   links.push({ platform: "spotify", external_id: track.id });
   const artists = track.artistLinks?.map(({ name }) => name).filter(Boolean);
   const response = await lyssnaAccountRequest("/v1/submissions", {
     ttml, links, title: track.title,
-    ...(appleOriginal && { apple_original: { apple_id: appleOriginal.apple_id, sha256: appleOriginal.sha256 } }),
+    ...(original && { apple_original: { apple_id: original.apple_id, sha256: original.sha256 } }),
     artists: artists?.length ? artists : [track.artists || track.artist].filter(Boolean),
     album: track.album || undefined,
   }).catch(() => {

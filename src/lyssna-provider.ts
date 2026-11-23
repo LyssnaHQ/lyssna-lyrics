@@ -268,11 +268,11 @@ export async function readLyssnaLyrics(track: Track, lookupIsrc: Host["lookupIsr
   }
   const lyrics = parseLocalTtml(value.ttml);
   if (!lyrics.lines.length) return;
-  const hash = apple && value.apple_id && isrc
+  const hash = apple && value.timing_kind === "word" && value.apple_id && isrc
     ? await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value.ttml))
     : undefined;
-  const appleOriginal = hash && value.apple_id && isrc ? {
-    apple_id: value.apple_id, isrc,
+  const appleOriginal: Lyrics["appleOriginal"] = hash && value.apple_id && isrc ? {
+    apple_id: value.apple_id, isrc, timing_kind: "word",
     sha256: Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, "0")).join(""),
   } : undefined;
   const offset = value.offset_ms;

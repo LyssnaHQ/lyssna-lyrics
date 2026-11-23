@@ -39,6 +39,7 @@ export interface AppleOriginal {
   apple_id: string;
   sha256: string;
   isrc: string;
+  timing_kind?: "word";
 }
 export interface Lyrics {
   appleOriginal?: AppleOriginal;
