@@ -847,20 +847,12 @@
   font-size: 12px;
   color: var(--muted, light-dark(#4c4c4c, #b3b3b3));
 }
-/* Manage: tuning floats over the artwork while full screen lyrics play. */
 .lyrics-settings.animator-panel {
-  position: fixed;
-  z-index: 900;
-  /* The fork's panel spans about a third of the window and three
-     quarters of its height. */
-  top: 9vh;
-  left: 1vw;
-  width: min(clamp(380px, 32vw, 680px), calc(100vw - 32px));
-  height: 75vh;
-  max-height: calc(100vh - 32px);
+  container: animator-panel / inline-size;
 }
 .animator-panel-header {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   justify-content: space-between;
   padding: 14px 12px 6px 18px;
@@ -885,6 +877,20 @@
 }
 .lyrics-settings.animator-panel .animator-preset-control > .settings-select {
   min-width: 0;
+}
+@container animator-panel (width < 480px) {
+  .animator-panel .setting-row:has(.settings-select) {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .animator-panel .setting-control > :is(.animator-preset-control, .settings-select) {
+    width: 100%;
+    min-width: 0;
+  }
+  .animator-panel .settings-select {
+    box-sizing: border-box;
+  }
 }
 /* Hide settings: a small button after the setting's name. */
 .setting-hide {

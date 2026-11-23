@@ -373,14 +373,15 @@ export function AnimatorBehavior({
   );
 }
 
-/** Custom tuning floating over full screen lyrics: the lyrics keep playing beside it so each change shows live.
- * Escape closes the panel without leaving full screen. */
+/** Custom tuning beside the lyrics so each change shows live. */
 export function AnimatorPanel({
+  view,
   animator,
   onChange,
   onBack,
   onClose,
 }: {
+  view: Window;
   animator?: AnimatorSettings;
   onChange: (animator: AnimatorSettings) => void;
   onBack: () => void;
@@ -393,9 +394,9 @@ export function AnimatorPanel({
       event.stopImmediatePropagation();
       onClose();
     };
-    document.addEventListener("keydown", closeOnEscape, true);
-    return () => document.removeEventListener("keydown", closeOnEscape, true);
-  }, [onClose]);
+    view.document.addEventListener("keydown", closeOnEscape, true);
+    return () => view.document.removeEventListener("keydown", closeOnEscape, true);
+  }, [view, onClose]);
   return (
     <aside
       className="animator-panel lyrics-settings"

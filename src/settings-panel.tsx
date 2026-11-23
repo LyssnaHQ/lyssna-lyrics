@@ -415,7 +415,7 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
   const backdropClass = `modal-backdrop lyrics-settings-backdrop${settings.liquid_glass ? " liquid-glass" : ""}${settings.reduce_motion ? " reduce-motion" : ""}${tuning ? " lyssna-animator-backdrop" : ""}`;
   const content = <div className={backdropClass} data-theme={settings.theme} style={fonts}
     onClick={(event) => { if (event.target === event.currentTarget) close(); }}>
-    {tuning ? <AnimatorPanel animator={settings.lyrics_animator} onChange={(lyrics_animator) => change({ lyrics_animator })}
+    {tuning ? <AnimatorPanel view={view} animator={settings.lyrics_animator} onChange={(lyrics_animator) => change({ lyrics_animator })}
       onBack={() => setTuning(false)} onClose={close} /> : <section className={`lyrics-settings plugin-settings${submenu ? " plugin-settings-submenu" : ""}`}>
       <header className="lyrics-settings-head">
         {submenu && <button type="button" ref={backButton} className="pill outline settings-submenu-back" onClick={back}>

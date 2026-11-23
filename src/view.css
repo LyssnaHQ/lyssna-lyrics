@@ -1445,11 +1445,24 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
 }
 
 .lyssna-lyrics-view .lyrics-settings-backdrop.lyssna-animator-backdrop {
+  padding: clamp(12px, 2cqw, 24px);
+  justify-items: start;
   background: transparent;
   pointer-events: none;
 }
 
+.lyssna-lyrics-view .lyrics-page.artwork-right:not(.narrow, .no-artwork) ~ .lyssna-animator-backdrop {
+  justify-items: end;
+}
+
 .lyssna-lyrics-view .lyssna-animator-backdrop > .animator-panel {
+  box-sizing: border-box;
+  width: min(100%, clamp(340px, 44%, 680px));
+  height: clamp(min(360px, 100%), 75%, 100%);
+  max-width: 100%;
+  max-height: 100%;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
   pointer-events: auto;
 }
 
