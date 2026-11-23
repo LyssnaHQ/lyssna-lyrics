@@ -14,6 +14,7 @@ export function lyssnaSongUrl(songId: string) {
 export function SongSheet({ url, onClose }: { url: string; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const frame = useRef<HTMLIFrameElement>(null);
+  const actions = useRef<HTMLDivElement>(null);
   const [address, setAddress] = useState(() => `${url}?embed&client=spicetify&navigation=sheet&opened=${Date.now()}`);
   const visited = useRef([address]);
   const [page, setPage] = useState(url);
@@ -21,8 +22,15 @@ export function SongSheet({ url, onClose }: { url: string; onClose: () => void }
 
   useLayoutEffect(() => {
     const element = dialog.current!;
+    const buttons = actions.current!;
     const view = element.ownerDocument.defaultView!;
     const timer = view.setTimeout(() => setStatus("The song page couldn’t load here. You can open it in your browser."), 8_000);
+    const syncActions = () => {
+      const iframe = frame.current;
+      if (!iframe?.contentWindow) return;
+      const right = Math.ceil(iframe.getBoundingClientRect().right - buttons.getBoundingClientRect().left);
+      iframe.contentWindow.postMessage({ type: "lyssna:sheet-actions", right }, site);
+    };
     const receive = (event: MessageEvent) => {
       if (event.origin !== site || event.source !== frame.current?.contentWindow) return;
       if (event.data?.type === "lyssna:sheet-close") onClose();
@@ -31,6 +39,7 @@ export function SongSheet({ url, onClose }: { url: string; onClose: () => void }
         view.clearTimeout(timer);
         setStatus("");
         setPage(site + event.data.path);
+        syncActions();
       }
       if (event.data?.type === "lyssna:sheet-navigate" && typeof event.data.href === "string") {
         let target: URL;
@@ -59,7 +68,11 @@ export function SongSheet({ url, onClose }: { url: string; onClose: () => void }
     };
     view.addEventListener("message", receive);
     element.showModal();
+    const observer = new ResizeObserver(syncActions);
+    observer.observe(element);
+    observer.observe(buttons);
     return () => {
+      observer.disconnect();
       view.removeEventListener("message", receive);
       view.clearTimeout(timer);
       element.close();
@@ -70,7 +83,7 @@ export function SongSheet({ url, onClose }: { url: string; onClose: () => void }
     onCancel={event => { event.preventDefault(); onClose(); }}
     onClick={event => { if (event.target === event.currentTarget) onClose(); }}>
     <div className="lyssna-song-sheet-content">
-      <div className="lyssna-song-sheet-actions">
+      <div className="lyssna-song-sheet-actions" ref={actions}>
         <a href={page} target="_blank" rel="noopener noreferrer"><ExternalLink size={15} /> Open in browser</a>
         <button type="button" onClick={onClose} aria-label="Close Lyssna song page"><X size={18} /></button>
       </div>

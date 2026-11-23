@@ -2211,10 +2211,12 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
 }
 
 .lyssna-song-sheet-actions :is(button, a) {
+  box-sizing: border-box;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 10px;
+  height: 34px;
+  padding: 0 10px;
   border: 1px solid #ffffff24;
   border-radius: 999px;
   background: #101014b8;
