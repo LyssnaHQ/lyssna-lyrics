@@ -13,7 +13,9 @@ export default async function start(context) {
     if (catalog?.protocol !== 1 || typeof tag !== "string" || !/^v?\d+\.\d+\.\d+$/.test(tag)) {
       throw new Error("Unrecognized Stable release");
     }
-    const entry = await import(`https://cdn.jsdelivr.net/gh/${repository}@${tag}/loader/entrypoint.mjs`);
+    // The 1.0.0 entrypoint expects a manifest beside itself, which that tag never shipped.
+    const entryTag = /^v?1\.0\.0$/.test(tag) ? "v1.1.0" : tag;
+    const entry = await import(`https://cdn.jsdelivr.net/gh/${repository}@${entryTag}/loader/entrypoint.mjs`);
     if (!signal.aborted) return await entry.start(signal, catalog);
   } catch (error) {
     if (!signal.aborted) console.error("[Lyssna Lyrics] Could not start", error);
