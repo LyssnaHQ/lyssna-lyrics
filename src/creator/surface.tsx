@@ -522,10 +522,10 @@ export function CreatorSurface({ host, view: owner, settings, close, reviewSelec
               return true;
             } catch (why) { notify(String(why), true); return false; }
           }}
-          onSubmit={async (song, text) => {
+          onSubmit={async (song, text, appleOriginal) => {
             const spotify = song.spotify ?? { id: song.id, title: song.name, cover: song.album.images[0]?.url ?? "",
               album: song.album.name, artists: song.artists.map(({ name }) => name).join(", "), artistLinks: song.artists };
-            const result = await submitLyssnaTtml(new File([text], "lyrics.ttml"), spotify, host, confirmFirstUpload);
+            const result = await submitLyssnaTtml(new File([text], "lyrics.ttml"), spotify, host, confirmFirstUpload, appleOriginal);
             if (!result) return;
             if (result.approved) {
               revalidateLyssnaSong(song.id, result.isrc, result.published);

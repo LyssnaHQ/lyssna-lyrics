@@ -28,7 +28,13 @@ export interface LyssnaContributor {
   avatar_url?: string;
   share: number;
 }
+export interface AppleOriginal {
+  apple_id: string;
+  sha256: string;
+  isrc: string;
+}
 export interface Lyrics {
+  appleOriginal?: AppleOriginal;
   lyssna?: { songId: string; contributors: LyssnaContributor[] };
   songwriters?: string[];
   attribution?: { uploader?: Contributor; maker?: Contributor };

@@ -282,7 +282,7 @@ export function TtmlCreator({
   onToggle: () => void;
   onSpeed: (rate: number) => Promise<void>;
   onApply: (track: Track, filename: string, ttml: string) => Promise<boolean>;
-  onSubmit: (track: Track, ttml: string) => Promise<string | undefined>;
+  onSubmit: (track: Track, ttml: string, appleOriginal?: Lyrics["appleOriginal"]) => Promise<string | undefined>;
   onParse: (
     filename: string,
     contents: string,
@@ -328,13 +328,14 @@ export function TtmlCreator({
   // The content last written for `uri`, so loading or seeding a song is not
   // mistaken for an edit and only real changes get a new save time.
   const [metadata, setMetadata] = useState<MetaEntry[] | undefined>();
-  const saved = useRef({ uri: "", content: "", loading: false });
-  const current = useRef({ uri: "", lines, text, metadata });
+  const [appleOriginal, setAppleOriginal] = useState<Lyrics["appleOriginal"]>();
+  const saved = useRef({ uri: "", content: "", loading: false, appleOriginal });
+  const current = useRef({ uri: "", lines, text, metadata, appleOriginal });
   const versions = useRef<{ at?: number; changed: boolean }>({
     changed: false,
   });
   const snapshot = useCallback((leaving: boolean) => {
-    const { uri, lines, text, metadata } = current.current;
+    const { uri, lines, text, metadata, appleOriginal } = current.current;
     const now = Date.now();
     if (
       !uri ||
@@ -343,7 +344,7 @@ export function TtmlCreator({
     )
       return;
     versions.current = { at: now, changed: false };
-    void addVersion({ uri, savedAt: now, lines, text, metadata }).catch(
+    void addVersion({ uri, savedAt: now, lines, text, metadata, appleOriginal }).catch(
       () => {},
     );
   }, []);
@@ -355,6 +356,7 @@ export function TtmlCreator({
     setLinesRaw(loaded);
     setText(draft?.text ?? "");
     setMetadata(draft?.metadata);
+    setAppleOriginal(draft?.appleOriginal);
     setSavedAt(draft?.savedAt);
     saved.current = {
       uri: track.uri,
@@ -364,6 +366,7 @@ export function TtmlCreator({
         draft?.metadata,
       ),
       loading: true,
+      appleOriginal: draft?.appleOriginal,
     };
     versions.current = { changed: false };
     // Opening at the song's position keeps a line picked elsewhere, such
@@ -397,9 +400,11 @@ export function TtmlCreator({
     const seeded = joinHyphenated(fromLyrics(lyrics));
     if (!seeded.length) return;
     setLinesRaw(seeded);
+    setAppleOriginal(lyrics.appleOriginal);
     setCursor(cursorAt(seeded, read()));
     setText(toText(seeded));
     saved.current.content = contentOf(seeded, toText(seeded), metadata);
+    saved.current.appleOriginal = lyrics.appleOriginal;
   }, [
     track,
     here,
@@ -412,16 +417,18 @@ export function TtmlCreator({
 
   useEffect(() => {
     if (!track) return;
-    current.current = { uri: track.uri, lines, text, metadata };
+    current.current = { uri: track.uri, lines, text, metadata, appleOriginal };
     // The load above ran in this same commit; these are the previous song's.
     if (saved.current.loading) {
       saved.current.loading = false;
       return;
     }
     const content = contentOf(lines, text, metadata);
-    if (saved.current.uri !== track.uri || saved.current.content === content)
+    if (saved.current.uri !== track.uri ||
+      (saved.current.content === content && saved.current.appleOriginal === appleOriginal))
       return;
     saved.current.content = content;
+    saved.current.appleOriginal = appleOriginal;
     versions.current.changed = true;
     if (!lines.length && !text.trim()) {
       writeDraft(track.uri, null);
@@ -434,13 +441,14 @@ export function TtmlCreator({
       lines,
       text,
       metadata,
+      appleOriginal,
       savedAt: now,
       song: track,
     });
     setSavedAt(now);
     markWorking(track.uri);
     snapshot(false);
-  }, [track, lines, text, metadata, snapshot]);
+  }, [track, lines, text, metadata, appleOriginal, snapshot]);
 
   const lastPosition = useRef(0);
   useEffect(() => {
@@ -532,6 +540,7 @@ export function TtmlCreator({
           return;
         }
         editedFor.current = uri;
+        setAppleOriginal(undefined);
         setText(geniusBackgrounds(found));
         setTextMode(true);
       }
@@ -1197,6 +1206,7 @@ export function TtmlCreator({
   const startFromLyrics = () => {
     if (!state.lyrics || !seedable) return;
     const seeded = fromLyrics(state.lyrics);
+    setAppleOriginal(state.lyrics.appleOriginal);
     setLines(seeded);
     setText(toText(seeded));
     setCursor({ line: 0, unit: 0 });
@@ -1703,11 +1713,12 @@ export function TtmlCreator({
       const previous = loadDraft(uri);
       if (previous) {
         await addVersion({
-          uri, savedAt: Date.now(), lines: previous.lines, text: previous.text, metadata: previous.metadata,
+          uri, savedAt: Date.now(), lines: previous.lines, text: previous.text, metadata: previous.metadata, appleOriginal: previous.appleOriginal,
         });
       }
       if (!live) return;
       editedFor.current = uri;
+      setAppleOriginal(undefined);
       setLines(loaded);
       setText(toText(loaded));
       setMetadata(reviewMetadata);
@@ -1793,6 +1804,7 @@ export function TtmlCreator({
         : fromLyrics(await onParse(file.name, source, track));
       if (!parsed.length)
         return notify(`No lyrics found in ${file.name}.`, true);
+      setAppleOriginal(undefined);
       setLines(parsed);
       setText(toText(parsed));
       setCursor({ line: 0, unit: 0 });
@@ -1861,7 +1873,7 @@ export function TtmlCreator({
     if (!track || submitting) return;
     setSubmitting(true);
     try {
-      const message = await onSubmit(track, ttml());
+      const message = await onSubmit(track, ttml(), appleOriginal);
       if (message) notify(message);
     } catch (error) {
       notify(String(error), true);
@@ -1885,6 +1897,7 @@ export function TtmlCreator({
       );
   };
   const restore = (version: DraftVersion) => {
+    setAppleOriginal(version.appleOriginal);
     setLines(version.lines);
     setText(version.text);
     if (version.metadata) setMetadata(version.metadata);

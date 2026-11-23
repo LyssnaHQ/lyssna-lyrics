@@ -268,6 +268,13 @@ export async function readLyssnaLyrics(track: Track, lookupIsrc: Host["lookupIsr
   }
   const lyrics = parseLocalTtml(value.ttml);
   if (!lyrics.lines.length) return;
+  const hash = apple && value.apple_id && isrc
+    ? await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value.ttml))
+    : undefined;
+  const appleOriginal = hash && value.apple_id && isrc ? {
+    apple_id: value.apple_id, isrc,
+    sha256: Array.from(new Uint8Array(hash), (byte) => byte.toString(16).padStart(2, "0")).join(""),
+  } : undefined;
   const offset = value.offset_ms;
   function timed(line: Line): Line {
     return {
@@ -277,7 +284,7 @@ export async function readLyssnaLyrics(track: Track, lookupIsrc: Host["lookupIsr
     };
   }
   const result: Lyrics = {
-    ...lyrics, source: sourceName, credit, timing_kind: value.timing_kind,
+    ...lyrics, source: sourceName, credit, timing_kind: value.timing_kind, appleOriginal,
     synced: value.timing_kind !== "static" && lyrics.synced,
     lines: offset ? lyrics.lines.map(timed) : lyrics.lines,
     lyssna: attribution,

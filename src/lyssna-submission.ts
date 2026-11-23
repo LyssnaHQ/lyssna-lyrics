@@ -1,6 +1,7 @@
 import type { Host, Track } from "./host";
 import { hasLyssnaSession, lyssnaAccountRequest } from "./lyssna-account";
 import { lyssnaRetryAt } from "./lyssna-api";
+import type { AppleOriginal } from "./lyssna/types";
 
 export const publishingRoles = ["uploader", "reviewer", "moderator", "admin"];
 
@@ -14,9 +15,10 @@ const submissionErrors: Record<string, string> = {
   links_conflict: "The track IDs in this file belong to different songs on Lyssna.",
   open_limit: "You’ve reached your limit for open submissions on Lyssna.",
   invalid_ttml: "Lyssna couldn’t read this TTML. Check the file and try again.",
+  apple_original_changed: "Lyssna no longer has the Apple Music version this draft started from. Your draft is still saved.",
 };
 
-export async function submitLyssnaTtml(file: File, track: Track, host: Host, confirmFirstUpload: () => Promise<boolean>) {
+export async function submitLyssnaTtml(file: File, track: Track, host: Host, confirmFirstUpload: () => Promise<boolean>, appleOriginal?: AppleOriginal) {
   if (!hasLyssnaSession()) throw new Error(submissionErrors.unauthorized);
   if (!/^[A-Za-z0-9]{22}$/.test(track.id)) throw new Error("Only Spotify songs can be submitted to Lyssna.");
   if (!/\.(ttml|xml)$/i.test(file.name)) throw new Error("Choose a TTML or XML lyrics file.");
@@ -32,18 +34,23 @@ export async function submitLyssnaTtml(file: File, track: Track, host: Host, con
   if (!Array.isArray(submissions)) throw new Error("Couldn’t check your Lyssna upload history. Try again later.");
   if (submissions.length === 0 && !await confirmFirstUpload()) return;
 
-  const validIsrc = await host.lookupIsrc(track.id, track.isrc).catch(() => undefined);
+  const validIsrc = appleOriginal?.isrc ?? await host.lookupIsrc(track.id, track.isrc).catch(() => undefined);
   const links = validIsrc ? [{ platform: "isrc", external_id: validIsrc }] : [];
   links.push({ platform: "spotify", external_id: track.id });
   const artists = track.artistLinks?.map(({ name }) => name).filter(Boolean);
-  const response = await lyssnaAccountRequest("/v1/submissions", {
+  const path = appleOriginal ? "/v1/submissions/apple-edit" : "/v1/submissions";
+  const response = await lyssnaAccountRequest(path, {
     ttml, links, title: track.title,
+    ...(appleOriginal && { apple_original: { apple_id: appleOriginal.apple_id, sha256: appleOriginal.sha256 } }),
     artists: artists?.length ? artists : [track.artists || track.artist].filter(Boolean),
     album: track.album || undefined,
   }).catch(() => {
     throw new Error("Couldn’t confirm the upload. Check your submissions on Lyssna before trying again.");
   });
   if (!response?.ok) {
+    if (appleOriginal && (response?.status === 404 || response?.status === 405)) {
+      throw new Error("Apple Music edit uploads aren’t available yet. Your draft is still saved. Try again later.");
+    }
     const problem = await response?.json().catch(() => null) as { error?: string; message?: string } | null | undefined;
     const known = problem?.error && Object.hasOwn(submissionErrors, problem.error) && submissionErrors[problem.error];
     if (known) throw new Error(known);

@@ -35,7 +35,13 @@ const types = slice(read("frontend/types.ts"), "export interface Word {", "expor
   avatar_url?: string;
   share: number;
 }
+export interface AppleOriginal {
+  apple_id: string;
+  sha256: string;
+  isrc: string;
+}
 export interface Lyrics {
+  appleOriginal?: AppleOriginal;
   /** Timing advertised by the lyrics provider. */
   timing_kind?: "word" | "line" | "static";
   lyssna?: { songId: string; contributors: LyssnaContributor[] };`);
