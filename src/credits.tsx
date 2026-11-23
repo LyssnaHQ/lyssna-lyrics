@@ -86,10 +86,10 @@ function LyssnaContributors({ attribution }: { attribution: NonNullable<Lyrics["
   return (apple || contributors.length > 0) && <div className="lyssna-community-credits lyssna-contributors">
     <span>Contributors:</span>
     <span className="lyssna-contributor-avatars">
-      {apple && <span className="lyssna-contributor-avatar" style={{ "--avatar-layer": contributors.length + 1 } as CSSProperties}
-        title="Apple Music" aria-hidden="true">
+      {apple && songUrl && <a className="lyssna-contributor-avatar" style={{ "--avatar-layer": contributors.length + 1 } as CSSProperties}
+        onClick={openSong} href={songUrl} target="_blank" rel="noopener noreferrer" title="Apple Music" aria-label="Apple Music lyric credits">
         <img src={appleMusicAvatar} alt="" />
-      </span>}
+      </a>}
       {contributors.map(({ user_id, username, avatar_url }, index) => {
         const name = username || "Deleted user";
         const position = { "--avatar-layer": contributors.length - index } as CSSProperties;
@@ -106,7 +106,11 @@ function LyssnaContributors({ attribution }: { attribution: NonNullable<Lyrics["
       })}
     </span>
     <span className="lyssna-contributor-names">
-      {apple && <span>Apple Music{named.length > 0 && ","}</span>}
+      {apple && songUrl && <span>
+        <a className="lyssna-credit-profile" onClick={openSong} href={songUrl} target="_blank" rel="noopener noreferrer">
+          <span className="lyssna-credit-name">Apple Music</span>
+        </a>{named.length > 0 && ","}
+      </span>}
       {named.map(({ user_id, username }, index) => <span key={user_id ?? index}>
         {username ? <a className="lyssna-credit-profile" onClick={openSong} href={songUrl ?? lyssnaProfile(username)} target="_blank" rel="noopener noreferrer">
           <span className="lyssna-credit-name">{username}</span>
