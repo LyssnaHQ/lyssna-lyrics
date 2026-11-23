@@ -47,6 +47,7 @@ import { HighlighterWords, highlighterTails, nextMarkerStarts } from "./highligh
 import { frameDue } from "./frame-cap";
 import { trackGravityStage } from "../gravity-frame";
 import { collideWithVisualiser, type VisualiserFrame } from "./visualiser-frame";
+import { GravityLinkTrail } from "./gravity-link-trail";
 
 interface Entity {
   key: string;
@@ -338,6 +339,7 @@ interface Link {
   seed: number;
   begin: number;
   finish: number;
+  trail?: GravityLinkTrail;
 }
 const sheets = new WeakMap<SVGSVGElement, Map<string, Link>>();
 
@@ -389,7 +391,7 @@ const linkWidth = (a: GravityBody, b: GravityBody, width: number) =>
   Math.min(a.height * a.scale, b.height * b.scale) * 0.84 * width;
 
 /** Lays a link along the edges of its two words as they drift. */
-function shapeLink(link: Link, a: GravityBody, b: GravityBody, width: number, elements: Map<string, HTMLElement>) {
+function shapeLink(link: Link, a: GravityBody, b: GravityBody, width: number, elements: Map<string, HTMLElement>, dt?: number) {
   const { path, gradient } = link;
   // As broad as the Highlighter's band on the smaller of the two words.
   const stroke = linkWidth(a, b, width);
@@ -402,22 +404,25 @@ function shapeLink(link: Link, a: GravityBody, b: GravityBody, width: number, el
   // links swing their own way.
   const reach = Math.min(160, length * 0.45);
   const lift = ((link.seed % 200) / 100 - 1) * 0.5;
-  const out = ((a.angle + lift * 30) * Math.PI) / 180,
-    into = ((b.angle - lift * 30) * Math.PI) / 180;
+  const out = a.angle * Math.PI / 180, into = b.angle * Math.PI / 180;
+  const swing = lift * Math.PI / 6;
   const c1 = {
-      x: start.x + Math.cos(out) * reach,
-      y: start.y + Math.sin(out) * reach,
+      x: start.x + Math.cos(out + swing) * reach,
+      y: start.y + Math.sin(out + swing) * reach,
     },
     c2 = {
-      x: end.x - Math.cos(into) * reach,
-      y: end.y - Math.sin(into) * reach,
+      x: end.x - Math.cos(into - swing) * reach,
+      y: end.y - Math.sin(into - swing) * reach,
     };
   const point = (p: { x: number; y: number }) =>
     `${p.x.toFixed(1)} ${p.y.toFixed(1)}`;
-  path.setAttribute(
-    "d",
-    `M${point(start)}C${point(c1)} ${point(c2)} ${point(end)}`,
-  );
+  if (dt === undefined) {
+    link.trail = undefined;
+    path.setAttribute("d", `M${point(start)}C${point(c1)} ${point(c2)} ${point(end)}`);
+  } else {
+    const trail = link.trail ??= new GravityLinkTrail();
+    path.setAttribute("d", trail.draw(start, c1, c2, end, out, into, dt));
+  }
   path.style.strokeWidth = `${stroke.toFixed(1)}px`;
   gradient.setAttribute("x1", start.x.toFixed(1));
   gradient.setAttribute("y1", start.y.toFixed(1));
@@ -438,6 +443,7 @@ function drawLinks(
   elements: Map<string, HTMLElement>,
   time: number,
   width: number,
+  dt?: number,
 ) {
   // Words fading out still carry their links, which fade with them.
   const lead = entities.filter(
@@ -508,7 +514,11 @@ function drawLinks(
       link.leaving = false;
       link.path.classList.remove("leaving");
     }
-    shapeLink(link, a, b, width, elements);
+    const fromWord = elements.get(from.key);
+    if (begin < from.end && fromWord && !fromWord.hasAttribute("data-marker-handoff")) {
+      fromWord.setAttribute("data-marker-handoff", "");
+    }
+    shapeLink(link, a, b, width, elements, dt);
     const elapsed = Math.min(100, now - link.at);
     link.at = now;
     // The link dims with its words: each half eases toward its own word's
@@ -540,7 +550,7 @@ function drawLinks(
     // A fading link keeps following its words while they drift.
     const a = bodies.get(link.from),
       b = bodies.get(link.to);
-    if (a?.spawned && b?.spawned) shapeLink(link, a, b, width, elements);
+    if (a?.spawned && b?.spawned) shapeLink(link, a, b, width, elements, dt);
     if (link.leaving) continue;
     link.leaving = true;
     link.path.classList.add("leaving");
@@ -548,6 +558,7 @@ function drawLinks(
       if (!link.leaving) return;
       link.gradient.remove();
       link.path.remove();
+      elements.get(link.from)?.removeAttribute("data-marker-handoff");
       drawn.delete(key);
     }, 1300);
   }
@@ -919,6 +930,7 @@ export function SpaceGravityLyrics({
           elements.current,
           live.current.time,
           live.current.linkWidth,
+          reduceMotion ? undefined : dt,
         );
       for (const [key, node] of elements.current) {
         const body = bodies.current.get(key);

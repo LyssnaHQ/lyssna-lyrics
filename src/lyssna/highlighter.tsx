@@ -45,12 +45,14 @@ export interface Piece {
   text: string;
   start_ms: number;
   end_ms: number;
+  sungEnd?: number;
 }
 
 function finishBeforeNext(piece: Piece, next?: number) {
   if (next === undefined || next <= piece.start_ms || piece.end_ms - next > 85 || next - piece.end_ms > 45) return piece;
   const end = Math.min(piece.end_ms, next);
-  return { ...piece, end_ms: end - Math.min(42, (end - piece.start_ms) * 0.2) };
+  const handoff = end - Math.min(42, (end - piece.start_ms) * 0.2);
+  return handoff < piece.end_ms ? { ...piece, end_ms: handoff, sungEnd: piece.end_ms } : piece;
 }
 
 export function nextMarkerStarts(lines: readonly Line[]) {
@@ -97,10 +99,10 @@ export function highlighterPieces(line: Line, followingStart?: number): Piece[] 
 }
 
 /** How much of a piece the marker covers at `time`, 0 to 1. */
-export function inkAt(piece: Piece, time: number) {
+export function inkAt(piece: Piece, time: number, end = piece.end_ms) {
   if (time <= piece.start_ms) return 0;
-  if (time >= piece.end_ms) return 1;
-  return (time - piece.start_ms) / Math.max(1, piece.end_ms - piece.start_ms);
+  if (time >= end) return 1;
+  return (time - piece.start_ms) / Math.max(1, end - piece.start_ms);
 }
 
 /** Ink strength (its opacity) for a stretch drawn `widthEm` wide in
@@ -579,20 +581,20 @@ export const HighlighterWords = memo(function HighlighterWords({
       {words.map((word) => {
         const last = word.at(-1)!;
         const trailing = /\s$/u.test(pieces[last].text);
+        const early = word.some((index) => pieces[index].sungEnd !== undefined);
         return (
           <Fragment key={word[0]}>
             <span className="highlighter-word">
-              {word.map((index) => (
-                <span
-                  key={index}
-                  className="highlighter-piece lyric-syllable"
-                  data-start={pieces[index].start_ms}
-                  data-end={pieces[index].end_ms}
-                  style={{ "--ink": inkAt(pieces[index], time) } as CSSProperties}
-                >
-                  {index === last ? pieces[index].text.trimEnd() : pieces[index].text}
-                </span>
-              ))}
+              {word.map((index) => {
+                const piece = pieces[index];
+                const sungEnd = piece.sungEnd ?? piece.end_ms;
+                const sung = inkAt(piece, time, sungEnd);
+                return <span key={index} className="highlighter-piece lyric-syllable"
+                  data-start={piece.start_ms} data-end={sungEnd} data-sync-layer={early || undefined}
+                  style={{ "--ink": sung, "--sync-ink": `${(sung * 100).toFixed(2)}%` } as CSSProperties}>
+                  {index === last ? piece.text.trimEnd() : piece.text}
+                </span>;
+              })}
             </span>
             {trailing ? " " : null}
           </Fragment>
