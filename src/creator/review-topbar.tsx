@@ -5,6 +5,7 @@ import { lyssnaInstallReady } from "../lyssna-api";
 import { canReview } from "./review-api";
 
 const controlsSelector = ".main-globalNav-contentRight, .main-topBar-topbarContentRight";
+const actionRowSelector = ".main-actionButtons";
 const friendsSelector = '[data-restore-focus-key="buddy_feed"], button[aria-label="Friend Activity" i]';
 const bellSelector = `[data-testid="whats-new-feed-button"], button[aria-label="What's New" i], button[aria-label="Notifications" i]`;
 
@@ -26,14 +27,14 @@ export function reviewTopbar(host: Host, toggle: () => void, close: () => void) 
     pressed = open;
     if (button.getAttribute("aria-pressed") !== String(open)) button.setAttribute("aria-pressed", String(open));
     if (!allowed) { button.remove(); return; }
-    const nav = document.getElementById("global-nav-bar");
+    const nav = document.querySelector(controlsSelector) ?? document.getElementById("global-nav-bar");
     const bell = nav?.querySelector(bellSelector);
-    const anchor = (bell?.closest("[data-restore-focus-key]") ?? bell) ?? nav?.querySelector(friendsSelector);
-    const controls = document.querySelector(controlsSelector) ?? anchor?.parentElement;
-    if (controls && controls !== nav) {
-      if (controls.firstElementChild !== button) controls.prepend(button);
-    } else if (anchor && anchor.previousElementSibling !== button) {
-      anchor.before(button);
+    const row = bell?.closest(actionRowSelector) ?? nav?.querySelector(actionRowSelector);
+    if (row) {
+      if (row.firstElementChild !== button) row.prepend(button);
+    } else {
+      const anchor = (bell?.closest("[data-restore-focus-key]") ?? bell) ?? nav?.querySelector(friendsSelector);
+      if (anchor && anchor.previousElementSibling !== button) anchor.before(button);
     }
   };
   const updateAccess = () => {
