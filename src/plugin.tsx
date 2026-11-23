@@ -722,40 +722,48 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
       {track && showVisualiser && <SpotifyVisualiser key={track.id} host={host} trackId={track.id}
         opacity={settings.lyrics_visualiser_opacity} playing={playing} capture={capture} motion={visualiser} read={localPlayback?.read} />}
       <div className="lyrics-toolbar" ref={quickToolbar} data-effect-picker={shownQuickPicker?.id} role="toolbar" aria-label="View controls">
-        {([
-          ["romanized", "Romanization", TranslateIcon],
-          ["experimental_word_sync", "Experimental word sync", WordSyncIcon],
-          ["lyrics_compact", "Compact lyrics", CompactIcon],
-          ["lyrics_hide_artwork", "Hide artwork", HideArtworkIcon],
-          ["lyrics_artwork_right", "Artwork on the right", SwapSidesIcon],
-        ] as const).map(([key, label, Icon]) => <button type="button" key={key} data-icon={key} title={label}
-          className={`icon-button${settings[key] ? " active" : ""}`} aria-label={label} aria-pressed={settings[key]}
-          onClick={() => change({ [key]: !settings[key] })}><Icon /></button>)}
-        {quickEffects.filter(({ id }) => settings.pinned_lyric_effects.includes(id)).map((effect) => {
-          const { id, label, Icon } = effect;
-          if (effect.kind === "picker") return (
-            <button className="icon-button" type="button" key={id} data-icon={id}
-              title={label} aria-label={label} aria-expanded={shownQuickPicker?.id === id}
-              onClick={(event) => { quickPickerTrigger.current = event.currentTarget; setQuickPicker(effect); }}><Icon /></button>
-          );
-          const active = settings[effect.id];
-          return <button type="button" key={id} data-icon={id} title={label} aria-label={label} aria-pressed={active}
-            className={`icon-button${active ? " active" : ""}`}
-            onClick={() => change({ [id]: !active })}><Icon /></button>;
-        })}
-        <span className="toolbar-divider" aria-hidden="true" />
-        <button ref={ttmlButton} type="button" className="icon-button" data-icon="upload" title="Load TTML" aria-label="Load TTML"
-          aria-haspopup="dialog" onClick={() => { setNotice(""); setShowTtml(true); }}><UploadIcon /></button>
-        {settings.lyrics_cache_button && <button type="button" className="icon-button" data-icon="retry" title="Refresh lyrics" aria-label="Refresh lyrics"
-          disabled={!track} onClick={() => { refreshLyrics(track ?? undefined, settings.lyrics_cache_action); setNotice("Refreshing lyrics…"); }}><RetryIcon /></button>}
-        <button type="button" className="icon-button" data-icon="fullscreen" title={fullscreen ? "Exit full screen" : externalCinema ? "Full screen" : "Full screen (Shift for cinema)"}
-          aria-label={fullscreen ? "Exit full screen" : "Full screen"}
-          aria-pressed={fullscreen} onClick={(event) => toggleFullscreen(event.shiftKey)}><FullScreenIcon /></button>
-        <button type="button" className="icon-button" data-icon="settings" title="Lyssna settings" aria-label="Lyssna settings"
-          onClick={() => { setNotice(""); setSettingsPage("settings"); }}><GearIcon size={18} /></button>
-        <button type="button" className="icon-button" title={returnToLyrics ? "Leave full screen" : "Close lyrics"}
-          aria-label={returnToLyrics ? "Leave full screen" : "Close lyrics"} onClick={closeLyrics}><X size={18} /></button>
-        {shownQuickPicker && <QuickEffectPicker effect={shownQuickPicker} settings={preferences} change={change} close={closeQuickPicker} />}
+        <div className="lyrics-toolbar-actions">
+          {([
+            ["romanized", "Romanization", TranslateIcon],
+            ["experimental_word_sync", "Experimental word sync", WordSyncIcon],
+            ["lyrics_compact", "Compact lyrics", CompactIcon],
+            ["lyrics_hide_artwork", "Hide artwork", HideArtworkIcon],
+            ["lyrics_artwork_right", "Artwork on the right", SwapSidesIcon],
+          ] as const).map(([key, label, Icon]) => <button type="button" key={key} data-icon={key} title={label}
+            className={`icon-button${settings[key] ? " active" : ""}`} aria-label={label} aria-pressed={settings[key]}
+            onClick={() => change({ [key]: !settings[key] })}><Icon /></button>)}
+          {quickEffects.filter(({ id }) => settings.pinned_lyric_effects.includes(id)).map((effect) => {
+            const { id, label, Icon } = effect;
+            if (effect.kind === "picker") return (
+              <button className="icon-button" type="button" key={id} data-icon={id}
+                title={label} aria-label={label} aria-expanded={shownQuickPicker?.id === id}
+                onClick={(event) => {
+                  quickPickerTrigger.current = event.currentTarget;
+                  if (shownQuickPicker === effect) closeQuickPicker();
+                  else setQuickPicker(effect);
+                }}><Icon /></button>
+            );
+            const active = settings[effect.id];
+            return <button type="button" key={id} data-icon={id} title={label} aria-label={label} aria-pressed={active}
+              className={`icon-button${active ? " active" : ""}`}
+              onClick={() => change({ [id]: !active })}><Icon /></button>;
+          })}
+          <span className="toolbar-divider" aria-hidden="true" />
+          <button ref={ttmlButton} type="button" className="icon-button" data-icon="upload" title="Load TTML" aria-label="Load TTML"
+            aria-haspopup="dialog" onClick={() => { setNotice(""); setShowTtml(true); }}><UploadIcon /></button>
+          {settings.lyrics_cache_button && <button type="button" className="icon-button" data-icon="retry" title="Refresh lyrics" aria-label="Refresh lyrics"
+            disabled={!track} onClick={() => { refreshLyrics(track ?? undefined, settings.lyrics_cache_action); setNotice("Refreshing lyrics…"); }}><RetryIcon /></button>}
+          <button type="button" className="icon-button" data-icon="fullscreen" title={fullscreen ? "Exit full screen" : externalCinema ? "Full screen" : "Full screen (Shift for cinema)"}
+            aria-label={fullscreen ? "Exit full screen" : "Full screen"}
+            aria-pressed={fullscreen} onClick={(event) => toggleFullscreen(event.shiftKey)}><FullScreenIcon /></button>
+          <button type="button" className="icon-button" data-icon="settings" title="Lyssna settings" aria-label="Lyssna settings"
+            onClick={() => { setNotice(""); setSettingsPage("settings"); }}><GearIcon size={18} /></button>
+          <button type="button" className="icon-button" title={returnToLyrics ? "Leave full screen" : "Close lyrics"}
+            aria-label={returnToLyrics ? "Leave full screen" : "Close lyrics"} onClick={closeLyrics}><X size={18} /></button>
+        </div>
+        {shownQuickPicker && <div className="lyssna-quick-expansion">
+          <QuickEffectPicker effect={shownQuickPicker} settings={preferences} change={change} close={closeQuickPicker} view={view} />
+        </div>}
       </div>
       {!showSettings && notice && <div className="lyssna-popout-error" role="status">{notice}</div>}
       {!artworkDock && playback}

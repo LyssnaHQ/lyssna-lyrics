@@ -2,7 +2,7 @@ import { useId, useRef, useState, type CSSProperties } from "react";
 import { ChevronDown, Check } from "lucide-react";
 import { useAnchoredPopover } from "./anchored-popover";
 import { getGlyphProbe, glyphProbeFamily } from "./fonts/glyph-probe-context";
-import { SettingRow } from "./lyssna/setting-row";
+import { Toggle } from "./lyssna/setting-row";
 import { readSettings, spotifyMix, type Settings } from "./settings";
 
 type FontField = "ui_font" | "lyric_font";
@@ -10,6 +10,7 @@ const defaultLabel = "Default";
 const systemSuggestions = ["Segoe UI", "Arial", "Georgia", "Verdana", "Trebuchet MS", "Consolas"];
 const appFallback = '"Lyssna Metropolis", "Segoe UI Variable Text", "Segoe UI", Arial, sans-serif';
 const lyricFallback = '"Lyssna Inter", "Segoe UI", sans-serif';
+const fontToggle = { lyric_font: "lyrics_font_enabled", ui_font: "custom_fonts_enabled" } as const;
 
 function fontChoice(value?: string) {
   const family = typeof value === "string" ? value.trim() : "";
@@ -19,7 +20,7 @@ function fontChoice(value?: string) {
 }
 
 export function selectedFont(settings: Settings, field: FontField) {
-  return settings.custom_fonts_enabled ? fontChoice(settings[field]) || undefined : undefined;
+  return settings[fontToggle[field]] ? fontChoice(settings[field]) || undefined : undefined;
 }
 
 export function fontFamily(family: string) {
@@ -85,12 +86,12 @@ export function copySpotifyFonts(page: Document) {
   if (families.trim()) page.documentElement.style.setProperty("--encore-body-font-stack", families);
 }
 
-export function FontSettings({ field, settings, change, view }: {
+export function FontControl({ field, settings, change, view }: {
   field: FontField; settings: Settings; change(patch: Partial<Settings>): void; view: Window;
 }) {
   const label = field === "lyric_font" ? "Lyrics font" : "App font";
   const value = fontChoice(settings[field]);
-  const enabled = settings.custom_fonts_enabled;
+  const enabled = settings[fontToggle[field]];
   const id = useId();
   const control = useRef<HTMLDivElement>(null);
   const list = useRef<HTMLUListElement>(null);
@@ -102,7 +103,7 @@ export function FontSettings({ field, settings, change, view }: {
   const [error, setError] = useState("");
   const filter = draft?.trim().toLowerCase() ?? "";
   const history = (Array.isArray(settings.font_history) ? settings.font_history : []).map(fontChoice).filter(Boolean);
-  const options = uniqueFamilies([defaultLabel, spotifyMix, ...history, ...systemSuggestions])
+  const options = uniqueFamilies([defaultLabel, spotifyMix, ...(value ? [value] : []), ...history, ...systemSuggestions])
     .filter((family) => family.toLowerCase().includes(filter));
   const expanded = enabled && open && options.length > 0;
   useAnchoredPopover(view, expanded, control, list, true);
@@ -128,9 +129,7 @@ export function FontSettings({ field, settings, change, view }: {
     });
   }
 
-  return <SettingRow label={label} help={field === "lyric_font"
-    ? "Choose a font or type an installed family name."
-    : "Used in Lyssna menus and controls. Type an installed family name to use it here."} keywords="font typeface spotify mix installed">
+  return <div className="lyssna-font-choice">
     <div className="lyssna-font-control" ref={control}>
       <input ref={input} className="settings-select" type="text" role="combobox" aria-label={label}
         aria-autocomplete="list" aria-expanded={expanded} aria-controls={expanded ? id : undefined}
@@ -169,5 +168,10 @@ export function FontSettings({ field, settings, change, view }: {
       </ul>
       {error && <p className="lyssna-font-error" id={`${id}-error`} role="status">{error}</p>}
     </div>
-  </SettingRow>;
+    <Toggle label={`Use custom ${label.toLowerCase()}`} checked={enabled} onChange={(checked) => {
+      ++attempt.current;
+      finish();
+      change({ [fontToggle[field]]: checked });
+    }} />
+  </div>;
 }

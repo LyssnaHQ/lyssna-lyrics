@@ -8,6 +8,7 @@ export const defaults = {
   theme: "dark" as "dark" | "light" | "system",
   liquid_glass: false,
   custom_fonts_enabled: true,
+  lyrics_font_enabled: true,
   ui_font: "",
   font_history: [] as string[],
   lyric_size: 36,
@@ -110,6 +111,7 @@ export function readSettings(): Settings {
     const { legacy_preferences_migrated: _migrated, desktop_animator_default_applied: _animator,
       lyrics_credit_lyssna: _legacyCredit, ...saved } = readRecord();
     const settings = { ...defaults, ...saved };
+    settings.lyrics_font_enabled = saved.lyrics_font_enabled ?? settings.custom_fonts_enabled;
     const yearPosition = saved.lyrics_year_position;
     if (yearPosition !== "off" && yearPosition !== "left" && yearPosition !== "right") {
       settings.lyrics_year_position = defaults.lyrics_year_position;

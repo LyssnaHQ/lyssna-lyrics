@@ -2,7 +2,7 @@ import { cloneElement, isValidElement, useEffect, useLayoutEffect, useRef, useSt
 import { AlignLeft, AppWindow, ChevronLeft, FileText, FlaskConical, Info, Palette, Pin, Search, Settings2, WandSparkles, Wrench, X } from "lucide-react";
 import EnhancementsSection from "./enhancements/section";
 import { AnimatorPanel } from "./lyssna/animator-settings";
-import { appFontStyles, FontSettings } from "./font-settings";
+import { appFontStyles, FontControl } from "./font-settings";
 import { HiddenSettings, SettingRow, SettingsQuery, Toggle } from "./lyssna/setting-row";
 import { visualRows } from "./lyssna/visual-settings";
 import { lyricSources, refreshLyrics } from "./lyric-sources";
@@ -230,9 +230,14 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
   const visualRowsByKey = new Map([...visuals.Look, ...visuals.Effects].map((row) => [visualRowKey(row), row]));
   const sections: Section[] = [
     ["Appearance", "Fonts", [
-      flag("custom_fonts_enabled", "Use custom fonts", "Choose a font for Lyssna or keep Default to use its built-in fonts.", "font typeface"),
-      <FontSettings key="lyric-font" field="lyric_font" settings={settings} change={change} view={view} />,
-      <FontSettings key="app-font" field="ui_font" settings={settings} change={change} view={view} />,
+      <SettingRow key="lyric-font" label="Lyrics font" help="Choose a font or type an installed family name."
+        keywords="font typeface spotify mix installed">
+        <FontControl field="lyric_font" settings={settings} change={change} view={view} />
+      </SettingRow>,
+      <SettingRow key="custom_fonts_enabled" label="App font" help="Used in Lyssna menus and controls."
+        keywords="font typeface spotify mix installed">
+        <FontControl field="ui_font" settings={settings} change={change} view={view} />
+      </SettingRow>,
     ]],
     ["Appearance", "Appearance", [
       flag("liquid_glass", "Liquid Glass", "Use translucent glass for settings, source management, and the TTML database.", "theme glass blur translucent"),

@@ -47,6 +47,9 @@ export function validatePreferences(input: Record<string, unknown>) {
       patch[key] = value;
     }
   }
+  if (patch.lyrics_font_enabled === undefined && typeof patch.custom_fonts_enabled === "boolean") {
+    patch.lyrics_font_enabled = patch.custom_fonts_enabled;
+  }
   if (Array.isArray(patch.lyrics_source_order)) patch.lyrics_source_order = orderedSources(patch.lyrics_source_order);
   if (isRecord(patch.lyric_song_offsets)) {
     patch.lyric_song_offsets = Object.fromEntries(Object.entries(patch.lyric_song_offsets).flatMap(([uri, offset]) => {

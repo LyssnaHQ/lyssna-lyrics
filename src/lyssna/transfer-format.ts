@@ -144,10 +144,14 @@ function mapped(input: SettingsRecord, toStandalone: boolean): SettingsRecord {
     }
   }
   if (toStandalone && Object.keys(animator).length) output.lyrics_animator = animator;
-  if (toStandalone && typeof input.customFontEnabled === "boolean") output.lyric_font = input.customFontEnabled && typeof input.customFont === "string" ? input.customFont : "";
+  if (toStandalone && typeof input.customFontEnabled === "boolean") {
+    output.lyrics_font_enabled = input.customFontEnabled;
+    output.lyric_font = typeof input.customFont === "string" ? input.customFont : "";
+  }
   if (!toStandalone && typeof input.lyric_font === "string") {
     output.customFont = input.lyric_font;
-    output.customFontEnabled = !!input.lyric_font;
+    output.customFontEnabled = typeof input.lyrics_font_enabled === "boolean"
+      ? input.lyrics_font_enabled : input.custom_fonts_enabled !== false && !!input.lyric_font;
   }
   return output;
 }
@@ -169,6 +173,8 @@ export function standalonePreferences(file: SettingsTransfer): SettingsRecord {
   if (file.source === "standalone" || !file.plugin) return own;
   const plugin = file.plugin;
   const result = { ...own, ...mapped(plugin.settings, true) };
+  const savedFontToggle = own.lyrics_font_enabled ?? own.custom_fonts_enabled;
+  if (typeof savedFontToggle === "boolean") result.lyrics_font_enabled = savedFontToggle;
   for (const [key, standalone] of [["romanization", "romanized"], ["isNowBarOpen", "now_playing_open"], ["forceCompactMode", "lyrics_compact"]]) if (typeof plugin.uiState[key] === "boolean") result[standalone] = plugin.uiState[key];
   result.lyric_song_offsets = plugin.songOffsets;
   if (Array.isArray(plugin.enhancements.playlistOverrideFolderIds)) result.spotify_plus = { playlist_folders: plugin.enhancements.playlistOverrideFolderIds };
