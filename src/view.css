@@ -137,7 +137,7 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   color: var(--spice-button, #1ed760);
 }
 
-.Root__now-playing-bar:has(.lyssna-editor-dock) {
+:is(.Root__now-playing-bar, [data-testid="now-playing-bar"]):has(.lyssna-editor-dock) {
   position: relative;
   z-index: 8;
   overflow: visible;
@@ -156,15 +156,15 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   container-type: normal;
   position: absolute;
   z-index: 1;
-  bottom: calc(100% + 14px);
+  top: var(--lyssna-editor-divider, 0px);
   left: 50%;
-  transform: translateX(-50%);
+  transform: translate(-50%, -50%);
   display: flex;
   align-items: center;
   justify-content: center;
   width: max-content;
   max-width: min(92vw, 32rem);
-  padding: 8px 14px;
+  padding: 6px 14px;
   border: 1px solid #fff2;
   border-radius: 999px;
   background: #181818e8;
@@ -196,7 +196,7 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   display: none;
 }
 
-.lyssna-editor-dock { display: flex; min-width: 0; padding-inline: 6px; }
+.lyssna-editor-dock { display: flex; min-width: 0; padding: 8px 6px 0; }
 
 :has(> :has(> .lyssna-editor-dock)) > .main-nowPlayingBar-left {
   flex: 0 1 clamp(225px, 24vw, 380px);

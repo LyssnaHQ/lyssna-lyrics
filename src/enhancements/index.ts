@@ -15,6 +15,15 @@ const runtime = window as Window & {
   __LYSSNA_REWRITE_ENHANCEMENTS__?: true;
 };
 
+function reloadSpotify(event: KeyboardEvent) {
+  if (event.key !== "F5" || event.defaultPrevented || event.repeat ||
+      event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+  const target = event.composedPath()[0];
+  if (target instanceof Element && target.closest("input, textarea, select, [contenteditable]:not([contenteditable='false'])")) return;
+  event.preventDefault();
+  window.location.reload();
+}
+
 export function externalEnhancementOwner() {
   if (runtime.__LYSSNA_REWRITE_ENHANCEMENTS__) return;
   const standalone = runtime.__SPOTIFY_PLUS_RUNTIME__;
@@ -45,6 +54,7 @@ export function startEnhancements(host: Host) {
       }
     }
     window.addEventListener(SETTINGS_CHANGED_EVENT, syncVisibility);
+    document.addEventListener("keydown", reloadSpotify);
     syncVisibility();
     for (const start of [startProfileMenuController, startPlaylistMenuController, startDisablePeekController,
       () => startDevicePickerController(host), () => startShareMenuController(host)]) {

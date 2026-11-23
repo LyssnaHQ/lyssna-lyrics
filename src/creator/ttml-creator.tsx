@@ -1938,7 +1938,7 @@ export function TtmlCreator({
     );
 
   return (
-    <section className="ttml-creator" aria-label="TTML Creator">
+    <section className={`ttml-creator${playbar?.wave ? " with-playbar" : ""}`} aria-label="TTML Creator">
       <header className="ttml-head">
         <div className="ttml-song">
           <small>TTML Creator</small>

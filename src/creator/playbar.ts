@@ -34,6 +34,25 @@ export function useCreatorPlaybar(view: Window & typeof globalThis, open: boolea
     const play = document.createElement("div");
     play.className = "lyssna-editor-play-slot";
     let previous: CreatorPlaybarSlots | undefined;
+    let transportPosition: { bar: HTMLElement; center: HTMLElement } | undefined;
+    function alignTransport() {
+      if (!transportPosition) return;
+      const { bar, center } = transportPosition;
+      const offset = bar.getBoundingClientRect().top - center.getBoundingClientRect().top - center.clientTop;
+      center.style.setProperty("--lyssna-editor-divider", `${offset}px`);
+    }
+    const transportObserver = new view.ResizeObserver(alignTransport);
+
+    function observeTransport(bar?: HTMLElement, center?: HTMLElement) {
+      if (transportPosition?.bar === bar && transportPosition?.center === center) return;
+      transportObserver.disconnect();
+      transportPosition?.center.style.removeProperty("--lyssna-editor-divider");
+      transportPosition = bar && center ? { bar, center } : undefined;
+      if (!transportPosition) return;
+      transportObserver.observe(transportPosition.bar);
+      transportObserver.observe(transportPosition.center);
+      alignTransport();
+    }
 
     function sync() {
       const bar = document.querySelector<HTMLElement>(playbarSelector);
@@ -41,13 +60,17 @@ export function useCreatorPlaybar(view: Window & typeof globalThis, open: boolea
       const center = controls?.closest<HTMLElement>(".main-nowPlayingBar-center, [data-npb-secondary]") ?? controls?.parentElement;
       const fullscreen = document.fullscreenElement;
       if (!bar || (!previewing && !center) || (fullscreen && !fullscreen.contains(bar))) {
+        observeTransport();
         dock.remove();
         speed.remove();
         play.remove();
         if (previous) setSlots(previous = undefined);
         return;
       }
-      if (!previewing && center && dock.parentElement !== center) center.append(dock);
+      if (!previewing && center) {
+        if (dock.parentElement !== center) center.append(dock);
+        observeTransport(bar, center);
+      }
       const widget = bar.querySelector<HTMLElement>(
         '[data-testid="now-playing-widget-v2"], [data-testid="now-playing-widget"], .main-nowPlayingWidget-nowPlaying',
       );
@@ -74,6 +97,7 @@ export function useCreatorPlaybar(view: Window & typeof globalThis, open: boolea
     return () => {
       observer.disconnect();
       document.removeEventListener("fullscreenchange", sync);
+      observeTransport();
       dock.remove();
       speed.remove();
       play.remove();

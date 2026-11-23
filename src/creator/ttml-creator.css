@@ -13,6 +13,13 @@
   text-align: center;
   color: var(--muted);
 }
+.ttml-creator.with-playbar {
+  padding-block-end: 34px;
+}
+.ttml-creator.with-playbar .ttml-lines {
+  padding-block-end: 8px;
+  scroll-padding-block-end: 8px;
+}
 .ttml-creator.empty h2 {
   margin: 0;
   color: #fff;
@@ -1426,6 +1433,10 @@
   align-items: center;
   color: var(--spice-text, #fff);
   --muted: var(--spice-subtext, #b3b3b3);
+}
+.lyssna-editor-wave-slot .ttml-bar-wave {
+  box-sizing: border-box;
+  height: 30px;
 }
 @media (max-width: 950px) {
   .lyssna-editor-wave-slot .ttml-bar { gap: 6px; }
