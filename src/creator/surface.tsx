@@ -60,12 +60,13 @@ async function seedTimings(host: Host, lyrics: Lyrics, duration: number, trackId
   } : undefined) ?? lyrics;
 }
 
-export function CreatorSurface({ host, view: owner, settings, close, reviewSelection, closeReview, previewing, onLocalPlayback, manageStoredData, capture }: {
+export function CreatorSurface({ host, view: owner, settings, close, reviewSelection, closeReview, previewing, onLocalPlayback, manageStoredData, capture, confirmFirstUpload }: {
   host: Host; view: Window; settings: Settings; close: () => void; previewing: boolean;
   capture: SpotifyCapture;
   reviewSelection?: ReviewSelection;
   closeReview?: () => void;
   onLocalPlayback(playback: CreatorPlayback | undefined): void; manageStoredData(trigger: HTMLElement | null): void;
+  confirmFirstUpload: () => Promise<boolean>;
 }) {
   const view = owner as Window & typeof globalThis;
   const { track, playing } = usePlayback(host);
@@ -524,7 +525,8 @@ export function CreatorSurface({ host, view: owner, settings, close, reviewSelec
           onSubmit={async (song, text) => {
             const spotify = song.spotify ?? { id: song.id, title: song.name, cover: song.album.images[0]?.url ?? "",
               album: song.album.name, artists: song.artists.map(({ name }) => name).join(", "), artistLinks: song.artists };
-            const result = await submitLyssnaTtml(new File([text], "lyrics.ttml"), spotify, host);
+            const result = await submitLyssnaTtml(new File([text], "lyrics.ttml"), spotify, host, confirmFirstUpload);
+            if (!result) return;
             if (result.approved) {
               revalidateLyssnaSong(song.id, result.isrc, result.published);
               window.dispatchEvent(new CustomEvent(lyricsChanged, { detail: [song.id] }));

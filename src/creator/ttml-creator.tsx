@@ -282,7 +282,7 @@ export function TtmlCreator({
   onToggle: () => void;
   onSpeed: (rate: number) => Promise<void>;
   onApply: (track: Track, filename: string, ttml: string) => Promise<boolean>;
-  onSubmit: (track: Track, ttml: string) => Promise<string>;
+  onSubmit: (track: Track, ttml: string) => Promise<string | undefined>;
   onParse: (
     filename: string,
     contents: string,
@@ -1734,7 +1734,8 @@ export function TtmlCreator({
       onParse={async (text) => parseLocalTtml(text)}
       onSubmitFix={async (text) => {
         if (!track || track.uri !== reviewEdit?.uri) throw new Error("Open the submission in the editor first.");
-        notify(await onSubmit(track, text));
+        const message = await onSubmit(track, text);
+        if (message) notify(message);
       }}
       onDecided={(_submission, action, uri) => {
         setReviewEdit(undefined);
@@ -1852,7 +1853,8 @@ export function TtmlCreator({
     if (!track || submitting) return;
     setSubmitting(true);
     try {
-      notify(await onSubmit(track, ttml()));
+      const message = await onSubmit(track, ttml());
+      if (message) notify(message);
     } catch (error) {
       notify(String(error), true);
     } finally {

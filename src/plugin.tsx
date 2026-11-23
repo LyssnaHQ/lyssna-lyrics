@@ -43,6 +43,7 @@ import { readViewSession, saveViewSession } from "./view-session";
 import { lyssnaApiNotice, lyssnaInstallReady } from "./lyssna-api";
 import { revalidateLyssnaSong, resumeLyssnaRequests } from "./lyssna-provider";
 import { submitLyssnaTtml } from "./lyssna-submission";
+import { useFirstUploadNotice } from "./first-upload-notice";
 import { CreatorSurface, type CreatorPlayback } from "./creator/surface";
 import { reviewTopbar } from "./creator/review-topbar";
 import { ReviewQueuePanel, type ReviewSelection } from "./creator/review-panel";
@@ -619,6 +620,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
   }, [showCreator]);
   const fonts = appFontStyles(settings);
   const artwork = narrating ? DJ_COVER : track?.cover;
+  const { confirmFirstUpload, firstUploadNotice } = useFirstUploadNotice(fonts);
   const coverColour = useArtworkColor(artwork);
   const hideArtwork = settings.lyrics_hide_artwork && !coverOnly;
   const canvasEnabled = settings.canvas_lyrics && !hideArtwork && !coverOnly;
@@ -822,7 +824,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
       onError={banner ? () => setArtistHeader((current) => current?.url === banner && current.uri === artistUri ? undefined : current) : undefined} alt="" />}
     {(showCreator || keepCreator) && <div className="lyssna-creator-container" ref={creatorPage} style={pageStyle} data-draft-preview={keepCreator || undefined}>
       <CreatorSurface host={host} view={view} settings={preferences} close={closeCreator ?? close} reviewSelection={reviewSelection}
-        closeReview={closeReview} previewing={keepCreator} capture={capture}
+        closeReview={closeReview} previewing={keepCreator} capture={capture} confirmFirstUpload={confirmFirstUpload}
         onLocalPlayback={setCreatorPlayback} manageStoredData={(trigger) => {
         settingsTrigger.current = trigger ?? undefined;
         setNotice("");
@@ -921,7 +923,8 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
       reviewer={preferences.ttml_reviewer} onReviewer={(ttml_reviewer) => change({ ttml_reviewer })}
       onSubmit={async (file) => {
         if (!track) throw new Error("Play the song you want to submit lyrics for.");
-        const result = await submitLyssnaTtml(file, track, host);
+        const result = await submitLyssnaTtml(file, track, host, confirmFirstUpload);
+        if (!result) return;
         if (result.approved) {
           revalidateLyssnaSong(track.id, result.isrc, result.published);
           window.dispatchEvent(new CustomEvent(lyricsChanged, { detail: [track.id] }));
@@ -952,6 +955,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
         release: () => setCanvasFrame(undefined) }}
       onEnableAutoRecord={externalCinema ? undefined : () => void capture.start("auto")}
       options={options} track={track ?? undefined} notice={notice} setNotice={setNotice} view={view} developerMode={host.developerMode} />}
+    {firstUploadNotice}
   </>;
 }
 

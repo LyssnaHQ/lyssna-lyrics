@@ -2439,6 +2439,68 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
     --lead-top: 15vh;
   }
 }
+.lyssna-first-upload {
+  box-sizing: border-box;
+  inset: 0;
+  width: min(460px, calc(100% - 32px));
+  max-height: calc(100% - 32px);
+  margin: auto;
+  padding: 24px;
+  border: 1px solid #ffffff26;
+  border-radius: 18px;
+  color: inherit;
+  background: #181818;
+  font: inherit;
+}
+
+.lyssna-first-upload::backdrop {
+  background: #000a;
+}
+
+.lyssna-first-upload h2 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.lyssna-first-upload p {
+  margin: 12px 0;
+  color: #d4d4d4;
+  line-height: 1.55;
+}
+
+.lyssna-first-upload a {
+  color: inherit;
+  text-decoration: underline;
+}
+
+.lyssna-first-upload form {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 22px;
+}
+
+.lyssna-first-upload button {
+  padding: 9px 14px;
+  border: 1px solid #ffffff26;
+  border-radius: 999px;
+  background: #ffffff12;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.lyssna-first-upload button[value="upload"] {
+  background: #fff;
+  color: #181818;
+}
+
+.lyssna-first-upload button:hover {
+  filter: brightness(0.9);
+}
+
 .lyssna-song-sheet {
   --sheet-vertical-margin: min(12dvh, 120px);
   box-sizing: border-box;

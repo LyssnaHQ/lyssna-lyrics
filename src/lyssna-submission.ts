@@ -16,7 +16,7 @@ const submissionErrors: Record<string, string> = {
   invalid_ttml: "Lyssna couldn’t read this TTML. Check the file and try again.",
 };
 
-export async function submitLyssnaTtml(file: File, track: Track, host: Host) {
+export async function submitLyssnaTtml(file: File, track: Track, host: Host, confirmFirstUpload: () => Promise<boolean>) {
   if (!hasLyssnaSession()) throw new Error(submissionErrors.unauthorized);
   if (!/^[A-Za-z0-9]{22}$/.test(track.id)) throw new Error("Only Spotify songs can be submitted to Lyssna.");
   if (!/\.(ttml|xml)$/i.test(file.name)) throw new Error("Choose a TTML or XML lyrics file.");
@@ -24,6 +24,14 @@ export async function submitLyssnaTtml(file: File, track: Track, host: Host) {
 
   const ttml = await file.text();
   if (!ttml.trim()) throw new Error("The TTML file is empty.");
+  const history = await lyssnaAccountRequest("/v1/me/submissions?limit=1").catch(() => undefined);
+  if (!hasLyssnaSession()) throw new Error(submissionErrors.unauthorized);
+  if (history?.status === 403) throw new Error(submissionErrors.insufficient_scope);
+  if (history?.status === 429 || Date.now() < lyssnaRetryAt()) throw new Error("Lyssna is rate limiting uploads. Try again later.");
+  const submissions: unknown = history?.ok ? await history.json().catch(() => null) : null;
+  if (!Array.isArray(submissions)) throw new Error("Couldn’t check your Lyssna upload history. Try again later.");
+  if (submissions.length === 0 && !await confirmFirstUpload()) return;
+
   const validIsrc = await host.lookupIsrc(track.id, track.isrc).catch(() => undefined);
   const links = validIsrc ? [{ platform: "isrc", external_id: validIsrc }] : [];
   links.push({ platform: "spotify", external_id: track.id });
