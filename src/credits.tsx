@@ -1,6 +1,8 @@
 import { useContext, useEffect, useState, type CSSProperties, type MouseEvent } from "react";
 import { UserRound } from "lucide-react";
+import appleMusicAvatar from "./apple-music-avatar.webp?inline";
 import { CREDIT_NAME_OVERRIDES, lookupDiscordUser, type DiscordIdentity } from "./discord-lookup";
+import { readLyssnaAppleCredit } from "./lyssna-provider";
 import type { Contributor, Lyrics } from "./lyssna/types";
 import { lyssnaSongUrl, SongSheetContext } from "./song-sheet";
 
@@ -60,16 +62,34 @@ export function LyricCredits({ lyrics, expanded = false, discord = false }: {
 function LyssnaContributors({ attribution }: { attribution: NonNullable<Lyrics["lyssna"]> }) {
   const songUrl = lyssnaSongUrl(attribution.songId);
   const open = useContext(SongSheetContext);
+  const revisionId = attribution.contributors.some(({ original }) => original) ? undefined : attribution.revisionId;
+  const [appleCredit, setAppleCredit] = useState<{ revisionId: string; credited: boolean }>();
+  useEffect(() => {
+    if (!revisionId) return;
+    let active = true;
+    void readLyssnaAppleCredit(attribution.songId, revisionId).then(credited => {
+      if (active) setAppleCredit({ revisionId, credited: credited ?? false });
+    });
+    return () => { active = false; };
+  }, [attribution.songId, revisionId]);
+
   const openSong = (event: MouseEvent<HTMLAnchorElement>) => {
     if (!songUrl || !open || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
     open(songUrl);
   };
-  const contributors = attribution.contributors.slice(0, 5);
-  const named = contributors.slice(0, (contributors[1]?.share ?? 0) >= 30 ? 2 : 1);
-  return contributors.length > 0 && <div className="lyssna-community-credits lyssna-contributors">
+  const apple = revisionId !== undefined && appleCredit?.revisionId === revisionId && appleCredit.credited;
+  const checkingApple = revisionId !== undefined && appleCredit?.revisionId !== revisionId;
+  const contributors = attribution.contributors.slice(0, apple ? 4 : 5);
+  const named = contributors.slice(0, apple ? 1 : 2)
+    .filter(({ share }, index) => share >= 30 || (index === 0 && !apple && !checkingApple));
+  return (apple || contributors.length > 0) && <div className="lyssna-community-credits lyssna-contributors">
     <span>Contributors:</span>
     <span className="lyssna-contributor-avatars">
+      {apple && <span className="lyssna-contributor-avatar" style={{ "--avatar-layer": contributors.length + 1 } as CSSProperties}
+        title="Apple Music" aria-hidden="true">
+        <img src={appleMusicAvatar} alt="" />
+      </span>}
       {contributors.map(({ user_id, username, avatar_url }, index) => {
         const name = username || "Deleted user";
         const position = { "--avatar-layer": contributors.length - index } as CSSProperties;
@@ -86,6 +106,7 @@ function LyssnaContributors({ attribution }: { attribution: NonNullable<Lyrics["
       })}
     </span>
     <span className="lyssna-contributor-names">
+      {apple && <span>Apple Music{named.length > 0 && ","}</span>}
       {named.map(({ user_id, username }, index) => <span key={user_id ?? index}>
         {username ? <a className="lyssna-credit-profile" onClick={openSong} href={songUrl ?? lyssnaProfile(username)} target="_blank" rel="noopener noreferrer">
           <span className="lyssna-credit-name">{username}</span>

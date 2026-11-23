@@ -27,6 +27,7 @@ export interface LyssnaContributor {
   username?: string;
   avatar_url?: string;
   share: number;
+  original?: boolean;
 }
 export interface AppleOriginal {
   apple_id: string;
@@ -36,7 +37,7 @@ export interface AppleOriginal {
 }
 export interface Lyrics {
   appleOriginal?: AppleOriginal;
-  lyssna?: { songId: string; contributors: LyssnaContributor[] };
+  lyssna?: { songId: string; revisionId?: string; contributors: LyssnaContributor[] };
   songwriters?: string[];
   attribution?: { uploader?: Contributor; maker?: Contributor };
   lines: Line[];

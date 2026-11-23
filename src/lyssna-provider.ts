@@ -38,10 +38,39 @@ const refreshes = new Set<string>();
 const approvals = new Map<string, RecentApproval>();
 const trackIsrc = new Map<string, string>();
 const parsed = new WeakMap<LyricsView, Lyrics>();
+const appleCredits = new Map<string, Promise<boolean | undefined>>();
 let disk: Promise<Cache | undefined> | undefined;
 let writes = Promise.resolve();
 let cacheGeneration = 0;
 const uuid = /^[\da-f]{8}-(?:[\da-f]{4}-){3}[\da-f]{12}$/i;
+
+export function readLyssnaAppleCredit(songId: string, revisionId: string) {
+  if (!uuid.test(songId) || !uuid.test(revisionId)) return Promise.resolve(false);
+  const existing = appleCredits.get(revisionId);
+  if (existing) return existing;
+
+  const request = (async () => {
+    const response = await lyssnaRequest(`/v1/songs/${songId}/revisions`);
+    if (!response?.ok) return;
+    const revisions = await response.json() as { id: string; parent_id?: string; source: string }[];
+    if (!Array.isArray(revisions)) return;
+    const byId = new Map(revisions.map(revision => [revision.id, revision]));
+    if (!byId.has(revisionId)) return;
+    let revision = byId.get(revisionId);
+    while (revision) {
+      if (revision.source === "apple_music") return true;
+      byId.delete(revision.id);
+      revision = revision.parent_id ? byId.get(revision.parent_id) : undefined;
+    }
+    return false;
+  })().catch(() => undefined).then(credited => {
+    if (credited === undefined && appleCredits.get(revisionId) === request) appleCredits.delete(revisionId);
+    return credited;
+  });
+  appleCredits.set(revisionId, request);
+  if (appleCredits.size > cacheLimit) appleCredits.delete(appleCredits.keys().next().value!);
+  return request;
+}
 
 function remember(path: string, entry: CacheEntry) {
   memory.delete(path);
@@ -260,7 +289,11 @@ export async function readLyssnaLyrics(track: Track, lookupIsrc: Host["lookupIsr
   const sourceName = apple ? lyssnaAppleSource : "Lyssna";
   const creditText = typeof value.credit?.text === "string" ? value.credit.text.trim() : undefined;
   const credit = apple && creditText ? creditText.replace("Apple Music via Lyssna", sourceName) : creditText;
-  const attribution = value.song && { songId: value.song.id, contributors: Array.isArray(value.contributors) ? value.contributors : [] };
+  const attribution = value.song && {
+    songId: value.song.id,
+    revisionId: value.revision_id,
+    contributors: Array.isArray(value.contributors) ? value.contributors : [],
+  };
   if (value.instrumental || value.song?.instrumental) {
     const result: Lyrics = { source: "Lyssna", credit, lyssna: attribution, lines: [], synced: false, instrumental: true };
     parsed.set(value, result);
