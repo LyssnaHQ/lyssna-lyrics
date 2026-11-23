@@ -16,6 +16,8 @@ const submissionErrors: Record<string, string> = {
   open_limit: "You’ve reached your limit for open submissions on Lyssna.",
   invalid_ttml: "Lyssna couldn’t read this TTML. Check the file and try again.",
   apple_original_changed: "Lyssna no longer has the Apple Music version this draft started from. Your draft is still saved.",
+  invalid_apple_original: "Lyssna couldn’t verify the original Apple Music sync. Your draft is still saved.",
+  isrc_not_linked: "This Apple Music sync’s ISRC isn’t linked to the song on Lyssna. Your draft is still saved.",
 };
 
 export async function submitLyssnaTtml(file: File, track: Track, host: Host, confirmFirstUpload: () => Promise<boolean>, appleOriginal?: AppleOriginal) {
@@ -38,8 +40,7 @@ export async function submitLyssnaTtml(file: File, track: Track, host: Host, con
   const links = validIsrc ? [{ platform: "isrc", external_id: validIsrc }] : [];
   links.push({ platform: "spotify", external_id: track.id });
   const artists = track.artistLinks?.map(({ name }) => name).filter(Boolean);
-  const path = appleOriginal ? "/v1/submissions/apple-edit" : "/v1/submissions";
-  const response = await lyssnaAccountRequest(path, {
+  const response = await lyssnaAccountRequest("/v1/submissions", {
     ttml, links, title: track.title,
     ...(appleOriginal && { apple_original: { apple_id: appleOriginal.apple_id, sha256: appleOriginal.sha256 } }),
     artists: artists?.length ? artists : [track.artists || track.artist].filter(Boolean),
@@ -48,9 +49,6 @@ export async function submitLyssnaTtml(file: File, track: Track, host: Host, con
     throw new Error("Couldn’t confirm the upload. Check your submissions on Lyssna before trying again.");
   });
   if (!response?.ok) {
-    if (appleOriginal && (response?.status === 404 || response?.status === 405)) {
-      throw new Error("Apple Music edit uploads aren’t available yet. Your draft is still saved. Try again later.");
-    }
     const problem = await response?.json().catch(() => null) as { error?: string; message?: string } | null | undefined;
     const known = problem?.error && Object.hasOwn(submissionErrors, problem.error) && submissionErrors[problem.error];
     if (known) throw new Error(known);
