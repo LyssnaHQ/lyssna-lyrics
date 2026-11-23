@@ -9,8 +9,8 @@ import { clearLyssnaCache, readLyssnaLyrics, revalidateLyssnaSong } from "./lyss
 export const lyricSources = {
   local: { name: "Imported TTML", help: "Lyrics you loaded for the playing song." },
   lyssna: { name: "Lyssna Lyrics", help: "Approved community lyrics from Lyssna. Receives the Spotify track ID and may check its ISRC." },
-  spicy: { name: "Spicy Lyrics", help: "Community lyrics supplied by the Spicy Lyrics plugin." },
-  apple: { name: "Apple Music", help: "Apple Music lyrics when supplied by Spicy Lyrics." },
+  spicy: { name: "Spicy Lyrics", help: "Community syncs and Spotify fallback. Sends the track ID to the Spicy Lyrics API." },
+  apple: { name: "Apple Music", help: "Apple Music syncs when selected by the Spicy Lyrics API." },
   lrcred: { name: "lrc.red", help: "Word-timed lyrics. Receives the song's ISRC." },
   lrclib: { name: "LRCLIB", help: "Open lyrics database. Receives the song title, artist, album and length." },
   netease: { name: "Netease", help: "Community lyrics through a third-party proxy. Receives the song title and artist." },
@@ -52,7 +52,7 @@ export function refreshLyrics(track?: Track, action: Settings["lyrics_cache_acti
   window.dispatchEvent(trackId && action !== "all" ? new CustomEvent(lyricsChanged, { detail: [trackId] }) : new Event(lyricsChanged));
 }
 
-function readCached(trackId: string, id: string, reader: () => Promise<Lyrics | undefined>, missMs: number) {
+function readCached(trackId: string, id: string, reader: () => Promise<Lyrics | undefined>, missMs: number, hitMs = 60_000) {
   let entries = cache.get(trackId);
   if (!entries) {
     entries = new Map();
@@ -64,7 +64,7 @@ function readCached(trackId: string, id: string, reader: () => Promise<Lyrics | 
   const entry: Cached = {
     expires: Infinity,
     value: reader().catch(() => undefined).then((lyrics) => {
-      entry.expires = Date.now() + (lyrics ? 60_000 : missMs);
+      entry.expires = Date.now() + (lyrics ? hitMs : missMs);
       return lyrics;
     }),
   };
@@ -81,7 +81,8 @@ export async function readLyrics(track: Track, duration: number, sources: LyricS
       const lyrics = await readLyssnaLyrics(track, host.lookupIsrc).catch(() => undefined);
       if (lyrics) return lyrics;
     } else if (id === "spicy" || id === "apple") {
-      const lyrics = await readCached(track.id, "spicy", () => readSpicyLyrics(track.id), 350);
+      // The API chooses one source. Both entries share its response.
+      const lyrics = await readCached(track.id, "spicy", () => readSpicyLyrics(track.id), 60_000, 5 * 60_000);
       if (lyrics && (lyrics.source === "Apple Music") === (id === "apple")) return lyrics;
     } else {
       const lyrics = await readCached(track.id, id, () => remoteReaders[id](track, duration, AbortSignal.timeout(7_000)), 30_000);

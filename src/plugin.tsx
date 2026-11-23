@@ -17,7 +17,6 @@ import { displayLyrics, needsWordSync } from "./word-sync";
 import type { AudioAnalysisData } from "./experimental-word-sync";
 import { readSettings, saveSettings, settingsEvent, type Settings } from "./settings";
 import { channelLabels, SettingsPanel, type BuildOptions } from "./settings-panel";
-import { startSpicyProvider } from "./spicy";
 import { appFontStyles, copySpotifyFonts, selectedFont } from "./font-settings";
 import { downloadTtml, keepTemporaryLyricsFor, listLocalLyrics, lyricsChanged, removeLocalLyrics } from "./local-lyrics";
 import { LoadTtml } from "./lyssna/load-ttml";
@@ -84,20 +83,17 @@ function useTrackLyrics(track: Track | null, duration: number, view: Window, set
     const revalidate = enabled.includes("lyssna");
     let generation = 0;
     let timer = 0;
-    let deadline = 0;
     async function read() {
       view.clearTimeout(timer);
       const current = ++generation;
       if (enabled.length === 0) return;
       const lyrics = await readLyrics(currentTrack, duration, enabled, host);
       if (generation !== current) return;
-      const pendingSpicy = enabled.includes("spicy") || enabled.includes("apple");
-      const pending = !lyrics && pendingSpicy && Date.now() < deadline;
       setResult((previous) => previous?.track === currentTrack && previous.sourceKey === sourceKey &&
-        previous.lyrics === lyrics && previous.waiting === pending
-        ? previous : { track: currentTrack, sourceKey, lyrics, waiting: pending });
-      if (!view.document.hidden && navigator.onLine && (revalidate || (!lyrics && pendingSpicy))) {
-        timer = view.setTimeout(read, lyrics ? 60_000 : pending ? 500 : pendingSpicy ? 3_000 : 60_000);
+        previous.lyrics === lyrics && !previous.waiting
+        ? previous : { track: currentTrack, sourceKey, lyrics, waiting: false });
+      if (revalidate && !view.document.hidden && navigator.onLine) {
+        timer = view.setTimeout(read, 60_000);
       }
     }
     function restart(event?: Event) {
@@ -106,7 +102,6 @@ function useTrackLyrics(track: Track | null, duration: number, view: Window, set
         track: currentTrack, sourceKey, waiting: enabled.length > 0,
         lyrics: event && enabled.length && previous?.track === currentTrack ? previous.lyrics : undefined,
       }));
-      deadline = Date.now() + 15_000;
       void read();
     }
     const resume = () => { if (!view.document.hidden) void read(); };
@@ -874,7 +869,6 @@ export default function start(options: BuildOptions) {
   const stylesheet = document.createElement("style");
   stylesheet.textContent = `${fontCss}\n${desktopCss}\n${settingsCss}\n${ttmlCss}\n${meterCss}\n${viewCss}`;
   document.head.append(stylesheet);
-  let stopProvider: (() => void) | undefined;
   let button: ReturnType<Host["button"]> | undefined;
   let playbarButtons: ReturnType<typeof playbarViewButtons> | undefined;
   let reviewButton: ReturnType<typeof reviewTopbar> | undefined;
@@ -951,13 +945,6 @@ export default function start(options: BuildOptions) {
     syncPlaybar();
     syncRecorder();
     setFrameCap(settings.animation_fps_cap_enabled ? settings.animation_fps_cap : 0);
-    const disabled = settings.lyrics_sources_disabled;
-    if (!disabled.includes("spicy") || !disabled.includes("apple")) {
-      stopProvider ??= startSpicyProvider();
-    } else {
-      stopProvider?.();
-      stopProvider = undefined;
-    }
   }
   applyRuntimeSettings();
   window.addEventListener(settingsEvent, applyRuntimeSettings);
@@ -967,7 +954,6 @@ export default function start(options: BuildOptions) {
     recorder?.container.remove();
     recorder = undefined;
     void capture.stop();
-    stopProvider?.();
   }
   let close: ((forget?: boolean) => void) | undefined;
   let enterFullscreen: ((mode: FullscreenMode) => void) | undefined;

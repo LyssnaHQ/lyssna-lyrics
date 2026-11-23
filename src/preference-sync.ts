@@ -3,7 +3,22 @@ import { enhancementPreferences, hasLegacyLoader, hasStandaloneSpotifyPlus, init
 import { isRecord, standalonePreferences, type SettingsRecord } from "./lyssna/transfer-format";
 import { legacyPreferencesMigrated, readSettings, restoreDesktopAnimatorDefault, saveSettings, settingsEvent, type Settings } from "./settings";
 import { validatePreferences } from "./settings-transfer";
-import { standaloneSpicyInstalled } from "./spicy";
+import { spicetify, spotikit } from "./host";
+
+const spicyName = /spicy[\W_]*lyrics/i;
+function standaloneSpicyInstalled() {
+  const globals = window as Window & { _spicy_lyrics?: unknown; SpicyLyrics?: unknown };
+  if (globals._spicy_lyrics || globals.SpicyLyrics) return true;
+  if (Array.from(document.scripts).some((script) => spicyName.test(script.src))) return true;
+  const extensions = spicetify()?.Config?.extensions ?? spotikit()?.Config?.extensions;
+  if (typeof extensions === "string") return spicyName.test(extensions);
+  return Array.isArray(extensions) && extensions.some((entry: unknown) => {
+    if (typeof entry === "string") return spicyName.test(entry);
+    if (!entry || typeof entry !== "object") return false;
+    const addon = entry as { name?: string; id?: string; path?: string; enabled?: boolean };
+    return addon.enabled !== false && [addon.name, addon.id, addon.path].some((value) => value && spicyName.test(value));
+  });
+}
 
 // Only these compatible upstream keys are shared when Legacy is attached to Spicy Lyrics.
 const sharedSettings = [
