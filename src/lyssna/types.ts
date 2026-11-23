@@ -27,9 +27,19 @@ export interface LyssnaContributor {
   username?: string;
   avatar_url?: string;
   share: number;
+  original?: boolean;
+}
+export interface AppleOriginal {
+  apple_id: string;
+  sha256: string;
+  isrc: string;
+  timing_kind?: "word";
 }
 export interface Lyrics {
-  lyssna?: { songId: string; contributors: LyssnaContributor[] };
+  appleOriginal?: AppleOriginal;
+  lyssna?: { songId: string; revisionId?: string; contributors: LyssnaContributor[] };
+  /** Where lyrics from outside Lyssna come from, to count their plays. */
+  external?: { source: "apple_music"; id: string };
   songwriters?: string[];
   attribution?: { uploader?: Contributor; maker?: Contributor };
   lines: Line[];

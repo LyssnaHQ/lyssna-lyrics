@@ -1360,7 +1360,7 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
 }
 
 .lyssna-lyrics-view .lyssna-contributor-avatar + .lyssna-contributor-avatar {
-  margin-inline-start: -0.35em;
+  margin-inline-start: -0.95em;
 }
 
 .lyssna-lyrics-view .lyssna-contributor-avatar svg {

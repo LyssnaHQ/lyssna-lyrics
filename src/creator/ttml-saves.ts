@@ -1,5 +1,6 @@
 import type { CreatorLine, MetaEntry } from "./ttml-creator-model";
 import type { Track } from "./types";
+import type { AppleOriginal } from "../lyssna/types";
 
 // Like amll-ttml-tool's autosave: the latest state per song plus a few dated
 // versions. The latest state stays in localStorage so it is written
@@ -12,6 +13,7 @@ export interface Draft {
   lines: CreatorLine[];
   text: string;
   metadata?: MetaEntry[];
+  appleOriginal?: AppleOriginal;
   savedAt?: number;
   song?: Track;
 }
@@ -28,6 +30,7 @@ export interface DraftVersion {
   lines: CreatorLine[];
   text: string;
   metadata?: MetaEntry[];
+  appleOriginal?: AppleOriginal;
 }
 
 function readStorage(key: string): string | null {

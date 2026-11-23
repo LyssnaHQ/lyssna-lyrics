@@ -207,7 +207,7 @@ function TrackLyrics({ track, host, playing, settings, compact = false, view = w
   duration: number; lyrics?: Lyrics; waiting: boolean; localPlayback?: CreatorPlayback;
   visualiser?: RefObject<VisualiserFrame | null>;
 }) {
-  const playMarker = useLyssnaPlay(host, track.id, lyrics?.lyssna?.songId, playing, view);
+  const playMarker = useLyssnaPlay(host, track.id, lyrics?.lyssna?.songId, lyrics?.external, playing, view);
   const position = usePosition(host, playing, view, localPlayback?.read);
   const offset = settings.lyric_offset_ms + (settings.lyric_song_offsets[track.id] ?? 0);
   const time = position + offset;

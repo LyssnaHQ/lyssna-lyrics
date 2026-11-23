@@ -3,5 +3,5 @@
   "name": "Lyssna Lyrics",
   "description": "Synchronized lyrics with Lyssna’s renderer. Community lyrics provided by Lyssna (https://lyssna.org).",
   "main": "extension.js",
-  "version": "1.0.0"
+  "version": "1.1.0"
 }

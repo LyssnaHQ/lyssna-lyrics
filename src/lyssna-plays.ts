@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { Host } from "./host";
-import { sendLyssnaPlay } from "./lyssna-api";
+import { sendLyssnaExternalPlay, sendLyssnaPlay } from "./lyssna-api";
+import type { Lyrics } from "./lyssna/types";
 import { hasLyssnaSession, lyssnaAccess } from "./lyssna-account";
 
 let currentTrack: string | undefined;
@@ -23,11 +24,12 @@ export function trackLyssnaListens(host: Host) {
   return host.watchControls(() => syncListen(host));
 }
 
-export function useLyssnaPlay(host: Host, trackId: string, songId: string | undefined, playing: boolean, view: Window) {
+export function useLyssnaPlay(host: Host, trackId: string, songId: string | undefined, external: Lyrics["external"], playing: boolean, view: Window) {
+  const externalId = external?.id;
   const marker = useRef<HTMLSpanElement>(null);
   useEffect(() => {
     const area = marker.current?.closest<HTMLElement>(".lyrics-body, .lyssna-now-playing-lines, .lyrics-popout-lyrics");
-    if (!area || !songId || !playing) return;
+    if (!area || (!songId && !externalId) || !playing) return;
     let visible = false;
     const report = () => {
       if (!visible || view.document.hidden || !host.playing() || !area.isConnected ||
@@ -36,6 +38,11 @@ export function useLyssnaPlay(host: Host, trackId: string, songId: string | unde
       if (reported || currentTrack !== trackId) return;
       reported = true;
       const listen = playbackId;
+      // lyrics from outside Lyssna have no song: the play is counted for the install
+      if (!songId) {
+        if (externalId) sendLyssnaExternalPlay("apple_music", externalId);
+        return;
+      }
       if (hasLyssnaSession()) void lyssnaAccess().then((token) => {
         syncListen(host);
         if (currentTrack === trackId && playbackId === listen && visible && host.playing() && !view.document.hidden && area.isConnected &&
@@ -58,6 +65,6 @@ export function useLyssnaPlay(host: Host, trackId: string, songId: string | unde
       view.document.removeEventListener("visibilitychange", report);
       stop();
     };
-  }, [host, trackId, songId, playing, view]);
+  }, [host, trackId, songId, externalId, playing, view]);
   return marker;
 }
