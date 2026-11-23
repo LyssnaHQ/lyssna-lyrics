@@ -148,13 +148,13 @@ async function lookup(path: string, current: () => boolean, revalidate: boolean)
   const cached = await readCache(path, current);
   if (!current()) return;
   if (!revalidate && cached && Date.now() < cached.freshUntil) return cached.value;
-  if (Date.now() < (cooling.get(path) ?? 0)) return cached?.value;
+  if (Date.now() < (cooling.get(path) ?? 0)) return cached?.value ?? undefined;
   try {
     const response = await lyssnaRequest(path, { etag: cached?.etag, revalidate: revalidate && !cached?.etag });
     if (!current()) return;
     if (!response || response.status === 429 || response.status >= 500) {
       coolDown(path);
-      return cached?.value;
+      return cached?.value ?? undefined;
     }
     if (response.status !== 304 && response.status !== 404 && !response.ok) {
       coolDown(path);
@@ -178,7 +178,7 @@ async function lookup(path: string, current: () => boolean, revalidate: boolean)
   } catch {
     if (!current()) return;
     coolDown(path);
-    return cached?.value;
+    return cached?.value ?? undefined;
   }
 }
 
@@ -244,12 +244,14 @@ async function trackCode(track: Track, lookupIsrc: Host["lookupIsrc"]) {
   return isrc;
 }
 
-export async function readLyssnaLyrics(track: Track, lookupIsrc: Host["lookupIsrc"], source: Source = "lyssna"): Promise<Lyrics | undefined> {
+// A definitive miss is null. An unavailable lookup is undefined.
+export async function readLyssnaLyrics(track: Track, lookupIsrc: Host["lookupIsrc"], source: Source = "lyssna"): Promise<Lyrics | null | undefined> {
   if (!/^[A-Za-z0-9]{22}$/.test(track.id)) return;
   const isrc = await trackCode(track, lookupIsrc);
-  if (!isrc && source === "apple_music") return;
+  if (!isrc && source === "apple_music") return null;
   const value = await read(track.id, isrc, isrc ? source : "lyssna");
-  if (!value || (source === "apple_music" && value.source !== "apple_music") ||
+  if (!value) return value;
+  if ((source === "apple_music" && value.source !== "apple_music") ||
       (source === "lyssna" && value.source === "apple_music")) return;
   const previous = parsed.get(value);
   if (previous) return previous;

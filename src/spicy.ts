@@ -3,6 +3,7 @@ import type { Contributor, Line, Lyrics, Word } from "./lyssna/types";
 // Spicy Lyrics publishable client key for Spotify's desktop origin.
 const clientKey = "sl_pk_yloyxlXK4J_GvDICrVYXYI4Ge1fJ_pia4ruzGLpoGQI";
 let retryAt = 0;
+export const spicyAppleSource = "Apple Music (via Spicy Lyrics)";
 
 type Vocal = {
   Text?: string;
@@ -44,7 +45,7 @@ function contributor(value: unknown): Contributor | undefined {
 
 function normalize(data: Payload): Lyrics | undefined {
   const source = data.source === "spicy_lyrics" ? "Spicy Lyrics"
-    : data.source === "apple_music" ? "Apple Music (via Spicy Lyrics)"
+    : data.source === "apple_music" ? spicyAppleSource
     : data.source === "spotify" ? "Spotify" : "Unknown source";
   const attribution = data.source === "spicy_lyrics" ? {
     maker: contributor(data.UploadAttribution?.Maker) ?? contributor(data.TTMLUploadMetadata?.Maker),
