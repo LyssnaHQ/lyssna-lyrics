@@ -69,7 +69,6 @@ export function LoadTtml({
   attachSong,
   onSubmit,
   glass,
-  theme,
   style,
 }: {
   onBulk: (files: BulkFile[], signal: AbortSignal) => Promise<BulkLyric[]>;
@@ -88,7 +87,6 @@ export function LoadTtml({
   onDownload: (item: TransferLyrics) => void;
   onClose: () => void;
   glass: boolean;
-  theme: string;
   style: CSSProperties;
 }) {
   const [view, setView] = useState<"load" | "database" | "bulk">("load");
@@ -157,7 +155,7 @@ export function LoadTtml({
     }
   };
   return (
-    <div className={`modal-backdrop load-ttml-backdrop${glass ? " liquid-glass" : ""}`} data-theme={theme} style={style} onClick={onClose}>
+    <div className={`modal-backdrop load-ttml-backdrop${glass ? " liquid-glass" : ""}`} style={style} onClick={onClose}>
       <section
         className="dialog load-ttml"
         role="dialog"

@@ -5,7 +5,6 @@ export const spotifyMix = "Spotify Mix";
 export const maxBackgroundBrightness = 150;
 export const gravityDensityRange: [number, number, number] = [50, 150, 5];
 export const defaults = {
-  theme: "dark" as "dark" | "light" | "system",
   liquid_glass: false,
   custom_fonts_enabled: true,
   lyrics_font_enabled: true,
@@ -91,6 +90,7 @@ export type Settings = typeof defaults;
 const key = "lyssna-lyrics.settings.v1";
 export const settingsEvent = "lyssna-lyrics:settings";
 type StoredSettings = Partial<Settings> & {
+  theme?: unknown;
   legacy_preferences_migrated?: boolean;
   desktop_animator_default_applied?: boolean;
   lyrics_credit_lyssna?: boolean;
@@ -109,7 +109,7 @@ export function legacyPreferencesMigrated() {
 export function readSettings(): Settings {
   try {
     const { legacy_preferences_migrated: _migrated, desktop_animator_default_applied: _animator,
-      lyrics_credit_lyssna: _legacyCredit, ...saved } = readRecord();
+      lyrics_credit_lyssna: _legacyCredit, theme: _legacyTheme, ...saved } = readRecord();
     const settings = { ...defaults, ...saved };
     settings.lyrics_font_enabled = saved.lyrics_font_enabled ?? settings.custom_fonts_enabled;
     const yearPosition = saved.lyrics_year_position;

@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactElement, type ReactNode, type RefObject } from "react";
 import { ArrowRight, ArrowUpRight, ChevronUp, Disc3, FilePenLine, FoldVertical, MessageCircle, MicVocal, Music2, PanelLeftOpen, Settings as GearIcon, UnfoldVertical, X } from "lucide-react";
 import { getHost, type CanvasInfo, type Host, type Root, type Track } from "./host";
 import { useArtworkColor } from "./lyssna/artwork-color";
@@ -24,6 +24,7 @@ import { useReviewerSettings } from "./ttml-reviewer";
 import { attachBulkLyrics, importLyricFile, loadBulkLyrics } from "./ttml-import";
 import { enabledSources, readLyrics, refreshLyrics, sourceIds } from "./lyric-sources";
 import { LyricCredits } from "./credits";
+import { SongSheetScope } from "./song-sheet";
 import { CanvasArtwork, SpotifyVisualiser, useCanvas } from "./spotify-artwork";
 import { findNowPlaying, findNowPlayingCover, findPlaybarCover, nowPlayingArtwork, nowPlayingCanvas, placeNowPlayingPreview } from "./now-playing";
 import { TrackMetadata } from "./track-metadata";
@@ -335,69 +336,137 @@ const rangeFocus = {
   onBlur: clearPointerFocus,
 };
 
-function FullscreenControls({ host, playing, settings, view, trackId, narrating, localPlayback }: {
+function FullscreenControls({ host, playing, settings, view, trackId, narrating, localPlayback, renderCover, details, coverOnly }: {
   host: Host; playing: boolean; settings: Settings; view: Window; trackId?: string; narrating: boolean; localPlayback?: CreatorPlayback;
+  renderCover?: (controls: ReactNode) => ReactElement; details?: ReactNode; coverOnly: boolean;
 }) {
   const position = usePosition(host, playing, view, localPlayback?.read);
   const seek = localPlayback?.seek ?? host.seek;
   const { liked, shuffle, repeat, canJumpDJ, activate, cycleRepeat } = usePlaybackControls(host, trackId, true);
   const likeLabel = liked ? "Remove from Liked Songs" : "Save to Liked Songs";
   const duration = host.duration();
+  const [seeking, setSeeking] = useState<number>();
+  const pendingSeek = useRef<number | undefined>(undefined);
+  const seekInput = useRef<HTMLInputElement>(null);
+  function finishSeek(commit = true) {
+    const target = pendingSeek.current;
+    pendingSeek.current = undefined;
+    setSeeking(undefined);
+    if (commit && target !== undefined) seek(target);
+  }
+  useLayoutEffect(() => {
+    pendingSeek.current = undefined;
+    setSeeking(undefined);
+  }, [trackId]);
+  useLayoutEffect(() => {
+    const page = seekInput.current?.closest<HTMLElement>(".lyrics-page");
+    if (seeking === undefined || !page) return;
+    page.dataset.seeking = "true";
+    return () => { delete page.dataset.seeking; };
+  }, [seeking !== undefined]);
   const [volume, setVolume] = useState(host.volume);
   const audible = useRef(volume || 0.5);
+  const volumeWrite = useRef<{ timer?: number; level?: number; lastWrite: number }>({ lastWrite: -Infinity });
+  function flushVolume() {
+    const pending = volumeWrite.current;
+    view.clearTimeout(pending.timer);
+    pending.timer = undefined;
+    if (pending.level === undefined) return;
+    const level = pending.level;
+    pending.level = undefined;
+    pending.lastWrite = view.performance.now();
+    host.setVolume(level);
+  }
+  useEffect(() => {
+    const unwatch = host.watchControls(() => {
+      const pending = volumeWrite.current;
+      if (pending.level !== undefined || view.performance.now() - pending.lastWrite < 150) return;
+      const level = host.volume();
+      if (level > 0) audible.current = level;
+      setVolume(level);
+    });
+    return () => { unwatch(); flushVolume(); };
+  }, [host, view]);
   function changeVolume(level: number) {
     if (level > 0) audible.current = level;
     setVolume(level);
-    host.setVolume(level);
+    const pending = volumeWrite.current;
+    pending.level = level;
+    const delay = 100 - (view.performance.now() - pending.lastWrite);
+    if (delay <= 0) flushVolume();
+    else pending.timer ??= view.setTimeout(flushVolume, delay);
   }
   const volumeSlider = settings.fullscreen_volume !== "off" && (
-    <div className={`lyrics-volume-pill lyssna-volume ${settings.fullscreen_volume}`}
-      data-level={volume <= 0 ? "muted" : volume < 0.5 ? "low" : "high"}
-      style={{ "--range": `${volume * 100}%` } as CSSProperties}>
-      <span className="lyrics-volume-fill" aria-hidden="true" />
-      <input aria-label="Volume" type="range" min={0} max={1} step={0.01} {...rangeFocus}
-        value={volume} onChange={(event) => changeVolume(event.target.valueAsNumber)} />
-      <button className="lyrics-volume-icon" type="button" aria-label={volume ? "Mute" : "Unmute"}
-        onClick={() => changeVolume(volume ? 0 : audible.current)}><FullscreenVolumeIcon /></button>
+    <div className={`lyrics-fullscreen-volume ${renderCover ? settings.fullscreen_volume : "below"}`}>
+      <div className="lyrics-volume-pill" data-level={volume <= 0 ? "muted" : volume < 0.5 ? "low" : "high"}
+        style={{ "--range": `${volume * 100}%` } as CSSProperties}>
+        <span className="lyrics-volume-fill" aria-hidden="true" />
+        <input aria-label="Volume" type="range" min={0} max={1} step={0.01} {...rangeFocus}
+          value={volume} onChange={(event) => changeVolume(event.target.valueAsNumber)}
+          onPointerUp={(event) => event.currentTarget.blur()} onPointerCancel={flushVolume} onKeyUp={flushVolume}
+          onBlur={(event) => { clearPointerFocus(event); flushVolume(); }} />
+        <button className="lyrics-volume-icon" type="button" aria-label={volume ? "Mute" : "Unmute"}
+          onClick={() => { changeVolume(volume ? 0 : audible.current); flushVolume(); }}><FullscreenVolumeIcon /></button>
+      </div>
     </div>
   );
   const always = settings.fullscreen_always_show;
-  const elapsed = Math.min(position, duration);
+  const elapsed = Math.min(seeking ?? position, duration);
   const total = clock(duration);
-  return <div className="lyssna-playback" data-always={always}>
-    <div className="lyssna-seek" style={{ "--time-chars": total.length } as CSSProperties}>
-      <time>{clock(elapsed)}</time>
-      <div className="lyrics-glass-seek" style={{ "--range": `${elapsed / Math.max(1, duration) * 100}%` } as CSSProperties}>
-        <span className="lyrics-glass-fill" aria-hidden="true" />
-        <input aria-label="Seek position" type="range" min={0} max={duration || 1} {...rangeFocus}
-          disabled={narrating || !duration} value={elapsed} onChange={(event) => seek(event.target.valueAsNumber)} />
-      </div>
-      <time>{total}</time>
+  const timeChars = { "--time-chars": total.length } as CSSProperties;
+  const seekPart = <>
+    <div className="lyrics-glass-seek" style={{ "--range": `${elapsed / Math.max(1, duration) * 100}%` } as CSSProperties}>
+      <span className="lyrics-glass-fill" aria-hidden="true" />
+      <input ref={seekInput} aria-label="Seek position" type="range" min={0} max={duration || 1} {...rangeFocus}
+        disabled={narrating || !duration} value={elapsed}
+        onChange={(event) => {
+          pendingSeek.current = event.target.valueAsNumber;
+          setSeeking(pendingSeek.current);
+        }}
+        onPointerDown={(event) => {
+          rangeFocus.onPointerDown(event);
+          event.currentTarget.setPointerCapture(event.pointerId);
+          setSeeking(position);
+        }}
+        onPointerUp={(event) => { finishSeek(); event.currentTarget.blur(); }}
+        onPointerCancel={() => finishSeek(false)}
+        onKeyUp={() => finishSeek()}
+        onBlur={(event) => { clearPointerFocus(event); finishSeek(); }} />
     </div>
-    <div className="lyssna-transport">
-      <div className="lyssna-transport-side">
-        <button type="button" className={`icon-button lyrics-fullscreen-like${liked ? " is-saved" : ""}`}
-          title={likeLabel} aria-label={likeLabel} aria-pressed={liked} disabled={!trackId}
-          onClick={activate(host.toggleLiked)}><FullscreenHeartIcon /></button>
-        {settings.fullscreen_volume === "left" && volumeSlider}
-        <button type="button" className="icon-button" title="Shuffle" aria-label="Shuffle" aria-pressed={shuffle}
-          onClick={activate(host.toggleShuffle)}><FullscreenShuffleIcon /></button>
-        <button type="button" className="icon-button" aria-label="Previous" onClick={host.previous}><SkipPreviousIcon /></button>
-      </div>
-      <button type="button" className="icon-button" aria-label={playing ? "Pause" : "Play"} onClick={localPlayback?.toggle ?? host.toggle}>
-        {playing ? <FullscreenPauseIcon /> : <FullscreenPlayIcon />}
-      </button>
-      <div className="lyssna-transport-side">
-        <button type="button" className="icon-button" aria-label="Next" onClick={host.next}><SkipNextIcon /></button>
-        <button type="button" className="icon-button" title={`Repeat (${repeat})`} aria-label={`Repeat (${repeat})`}
-          aria-pressed={repeat !== "off"} onClick={activate(cycleRepeat)}><FullscreenRepeatIcon one={repeat === "track"} /></button>
-        {canJumpDJ && <button type="button" className="icon-button lyssna-dj" title="Change the DJ mix"
-          aria-label="Change the DJ mix" onClick={activate(host.jumpDJ)}><Disc3 /></button>}
-        {settings.fullscreen_volume === "right" && volumeSlider}
-      </div>
-    </div>
-    {settings.fullscreen_volume === "below" && volumeSlider}
+    <div className="lyrics-fullscreen-times"><time>{clock(elapsed)}</time><time>{total}</time></div>
+  </>;
+  const heart = trackId && <button type="button" className={`icon-button lyrics-fullscreen-like${liked ? " is-saved" : ""}`}
+    title={likeLabel} aria-label={likeLabel} aria-pressed={liked}
+    onClick={activate(host.toggleLiked)}><FullscreenHeartIcon /></button>;
+  const transport = <>
+    <button type="button" className={`icon-button lyrics-fullscreen-shuffle${shuffle ? " active" : ""}`}
+      title="Shuffle" aria-label="Shuffle" aria-pressed={shuffle} onClick={activate(host.toggleShuffle)}><FullscreenShuffleIcon /></button>
+    <button type="button" className="icon-button lyrics-fullscreen-skip" aria-label="Previous" onClick={host.previous}><SkipPreviousIcon /></button>
+    <button type="button" className="icon-button lyrics-fullscreen-play" aria-label={playing ? "Pause" : "Play"} onClick={localPlayback?.toggle ?? host.toggle}>
+      {playing ? <FullscreenPauseIcon /> : <FullscreenPlayIcon />}
+    </button>
+    <button type="button" className="icon-button lyrics-fullscreen-skip" aria-label="Next" onClick={host.next}><SkipNextIcon /></button>
+    <button type="button" className={`icon-button lyrics-fullscreen-repeat${repeat !== "off" ? " active" : ""}`}
+      title={`Repeat (${repeat})`} aria-label={`Repeat (${repeat})`} aria-pressed={repeat !== "off"}
+      onClick={activate(cycleRepeat)}><FullscreenRepeatIcon one={repeat === "track"} /></button>
+    {canJumpDJ && <button type="button" className="icon-button lyssna-dj" title="Change the DJ mix"
+      aria-label="Change the DJ mix" onClick={activate(host.jumpDJ)}><Disc3 /></button>}
+  </>;
+  const seekOutside = renderCover && (coverOnly || always === "time" || always === "both");
+  const transportOutside = renderCover && (coverOnly || always === "controls" || always === "both");
+  const controls = <div className="lyrics-fullscreen-controls" style={timeChars}>
+    {!seekOutside && seekPart}
+    <div className="lyrics-fullscreen-buttons">{heart}{!transportOutside && transport}</div>
+    {volumeSlider}
   </div>;
+  return renderCover ? <>
+    {renderCover(controls)}
+    {seekOutside && <div className="lyrics-fullscreen-controls lyrics-outside-controls outside-seek" style={timeChars}>{seekPart}</div>}
+    {details}
+    {transportOutside && <div className="lyrics-fullscreen-controls lyrics-outside-controls outside-transport">
+      <div className="lyrics-fullscreen-buttons">{transport}</div>
+    </div>}
+  </> : controls;
 }
 
 type FullscreenMode = "display" | "cinema";
@@ -479,6 +548,24 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
   const exitingDisplay = useRef(false);
   const toolsTimer = useRef<number>(0);
   const lyricsPage = useRef<HTMLElement>(null);
+  const swapStart = useRef<Map<HTMLElement, DOMRect> | null>(null);
+  const swapAnimations = useRef<Animation[]>([]);
+  useLayoutEffect(() => {
+    const before = swapStart.current;
+    swapStart.current = null;
+    if (!before) return;
+    for (const animation of swapAnimations.current) animation.cancel();
+    const distances = Array.from(before, ([element, previous]) => {
+      const next = element.getBoundingClientRect();
+      return { element, x: previous.left - next.left, y: previous.top - next.top };
+    });
+    swapAnimations.current = distances.filter(({ element, x, y }) => element.isConnected && (x || y))
+      .map(({ element, x, y }) => element.animate([
+        { translate: `${x}px ${y}px`, composite: "add" },
+        { translate: "0px 0px", composite: "add" },
+      ], { duration: 320, easing: "cubic-bezier(0.2, 0.8, 0.2, 1)" }));
+  }, [settings.lyrics_artwork_right]);
+  useEffect(() => () => swapAnimations.current.forEach((animation) => animation.cancel()), []);
   const quickToolbar = useRef<HTMLDivElement>(null);
   const quickPickerTrigger = useRef<HTMLButtonElement>(null);
   const [quickPicker, setQuickPicker] = useState<QuickEffectChoice>();
@@ -572,7 +659,10 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
     if (!lyricsPage.current) return;
     lyricsPage.current.dataset.tools = "awake";
     window.clearTimeout(toolsTimer.current);
-    toolsTimer.current = window.setTimeout(sleepTools, 750);
+    toolsTimer.current = window.setTimeout(() => {
+      if (lyricsPage.current?.querySelector(".lyrics-fullscreen-controls:hover")) return;
+      sleepTools();
+    }, 750);
   }
 
   useEffect(() => {
@@ -682,6 +772,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
     const keyboard = (event: KeyboardEvent) => {
       if (showCreator && !showSettings) return;
       if (event.key !== "Escape" && event.key !== "F11") return;
+      if (parent.querySelector(".lyssna-song-sheet[open]")) return;
       event.preventDefault();
       event.stopImmediatePropagation();
       if (shownQuickPicker && event.key === "Escape") closeQuickPicker();
@@ -704,9 +795,25 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
     ${settings.reduce_motion ? "reduce-motion" : ""} ${settings.glass_seek ? "" : "flat-seek"}`;
   const pageStyle = { ...fonts, "--lyric-size": `${Math.round(settings.lyric_size * 1.6)}px`,
     "--lyrics-cover-color": coverColour, "--hero": coverColour } as CSSProperties;
-  const artworkDock = !!track && !canvas && !compact && !hideArtwork;
-  const playback = immersive && <FullscreenControls host={host} playing={playing} settings={settings}
-    view={view} trackId={trackId} narrating={narrating} localPlayback={localPlayback} />;
+  const artworkDock = immersive && !!track?.cover && !canvas && !compact && !hideArtwork && !narrating;
+  const details = track && <TrackMetadata host={host} track={track} year={year} yearPosition={settings.lyrics_year_position}
+    reduceMotion={settings.reduce_motion} orderByWidth={!!canvas} />;
+  const renderCover = (controls?: ReactNode) => <div className="lyrics-media lyrics-motion-stage">
+    {track?.cover && <img className={`cover${settings.cover_animation && !settings.reduce_motion ? " crossfade" : ""}`}
+      key={track.cover} src={track.cover} alt="" />}
+    <MotionArtwork cover={motion} playing={playing} />
+    {controls}
+  </div>;
+  const playback = immersive && (track || narrating) && <FullscreenControls host={host} playing={playing} settings={settings}
+    view={view} trackId={trackId} narrating={narrating} localPlayback={localPlayback} coverOnly={coverOnly}
+    renderCover={artworkDock ? renderCover : undefined} details={artworkDock ? details : undefined} />;
+  function prepareArtworkSwap() {
+    const page = lyricsPage.current;
+    if (!page || compact || hideArtwork || coverOnly || settings.reduce_motion || view.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const artwork = canvas ? ".lyrics-canvas-cover, .lyrics-details" : ".lyrics-album";
+    const elements = page.querySelectorAll<HTMLElement>(`${artwork}, .lyrics-body, .lyrics-toolbar, :scope > .lyrics-fullscreen-controls`);
+    swapStart.current = new Map(Array.from(elements, (element) => [element, element.getBoundingClientRect()]));
+  }
   return <>
     {!showCreator && hasAmbience && <Ambience image={artwork} animate={playing && background === "animated"}
       reduceMotion={settings.reduce_motion} brightness={settings.lyrics_background_brightness} followCanvas={canvas ? "window" : false} />}
@@ -723,20 +830,15 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
       }} />
     </div>}
     {!showCreator && <section ref={lyricsPage} className={className} aria-label="Lyssna Lyrics" style={pageStyle}
+      data-always-show={coverOnly ? "both" : immersive && settings.fullscreen_always_show !== "none" ? settings.fullscreen_always_show : undefined}
       onPointerMove={wakeTools} onPointerLeave={sleepTools} onKeyDownCapture={wakeTools}>
       {narrating && <DJInterlude playing={playing} reduceMotion={settings.reduce_motion} />}
       {!narrating && (track ? <>
         <div className="lyrics-album">
-          {canvas ? <CanvasArtwork key={`${track.id}:${canvas.fileId ?? canvas.url}`} info={canvas} cover={track.cover}
+          {artworkDock ? playback : <>{canvas ? <CanvasArtwork key={`${track.id}:${canvas.fileId ?? canvas.url}`} info={canvas} cover={track.cover}
             playing={playing && !settings.reduce_motion} onUnavailable={setUnavailableCanvas} onVideo={setCanvasVideo} heldFrame={heldFrame} />
-            : (motion.state !== "idle" || track.cover) && <div className="lyrics-media lyrics-motion-stage">
-              {track.cover && <img className={`cover${settings.cover_animation && !settings.reduce_motion ? " crossfade" : ""}`}
-                key={track.cover} src={track.cover} alt="" />}
-              <MotionArtwork cover={motion} playing={playing} />
-            </div>}
-          <TrackMetadata host={host} track={track} year={year} yearPosition={settings.lyrics_year_position}
-            reduceMotion={settings.reduce_motion} orderByWidth={!!canvas} />
-          {artworkDock && playback}
+            : (motion.state !== "idle" || track.cover) && renderCover()}
+          {details}</>}
         </div>
         {!coverOnly && <div className="lyrics-body">
           {missing ? settings.lyrics_no_lyrics_notice && <MissingLyrics creatorEnabled={preferences.ttml_creator}
@@ -774,7 +876,10 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
             ["lyrics_artwork_right", "Artwork on the right", SwapSidesIcon],
           ] as const).map(([key, label, Icon]) => <button type="button" key={key} data-icon={key} title={label}
             className={`icon-button${settings[key] ? " active" : ""}`} aria-label={label} aria-pressed={settings[key]}
-            onClick={() => change({ [key]: !settings[key] })}><Icon /></button>)}
+            onClick={() => {
+              if (key === "lyrics_artwork_right") prepareArtworkSwap();
+              change({ [key]: !settings[key] });
+            }}><Icon /></button>)}
           {quickEffects.filter(({ id }) => settings.pinned_lyric_effects.includes(id)).map((effect) => {
             const { id, label, Icon } = effect;
             if (effect.kind === "picker") return <Fragment key={id}>
@@ -812,7 +917,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
       {!showSettings && notice && <div className="lyssna-popout-error" role="status">{notice}</div>}
       {!artworkDock && playback}
     </section>}
-    {!showCreator && showTtml && <LoadTtml song={track ? track.title || "Unknown song" : undefined} glass={settings.liquid_glass} theme={settings.theme} style={fonts}
+    {!showCreator && showTtml && <LoadTtml song={track ? track.title || "Unknown song" : undefined} glass={settings.liquid_glass} style={fonts}
       reviewer={preferences.ttml_reviewer} onReviewer={(ttml_reviewer) => change({ ttml_reviewer })}
       onSubmit={async (file) => {
         if (!track) throw new Error("Play the song you want to submit lyrics for.");
@@ -1084,9 +1189,9 @@ export default function start(options: BuildOptions) {
           if (!creatorOpen) await open("creator");
           if (creatorOpen) dismiss();
         };
-        root.render(cinema
+        root.render(<SongSheetScope>{cinema
           ? <LyricsView host={host} options={options} close={dismiss} parent={parent} view={view} capture={capture} openCreator={() => void returnToCreator()} />
-          : <PopoutView host={host} view={view} close={dismiss} />);
+          : <PopoutView host={host} view={view} close={dismiss} />}</SongSheetScope>);
       } catch (error) {
         if (detached?.view === view) detached.dismiss();
         else view.close();
@@ -1194,10 +1299,10 @@ export default function start(options: BuildOptions) {
       closeReview();
       window.requestAnimationFrame(() => reviewButton?.focus());
     };
-    renderMainView = () => root.render(<LyricsView host={host} options={options} close={closeView} parent={parent} capture={capture}
+    renderMainView = () => root.render(<SongSheetScope><LyricsView host={host} options={options} close={closeView} parent={parent} capture={capture}
       fullscreenRequest={fullscreenRequest} settingsRequest={settingsRequest} openCreator={() => setCreator(true)}
       closeCreator={creatorOpen ? closeCreator : undefined} reviewSelection={reviewSelection}
-      closeReview={reviewOpen ? dismissReview : undefined} onSidebarCover={setSidebarCover} onRecordingPlayback={setRecordingPlayback} />);
+      closeReview={reviewOpen ? dismissReview : undefined} onSidebarCover={setSidebarCover} onRecordingPlayback={setRecordingPlayback} /></SongSheetScope>);
     showMainSettings = (request) => {
       settingsRequest = request;
       renderMainView?.();
@@ -1312,7 +1417,7 @@ export default function start(options: BuildOptions) {
         if (expanded) panel.append(container);
         else placeNowPlayingPreview(panel, container);
       };
-      root.render(<NowPlayingCard host={host} open={() => { if (!close) void open(); }} expand={expand} />);
+      root.render(<SongSheetScope><NowPlayingCard host={host} open={() => { if (!close) void open(); }} expand={expand} /></SongSheetScope>);
       removeCard = () => {
         mounted = false;
         panel.classList.remove("lyssna-npv-expanded-panel");

@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { createContext, useCallback, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { ExternalLink, X } from "lucide-react";
 import { getHost } from "./host";
 
@@ -11,7 +11,18 @@ export function lyssnaSongUrl(songId: string) {
   return songIdPattern.test(songId) ? `${site}/song/${songId}` : undefined;
 }
 
-export function SongSheet({ url, onClose }: { url: string; onClose: () => void }) {
+export const SongSheetContext = createContext<((url: string) => void) | null>(null);
+
+export function SongSheetScope({ children }: { children: ReactNode }) {
+  const [url, setUrl] = useState<string>();
+  const close = useCallback(() => setUrl(undefined), []);
+  return <SongSheetContext.Provider value={setUrl}>
+    {children}
+    {url && <SongSheet key={url} url={url} onClose={close} />}
+  </SongSheetContext.Provider>;
+}
+
+function SongSheet({ url, onClose }: { url: string; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const frame = useRef<HTMLIFrameElement>(null);
   const actions = useRef<HTMLDivElement>(null);
@@ -61,7 +72,7 @@ export function SongSheet({ url, onClose }: { url: string; onClose: () => void }
       if (event.data?.type === "lyssna:sheet-play" && typeof event.data.id === "string" &&
           trackIdPattern.test(event.data.id)) {
         const host = getHost();
-        void host.playTrack(`spotify:track:${event.data.id}`).then(onClose).catch(() => {
+        void host.playTrack(`spotify:track:${event.data.id}`).catch(() => {
           view.open(`https://open.spotify.com/track/${event.data.id}`, "_blank", "noopener,noreferrer");
         });
       }

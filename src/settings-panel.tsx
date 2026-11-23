@@ -249,11 +249,6 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
       range("animation_fps_cap", "Animation frame rate", "The most frames per second animations draw while the limit is on.",
         "fps frame rate", [15, 240, 5], 60, " fps", !settings.animation_fps_cap_enabled),
       flag("reduce_motion", "Reduce motion", "Turn off animated backgrounds and word animations.", "animation accessibility"),
-      <SettingRow key="theme" label="Theme" help="Light or dark, or match the system. Lyrics and artwork stay dark." keywords="theme light dark colour">
-        <select className="settings-select" aria-label="Theme" value={settings.theme} onChange={(event) => change({ theme: event.target.value as Settings["theme"] })}>
-          <option value="dark">Dark</option><option value="light">Light</option><option value="system">Match system</option>
-        </select>
-      </SettingRow>,
     ]],
     ["Lyrics", "Lyrics display", [
       visualRowsByKey.get("size"),
@@ -418,7 +413,7 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
     </SettingRow>);
 
   const backdropClass = `modal-backdrop lyrics-settings-backdrop${settings.liquid_glass ? " liquid-glass" : ""}${settings.reduce_motion ? " reduce-motion" : ""}${tuning ? " lyssna-animator-backdrop" : ""}`;
-  const content = <div className={backdropClass} data-theme={settings.theme} style={fonts}
+  const content = <div className={backdropClass} style={fonts}
     onClick={(event) => { if (event.target === event.currentTarget) close(); }}>
     {tuning ? <AnimatorPanel view={view} animator={settings.lyrics_animator} onChange={(lyrics_animator) => change({ lyrics_animator })}
       onBack={() => setTuning(false)} onClose={close} /> : <section className={`lyrics-settings plugin-settings${submenu ? " plugin-settings-submenu" : ""}`}>

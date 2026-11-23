@@ -13,8 +13,6 @@
   --glass-fill-strong: light-dark(#e1e1dcef, #1e1e23ef);
 }
 
-.lyssna-lyrics-view .load-ttml-backdrop[data-theme="light"] { color-scheme: light; }
-.lyssna-lyrics-view .load-ttml-backdrop[data-theme="system"] { color-scheme: light dark; }
 
 .dialog.load-ttml {
   width: min(100% - 48px, 720px);

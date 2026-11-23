@@ -154,7 +154,7 @@
   align-items: center;
   gap: 12px;
 }
-.settings-range input {
+:is(.settings-range, .animator-slider) input[type="range"] {
   appearance: none;
   width: 160px;
   height: 4px;
@@ -166,14 +166,14 @@
   );
   cursor: pointer;
 }
-.settings-range input:hover {
+:is(.settings-range, .animator-slider) input[type="range"]:hover {
   background: linear-gradient(
     to right,
     #1ed760 var(--fill, 50%),
     light-dark(#b2b2b2, #4d4d4d) var(--fill, 50%)
   );
 }
-.settings-range input::-webkit-slider-thumb {
+:is(.settings-range, .animator-slider) input[type="range"]::-webkit-slider-thumb {
   appearance: none;
   width: 12px;
   height: 12px;

@@ -95,7 +95,7 @@ function ValueSlider({
         step={parameter.step}
         value={Math.min(parameter.max, Math.max(parameter.min, value))}
         style={{
-          ["--range" as string]: `${
+          ["--fill" as string]: `${
             ((Math.min(parameter.max, Math.max(parameter.min, value)) -
               parameter.min) /
               (parameter.max - parameter.min)) *
