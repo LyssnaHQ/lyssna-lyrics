@@ -5,6 +5,7 @@ import { getHost } from "./host";
 const site = "https://lyssna.org";
 const songIdPattern = /^[\da-f]{8}-(?:[\da-f]{4}-){3}[\da-f]{12}$/i;
 const trackIdPattern = /^[A-Za-z0-9]{22}$/;
+const sheetPath = /^\/(?:song|u)\/[^/?#\\]+\/?$/;
 
 export function lyssnaSongUrl(songId: string) {
   return songIdPattern.test(songId) ? `${site}/song/${songId}` : undefined;
@@ -13,7 +14,8 @@ export function lyssnaSongUrl(songId: string) {
 export function SongSheet({ url, onClose }: { url: string; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const frame = useRef<HTMLIFrameElement>(null);
-  const [address] = useState(() => `${url}?embed&client=spicetify&opened=${Date.now()}`);
+  const [address, setAddress] = useState(() => `${url}?embed&client=spicetify&navigation=sheet&opened=${Date.now()}`);
+  const visited = useRef([address]);
   const [page, setPage] = useState(url);
   const [status, setStatus] = useState("Loading song page…");
 
@@ -25,10 +27,27 @@ export function SongSheet({ url, onClose }: { url: string; onClose: () => void }
       if (event.origin !== site || event.source !== frame.current?.contentWindow) return;
       if (event.data?.type === "lyssna:sheet-close") onClose();
       if (event.data?.type === "lyssna:sheet-ready" && typeof event.data.path === "string" &&
-          /^\/(?:song|u)\/[^/?#\\]+\/?$/.test(event.data.path)) {
+          sheetPath.test(event.data.path)) {
         view.clearTimeout(timer);
         setStatus("");
         setPage(site + event.data.path);
+      }
+      if (event.data?.type === "lyssna:sheet-navigate" && typeof event.data.href === "string") {
+        let target: URL;
+        try { target = new URL(event.data.href, site); }
+        catch { return; }
+        if (target.origin !== site || target.username || target.password || !sheetPath.test(target.pathname)) return;
+        target.searchParams.set("embed", "");
+        target.searchParams.set("client", "spicetify");
+        target.searchParams.set("navigation", "sheet");
+        target.searchParams.delete("opened");
+        if (visited.current.at(-1) === target.href) return;
+        visited.current.push(target.href);
+        setAddress(target.href);
+      }
+      if (event.data?.type === "lyssna:sheet-back" && visited.current.length > 1) {
+        visited.current.pop();
+        setAddress(visited.current.at(-1)!);
       }
       if (event.data?.type === "lyssna:sheet-play" && typeof event.data.id === "string" &&
           trackIdPattern.test(event.data.id)) {
