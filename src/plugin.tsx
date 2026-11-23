@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactElement, type ReactNode, type RefObject } from "react";
-import { ArrowRight, ArrowUpRight, ChevronUp, Disc3, FilePenLine, FoldVertical, MessageCircle, MicOff, MicVocal, Music2, PanelLeftOpen, Settings as GearIcon, UnfoldVertical, X } from "lucide-react";
+import { ChevronUp, Disc3, FilePenLine, FoldVertical, MessagesSquare, MicVocal, Music2, PanelLeftOpen, Settings as GearIcon, UnfoldVertical, X } from "lucide-react";
 import { getHost, type CanvasInfo, type Host, type Root, type Track } from "./host";
 import { useArtworkColor } from "./lyssna/artwork-color";
 import { Ambience } from "./lyssna/ambience";
@@ -131,8 +131,9 @@ function useTrackLyrics(track: Track | null, duration: number, view: Window, set
     ? { lyrics: result.lyrics, waiting: result.waiting } : { lyrics: undefined, waiting: !!track && !!sourceKey };
 }
 
-function MissingLyrics({ track, host, creatorEnabled, openCreator }: {
-  track: Track; host: Host; creatorEnabled: boolean; openCreator?: () => void;
+function MissingLyrics({ track, host, openCreator, searchAgain, openTtml }: {
+  track: Track; host: Host; openCreator?: () => void;
+  searchAgain: () => void; openTtml: (trigger: HTMLButtonElement) => void;
 }) {
   const [reviewer, setReviewer] = useState(false);
   const [marking, setMarking] = useState(false);
@@ -171,30 +172,32 @@ function MissingLyrics({ track, host, creatorEnabled, openCreator }: {
     }
   }
 
-  return <div className="lyssna-missing-lyrics">
-    <div className="lyssna-missing-content">
-      <h2 role="status">No lyrics for this song yet</h2>
+  return <div className="lyrics-message lyssna-missing-lyrics">
+    <MicVocal aria-hidden="true" />
+    <h2 role="status">No lyrics yet</h2>
+    <p>Nobody has synced this song yet. Sync it in the TTML Creator, or ask the community on Discord.</p>
+    <div className="lyssna-missing-actions">
       {openCreator && <button className="lyssna-missing-action" type="button" onClick={openCreator}>
-        <FilePenLine aria-hidden="true" />
-        <span>
-          <strong>{creatorEnabled ? "Open TTML Creator" : "Enable TTML Creator"}</strong>
-          <small>Write and time lyrics for this song.</small>
-        </span>
-        <ArrowRight aria-hidden="true" />
+        <FilePenLine size={18} aria-hidden="true" />
+        Open TTML Creator
       </button>}
-      {reviewer && <button className="lyssna-missing-action" type="button" onClick={() => void mark()}
-        disabled={marking || !!markNotice && !markNotice.error}>
-        <MicOff aria-hidden="true" />
-        <span><strong>{marking ? "Marking instrumental…" : "Mark instrumental"}</strong><small>Mark this recording as having no lyrics on Lyssna.</small></span>
-        <ArrowRight aria-hidden="true" />
-      </button>}
-      {markNotice && <small role={markNotice.error ? "alert" : "status"}>{markNotice.message}</small>}
       <a className="lyssna-missing-action" href={discordInvite} target="_blank" rel="noopener noreferrer">
-        <MessageCircle aria-hidden="true" />
-        <span><strong>Join the Lyssna Discord</strong><small>Ask about missing lyrics or get help with a sync.</small></span>
-        <ArrowUpRight aria-hidden="true" />
+        <MessagesSquare size={18} aria-hidden="true" />
+        Join our Discord
       </a>
     </div>
+    <div className="lyssna-missing-links">
+      <button type="button" onClick={searchAgain}>Search again</button>
+      <span aria-hidden="true">·</span>
+      <button type="button" aria-haspopup="dialog" onClick={(event) => openTtml(event.currentTarget)}>Import a lyric file</button>
+      {reviewer && <>
+        <span aria-hidden="true">·</span>
+        <button type="button" onClick={() => void mark()} disabled={marking || !!markNotice && !markNotice.error}>
+          {marking ? "Marking instrumental…" : "Mark as instrumental"}
+        </button>
+      </>}
+    </div>
+    {markNotice && <small role={markNotice.error ? "alert" : "status"}>{markNotice.message}</small>}
   </div>;
 }
 
@@ -621,7 +624,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
   const shownQuickPicker = !showSettings && !showCreator && !showTtml && quickPicker &&
     settings.pinned_lyric_effects.includes(quickPicker.id) ? quickPicker : undefined;
   const creatorPage = useRef<HTMLDivElement>(null);
-  const ttmlButton = useRef<HTMLButtonElement>(null);
+  const ttmlTrigger = useRef<HTMLButtonElement>(null);
   const settingsTrigger = useRef<HTMLElement | undefined>(undefined);
 
   function closeSettings() {
@@ -695,9 +698,20 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
     });
     return () => { live = false; };
   }, [host, albumUri, track?.year, settings.lyrics_year_position]);
+  function openTtml(trigger: HTMLButtonElement) {
+    ttmlTrigger.current = trigger;
+    setNotice("");
+    setShowTtml(true);
+  }
+
   function closeTtml() {
     setShowTtml(false);
-    view.requestAnimationFrame(() => ttmlButton.current?.focus({ preventScroll: true }));
+    view.requestAnimationFrame(() => ttmlTrigger.current?.focus({ preventScroll: true }));
+  }
+
+  function searchAgain(action: Settings["lyrics_cache_action"]) {
+    refreshLyrics(track ?? undefined, action);
+    setNotice("Refreshing lyrics…");
   }
 
   function sleepTools() {
@@ -710,7 +724,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
     lyricsPage.current.dataset.tools = "awake";
     window.clearTimeout(toolsTimer.current);
     toolsTimer.current = window.setTimeout(() => {
-      if (lyricsPage.current?.querySelector(".lyrics-fullscreen-controls:hover")) return;
+      if (lyricsPage.current?.querySelector(".lyrics-fullscreen-controls:hover, .lyrics-toolbar:is(:hover, [data-effect-picker])")) return;
       sleepTools();
     }, 750);
   }
@@ -806,7 +820,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
     observer.observe(parent);
     return () => observer.disconnect();
   }, [parent]);
-  useEffect(() => {
+  useLayoutEffect(() => {
     parent.classList.toggle("immersive", immersive);
     parent.classList.toggle("lyssna-slide-away", leaving);
   }, [parent, immersive, leaving]);
@@ -848,11 +862,61 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
   const artworkDock = immersive && !!track?.cover && !canvas && !compact && !hideArtwork && !narrating;
   const details = track && <TrackMetadata host={host} track={track} year={year} yearPosition={settings.lyrics_year_position}
     reduceMotion={settings.reduce_motion} orderByWidth={!!canvas} />;
+  const toolbar = <div className={`lyrics-toolbar${settings.liquid_glass ? " liquid-glass" : ""}`} ref={quickToolbar} data-effect-picker={shownQuickPicker?.id}
+    data-vertical={compact && !narrow || undefined} role="toolbar" aria-label="View controls">
+    <div className="lyrics-toolbar-actions">
+      {([
+        ["romanized", "Romanization", TranslateIcon],
+        ["experimental_word_sync", "Experimental word sync", WordSyncIcon],
+        ["lyrics_compact", "Compact lyrics", CompactIcon],
+        ["lyrics_hide_artwork", "Hide artwork", HideArtworkIcon],
+        ["lyrics_artwork_right", "Artwork on the right", SwapSidesIcon],
+      ] as const).map(([key, label, Icon]) => <button type="button" key={key} data-icon={key} title={label}
+        className={`icon-button${settings[key] ? " active" : ""}`} aria-label={label} aria-pressed={settings[key]}
+        onClick={() => {
+          if (key === "lyrics_artwork_right") prepareArtworkSwap();
+          change({ [key]: !settings[key] });
+        }}><Icon /></button>)}
+      {quickEffects.filter(({ id }) => settings.pinned_lyric_effects.includes(id)).map((effect) => {
+        const { id, label, Icon } = effect;
+        if (effect.kind === "picker") return <Fragment key={id}>
+          <button className="icon-button" type="button" data-icon={id}
+            title={label} aria-label={label} aria-expanded={shownQuickPicker?.id === id}
+            onClick={(event) => {
+              quickPickerTrigger.current = event.currentTarget;
+              if (shownQuickPicker === effect) closeQuickPicker();
+              else setQuickPicker(effect);
+            }}><Icon /></button>
+          {shownQuickPicker === effect && <div className="lyssna-quick-expansion">
+            <QuickEffectPicker effect={effect} settings={preferences} change={change} close={closeQuickPicker}
+              view={view} vertical={compact && !narrow} />
+          </div>}
+        </Fragment>;
+        const active = settings[effect.id];
+        return <button type="button" key={id} data-icon={id} title={label} aria-label={label} aria-pressed={active}
+          className={`icon-button${active ? " active" : ""}`}
+          onClick={() => change({ [id]: !active })}><Icon /></button>;
+      })}
+      <span className="toolbar-divider" aria-hidden="true" />
+      <button type="button" className="icon-button" data-icon="upload" title="Load TTML" aria-label="Load TTML"
+        aria-haspopup="dialog" onClick={(event) => openTtml(event.currentTarget)}><UploadIcon /></button>
+      {settings.lyrics_cache_button && <button type="button" className="icon-button" data-icon="retry" title="Refresh lyrics" aria-label="Refresh lyrics"
+        disabled={!track} onClick={() => searchAgain(settings.lyrics_cache_action)}><RetryIcon /></button>}
+      <button type="button" className="icon-button" data-icon="fullscreen" title={fullscreen ? "Exit full screen" : externalCinema ? "Full screen" : "Full screen (Shift for cinema)"}
+        aria-label={fullscreen ? "Exit full screen" : "Full screen"}
+        aria-pressed={fullscreen} onClick={(event) => toggleFullscreen(event.shiftKey)}><FullScreenIcon /></button>
+      <button type="button" className="icon-button" data-icon="settings" title="Lyssna settings" aria-label="Lyssna settings"
+        onClick={() => { setNotice(""); setSettingsPage("settings"); }}><GearIcon size={18} /></button>
+      <button type="button" className="icon-button" title={returnToLyrics ? "Leave full screen" : "Close lyrics"}
+        aria-label={returnToLyrics ? "Leave full screen" : "Close lyrics"} onClick={closeLyrics}><X size={18} /></button>
+    </div>
+  </div>;
   const renderCover = (controls?: ReactNode) => <div className="lyrics-media lyrics-motion-stage">
     {track?.cover && <img className={`cover${settings.cover_animation && !settings.reduce_motion ? " crossfade" : ""}`}
       key={track.cover} src={track.cover} alt="" />}
     <MotionArtwork cover={motion} playing={playing} />
     {controls}
+    {coverOnly && toolbar}
   </div>;
   const playback = immersive && (track || narrating) && <FullscreenControls host={host} playing={playing} settings={settings}
     view={view} trackId={trackId} narrating={narrating} localPlayback={localPlayback} coverOnly={coverOnly}
@@ -892,7 +956,8 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
           {details}</>}
         </div>
         {!coverOnly && <div className="lyrics-body">
-          {missing ? settings.lyrics_no_lyrics_notice && <MissingLyrics key={track.id} track={track} host={host} creatorEnabled={preferences.ttml_creator}
+          {missing ? settings.lyrics_no_lyrics_notice && <MissingLyrics key={track.id} track={track} host={host}
+            searchAgain={() => searchAgain("song")} openTtml={openTtml}
             openCreator={openCreator && (() => {
               if (!preferences.ttml_creator) change({ ttml_creator: true });
               openCreator();
@@ -916,55 +981,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
       </> : <div className="lyrics-message"><Music2 /><h2>Play something you love</h2><p>Your lyrics will appear here.</p></div>)}
       {track && showVisualiser && !coverOnly && <SpotifyVisualiser key={track.id} host={host} trackId={track.id}
         opacity={settings.lyrics_visualiser_opacity} playing={playing} capture={capture} motion={visualiser} read={localPlayback?.read} />}
-      <div className={`lyrics-toolbar${settings.liquid_glass ? " liquid-glass" : ""}`} ref={quickToolbar} data-effect-picker={shownQuickPicker?.id}
-        data-vertical={compact && !narrow || undefined} role="toolbar" aria-label="View controls">
-        <div className="lyrics-toolbar-actions">
-          {([
-            ["romanized", "Romanization", TranslateIcon],
-            ["experimental_word_sync", "Experimental word sync", WordSyncIcon],
-            ["lyrics_compact", "Compact lyrics", CompactIcon],
-            ["lyrics_hide_artwork", "Hide artwork", HideArtworkIcon],
-            ["lyrics_artwork_right", "Artwork on the right", SwapSidesIcon],
-          ] as const).map(([key, label, Icon]) => <button type="button" key={key} data-icon={key} title={label}
-            className={`icon-button${settings[key] ? " active" : ""}`} aria-label={label} aria-pressed={settings[key]}
-            onClick={() => {
-              if (key === "lyrics_artwork_right") prepareArtworkSwap();
-              change({ [key]: !settings[key] });
-            }}><Icon /></button>)}
-          {quickEffects.filter(({ id }) => settings.pinned_lyric_effects.includes(id)).map((effect) => {
-            const { id, label, Icon } = effect;
-            if (effect.kind === "picker") return <Fragment key={id}>
-              <button className="icon-button" type="button" data-icon={id}
-                title={label} aria-label={label} aria-expanded={shownQuickPicker?.id === id}
-                onClick={(event) => {
-                  quickPickerTrigger.current = event.currentTarget;
-                  if (shownQuickPicker === effect) closeQuickPicker();
-                  else setQuickPicker(effect);
-                }}><Icon /></button>
-              {shownQuickPicker === effect && <div className="lyssna-quick-expansion">
-                <QuickEffectPicker effect={effect} settings={preferences} change={change} close={closeQuickPicker}
-                  view={view} vertical={compact && !narrow} />
-              </div>}
-            </Fragment>;
-            const active = settings[effect.id];
-            return <button type="button" key={id} data-icon={id} title={label} aria-label={label} aria-pressed={active}
-              className={`icon-button${active ? " active" : ""}`}
-              onClick={() => change({ [id]: !active })}><Icon /></button>;
-          })}
-          <span className="toolbar-divider" aria-hidden="true" />
-          <button ref={ttmlButton} type="button" className="icon-button" data-icon="upload" title="Load TTML" aria-label="Load TTML"
-            aria-haspopup="dialog" onClick={() => { setNotice(""); setShowTtml(true); }}><UploadIcon /></button>
-          {settings.lyrics_cache_button && <button type="button" className="icon-button" data-icon="retry" title="Refresh lyrics" aria-label="Refresh lyrics"
-            disabled={!track} onClick={() => { refreshLyrics(track ?? undefined, settings.lyrics_cache_action); setNotice("Refreshing lyrics…"); }}><RetryIcon /></button>}
-          <button type="button" className="icon-button" data-icon="fullscreen" title={fullscreen ? "Exit full screen" : externalCinema ? "Full screen" : "Full screen (Shift for cinema)"}
-            aria-label={fullscreen ? "Exit full screen" : "Full screen"}
-            aria-pressed={fullscreen} onClick={(event) => toggleFullscreen(event.shiftKey)}><FullScreenIcon /></button>
-          <button type="button" className="icon-button" data-icon="settings" title="Lyssna settings" aria-label="Lyssna settings"
-            onClick={() => { setNotice(""); setSettingsPage("settings"); }}><GearIcon size={18} /></button>
-          <button type="button" className="icon-button" title={returnToLyrics ? "Leave full screen" : "Close lyrics"}
-            aria-label={returnToLyrics ? "Leave full screen" : "Close lyrics"} onClick={closeLyrics}><X size={18} /></button>
-        </div>
-      </div>
+      {(!coverOnly || !artworkDock) && toolbar}
       {!showSettings && notice && <div className="lyssna-popout-error" role="status">{notice}</div>}
       {!artworkDock && playback}
     </section>}

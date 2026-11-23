@@ -1519,7 +1519,7 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   background: currentColor;
 }
 
-.lyssna-lyrics-view .lyrics-page > .lyrics-toolbar[data-effect-picker] {
+.lyssna-lyrics-view .lyrics-toolbar[data-effect-picker] {
   opacity: 1;
   background: light-dark(#f2f2f0e6, #0d0d0fcc);
   box-sizing: border-box;
@@ -1527,7 +1527,7 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   scrollbar-width: none;
 }
 
-.lyssna-lyrics-view .lyrics-page > .lyrics-toolbar.liquid-glass {
+.lyssna-lyrics-view .lyrics-toolbar.liquid-glass {
   --toolbar-glass-fill: #0b0b0f73;
   --toolbar-glass-active-fill: #08080b99;
   background: var(--toolbar-glass-fill);
@@ -1541,12 +1541,12 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
     0 10px 30px #00000059;
 }
 
-.lyssna-lyrics-view .lyrics-page > .lyrics-toolbar.liquid-glass:is(:hover, :focus-within, [data-effect-picker]) {
+.lyssna-lyrics-view .lyrics-toolbar.liquid-glass:is(:hover, :focus-within, [data-effect-picker]) {
   background: var(--toolbar-glass-active-fill);
 }
 
 @media (prefers-reduced-transparency: reduce) {
-  .lyssna-lyrics-view .lyrics-page > .lyrics-toolbar.liquid-glass {
+  .lyssna-lyrics-view .lyrics-toolbar.liquid-glass {
     --toolbar-glass-fill: #1c1c21;
     --toolbar-glass-active-fill: #242429;
     -webkit-backdrop-filter: none;
@@ -2446,87 +2446,124 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   font-size: 1.2rem;
 }
 
-.lyssna-missing-lyrics {
+.lyssna-lyrics-view .lyssna-missing-lyrics {
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
+  align-items: center;
   justify-content: safe center;
-  height: 100%;
-  padding: 22px 4px;
+  padding: 25px 4px;
+  gap: 16px;
   overflow: auto;
+  color: #f6f6f6;
+  text-align: center;
 }
 
-.lyssna-missing-content {
-  display: grid;
+.lyssna-missing-lyrics > svg {
   flex: none;
-  gap: 10px;
-  width: min(100%, 430px);
-  margin-inline: auto;
-  color: #fff;
+  width: 52px;
+  height: 52px;
+  margin-bottom: 4px;
+  stroke-width: 1.5;
+  opacity: 0.7;
 }
 
-.lyssna-missing-content h2 {
-  margin: 0 0 8px;
-  font-size: clamp(22px, 3cqw, 36px);
-  line-height: 1.12;
-  letter-spacing: -0.035em;
+.lyssna-lyrics-view .lyssna-missing-lyrics h2 {
+  margin: 0;
+  font-size: 34px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+.lyssna-lyrics-view .lyssna-missing-lyrics p {
+  max-width: 400px;
+  margin: 0;
+  color: #f1f1f1b0;
+  font-size: 17px;
+  line-height: 1.45;
   text-wrap: balance;
 }
 
-.lyssna-lyrics-view .lyssna-missing-action {
-  box-sizing: border-box;
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+.lyssna-missing-actions,
+.lyssna-missing-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   align-items: center;
+}
+
+.lyssna-missing-actions {
+  margin-top: 14px;
   gap: 12px;
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid #ffffff2b;
-  border-radius: 12px;
-  background: #121212b3;
-  color: inherit;
-  text-align: start;
+}
+
+.lyssna-lyrics-view .lyssna-missing-action {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 28px;
+  border: 1px solid #ffffff1f;
+  border-radius: 999px;
+  background: #ffffff1a;
+  color: #f6f6f6;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 18px;
   text-decoration: none;
   cursor: pointer;
+  transition: background 0.2s, border-color 0.2s, filter 0.2s, transform 0.12s;
 }
 
 .lyssna-lyrics-view .lyssna-missing-action:hover {
-  border-color: #ffffff70;
-  background: #272727e6;
+  border-color: #ffffff33;
+  background: #ffffff2b;
 }
 
-.lyssna-missing-action:focus-visible {
-  outline: 2px solid #fff;
-  outline-offset: -3px;
+.lyssna-lyrics-view button.lyssna-missing-action {
+  border-color: transparent;
+  background: #f6f6f6;
+  color: #0d0d0d;
 }
 
-.lyssna-missing-action > svg {
-  width: 18px;
-  height: 18px;
-  color: #d7d7d7;
+.lyssna-lyrics-view button.lyssna-missing-action:hover {
+  filter: brightness(1.12);
 }
 
-.lyssna-missing-action > svg:first-child {
-  box-sizing: content-box;
-  padding: 10px;
-  border-radius: 9px;
-  background: #ffffff1a;
-  color: #fff;
+.lyssna-missing-action:active {
+  transform: scale(0.97);
 }
 
-.lyssna-missing-action :is(strong, small) {
-  display: block;
-  line-height: 1.35;
-}
-
-.lyssna-missing-action strong {
-  font-size: 14px;
-}
-
-.lyssna-missing-action small {
+.lyssna-missing-links {
+  gap: 4px 10px;
   margin-top: 2px;
-  color: #dedede;
-  font-size: 12px;
+  color: #f1f1f18c;
+  font-size: 13px;
+}
+
+.lyssna-lyrics-view .lyssna-missing-links button {
+  padding: 4px 2px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 3px;
+  transition: color 0.15s, text-decoration-color 0.15s;
+}
+
+.lyssna-lyrics-view .lyssna-missing-links button:is(:hover, :focus-visible):enabled {
+  color: #f6f6f6;
+  text-decoration-color: currentColor;
+}
+
+.lyssna-lyrics-view .lyssna-missing-links button:disabled {
+  opacity: 0.65;
+  cursor: default;
 }
 
 .lyssna-lyrics-view.immersive .lyrics-page.no-lyrics {
@@ -2535,12 +2572,25 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
 }
 
 .lyssna-lyrics-view.immersive .lyrics-page.no-lyrics .lyrics-album {
-  --lyrics-art: min(100%, 50dvh, max(56px, calc(100dvh - 235px)));
-  width: min(100%, 520px);
+  --lyrics-art: min(100%, 58dvh, max(96px, calc(100dvh - 210px)));
+}
+
+.lyssna-lyrics-view.immersive .lyrics-page.no-lyrics .lyrics-album:has(.lyrics-fullscreen-volume:is(.left, .right)) {
+  max-width: calc(100% - 100px);
 }
 
 .lyssna-lyrics-view.immersive .lyrics-page.no-lyrics .lyrics-media > .cover {
   width: 100%;
+}
+
+.lyssna-lyrics-view.immersive .lyrics-media > .lyrics-toolbar {
+  box-sizing: border-box;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.lyssna-lyrics-view.immersive .lyrics-media > .lyrics-toolbar > .lyrics-toolbar-actions {
+  flex: none;
 }
 
 .lyssna-lyrics-view .lyric-scroll > .lyric-spacer:last-child {

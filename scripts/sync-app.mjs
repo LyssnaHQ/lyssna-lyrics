@@ -340,7 +340,9 @@ write("ambience.tsx", read("frontend/ambience.tsx")
   .replace("      stopActivity();", `      stopActivity?.();
       view.removeEventListener("focus", resize);
       view.removeEventListener("blur", resize);`));
-write("lyrics.css", `@scope (.lyssna-lyrics-view) {${lyrics.join("\n")}\n${fullscreenCss}\n}\n`);
+// The plugin puts .immersive on the scope root itself.
+const scopedLyricsCss = `${lyrics.join("\n")}\n${fullscreenCss}`.replace(/^(\s*)\.immersive(?=\s)/gm, "$1:scope.immersive");
+write("lyrics.css", `@scope (.lyssna-lyrics-view) {${scopedLyricsCss}\n}\n`);
 write("settings.css", `@scope (.lyssna-lyrics-view) {\n${settingsCss}\n}\n`);
 write("UPSTREAM", `${commit}\n`);
 console.log(`Synced Lyssna lyrics from ${commit}`);
