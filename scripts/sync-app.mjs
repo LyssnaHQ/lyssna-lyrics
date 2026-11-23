@@ -72,7 +72,8 @@ const snapshot = files.map((file) => [file, read(`frontend/${file}`)]);
 const settingsCss = read("frontend/settings.css")
   .replaceAll(".application:not(.liquid-glass) .lyrics-settings", ".lyrics-settings-backdrop:not(.liquid-glass) .lyrics-settings")
   + "\n" + slice(read("frontend/pages.css"), "/* Lyrics settings → Sources", "/* Help → About Lyssna");
-const fullscreenCss = read("frontend/fullscreen-lyrics.css");
+const fullscreenCss = read("frontend/fullscreen-lyrics.css")
+  .replace(".lyrics-fullscreen-buttons:hover", ".lyrics-fullscreen-buttons:has(> .icon-button:hover)");
 const renderer = [
   `import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { ChevronDown, ChevronUp, Music2 } from "lucide-react";

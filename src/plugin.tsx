@@ -724,7 +724,9 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
     lyricsPage.current.dataset.tools = "awake";
     window.clearTimeout(toolsTimer.current);
     toolsTimer.current = window.setTimeout(() => {
-      if (lyricsPage.current?.querySelector(".lyrics-fullscreen-controls:hover, .lyrics-toolbar:is(:hover, [data-effect-picker])")) return;
+      if (lyricsPage.current?.querySelector(
+        ".lyrics-fullscreen-controls :is(button, .lyrics-glass-seek, .lyrics-volume-pill):hover, .lyrics-toolbar:is(:hover, [data-effect-picker])",
+      )) return;
       sleepTools();
     }, 750);
   }
@@ -732,7 +734,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
   useEffect(() => {
     if (!showCreator) wakeTools();
     return () => window.clearTimeout(toolsTimer.current);
-  }, [showCreator]);
+  }, [showCreator, immersive]);
   useEffect(() => {
     if (!notice || showSettings) return;
     const id = window.setTimeout(() => setNotice(""), 3_000);
@@ -946,7 +948,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
       }} />
     </div>}
     {!showCreator && <section ref={lyricsPage} className={className} aria-label="Lyssna Lyrics" style={pageStyle}
-      data-always-show={immersive && coverOnly ? "both" : immersive && settings.fullscreen_always_show !== "none" ? settings.fullscreen_always_show : undefined}
+      data-always-show={immersive && settings.fullscreen_always_show !== "none" ? settings.fullscreen_always_show : undefined}
       onPointerMove={wakeTools} onPointerLeave={sleepTools} onKeyDownCapture={wakeTools}>
       {narrating && <DJInterlude playing={playing} reduceMotion={settings.reduce_motion} />}
       {!narrating && (track ? <>

@@ -2505,7 +2505,7 @@
   height: calc(var(--transport) * 1.18);
 }
 :scope.immersive
-  .lyrics-fullscreen-buttons:hover
+  .lyrics-fullscreen-buttons:has(> .icon-button:hover)
   .icon-button:not(:hover, .lyrics-fullscreen-like) {
   opacity: 0.5;
 }
