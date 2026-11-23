@@ -13,6 +13,7 @@ import {
 } from "react";
 import {
   ChevronDown,
+  ClipboardCheck,
   Copy,
   Download,
   Eye,
@@ -39,6 +40,11 @@ import {
 import { IS_MAC, MODIFIER, useCreatorClock, useCreatorEnvironment } from "./environment";
 import type { CreatorState } from "./types";
 import type { Lyrics, PlayerRequest, Track } from "./types";
+import { accountChanged, hasLyssnaSession, readLyssnaProfile } from "../lyssna-account";
+import { lyricsChanged, parseLocalTtml } from "../local-lyrics";
+import { revalidateLyssnaSong } from "../lyssna-provider";
+import { canReview } from "./review-api";
+import { ReviewPanel, type ReviewOpen } from "./review-panel";
 import {
   forgetWorking,
   markWorking,
@@ -1287,7 +1293,7 @@ export function TtmlCreator({
     const onKey = (event: KeyboardEvent) => {
       if (event.code === "Space" || event.key === " ") return;
       const target = event.composedPath()[0] as HTMLElement | null;
-      if (target?.closest(".lyrics-settings-backdrop, .ttml-recording-popover")) return;
+      if (target?.closest(".lyrics-settings-backdrop, .ttml-recording-popover, .review-panel")) return;
       if (root.querySelector(".ttml-menu, .ttml-dialog")) return;
       if (target?.closest(".ttml-bar button, .ttml-spectrum button") && event.key === "Enter") return;
       if (
@@ -1657,6 +1663,122 @@ export function TtmlCreator({
     [metadata, track],
   );
   const ttml = () => (track ? toTtml(lines, meta(track), entries) : "");
+  const [reviewer, setReviewer] = useState(false);
+  const [reviewing, setReviewing] = useState(false);
+  const [pendingReview, setPendingReview] = useState<ReviewOpen>();
+  const [reviewEdit, setReviewEdit] = useState<{ id: string; uri: string; baseline: string }>();
+  useEffect(() => {
+    if (draftPreview) return;
+    let request = 0;
+    const update = () => {
+      const id = ++request;
+      if (!hasLyssnaSession()) {
+        setReviewer(false);
+        setReviewing(false);
+        setReviewEdit(undefined);
+        setPendingReview(undefined);
+        return;
+      }
+      void readLyssnaProfile().then((profile) => {
+        if (id === request && profile) setReviewer(canReview(profile.role));
+      }).catch(() => {});
+    };
+    update();
+    window.addEventListener(accountChanged, update);
+    return () => {
+      request++;
+      window.removeEventListener(accountChanged, update);
+    };
+  }, [draftPreview, window]);
+  useEffect(() => {
+    if (!reviewing || !reviewer || !pendingReview) return;
+    if (playing?.uri !== pendingReview.uri) {
+      const timeout = window.setTimeout(() => {
+        setPendingReview(undefined);
+        notify("Couldn’t open the song in Spotify. Try playing it again.", true);
+      }, 12_000);
+      return () => window.clearTimeout(timeout);
+    }
+    if (track?.uri !== pendingReview.uri) {
+      setTrack(playing);
+      return;
+    }
+    const { uri } = track;
+    let live = true;
+    void (async () => {
+      const lyrics = parseLocalTtml(pendingReview.ttml);
+      const loaded = joinHyphenated(fromLyrics(lyrics));
+      if (!loaded.length) throw new Error("No lyric lines found.");
+      const song = meta(track);
+      const reviewMetadata = defaultMetadata(song);
+      if (lyrics.songwriters?.length && !reviewMetadata.some((entry) => entry.key === "songwriters")) {
+        reviewMetadata.push({ key: "songwriters", values: lyrics.songwriters });
+      }
+      const previous = loadDraft(uri);
+      if (previous) {
+        await addVersion({
+          uri, savedAt: Date.now(), lines: previous.lines, text: previous.text, metadata: previous.metadata,
+        });
+      }
+      if (!live) return;
+      editedFor.current = uri;
+      setLines(loaded);
+      setText(toText(loaded));
+      setMetadata(reviewMetadata);
+      setCursor({ line: 0, unit: 0 });
+      setTextMode(false);
+      setTab("write");
+      setReviewEdit({
+        id: pendingReview.submission.id, uri, baseline: toTtml(loaded, song, reviewMetadata),
+      });
+      setPendingReview(undefined);
+      notify(previous ? "Submission opened. Your earlier draft is in Saves." : "Submission opened for review.");
+    })().catch((error) => {
+      if (!live) return;
+      setPendingReview(undefined);
+      notify(`Couldn’t open the submission: ${String(error)}`, true);
+    });
+    return () => { live = false; };
+  }, [pendingReview, playing, track, reviewing, reviewer, setLines, notify, window]);
+  const closeReview = () => {
+    setReviewing(false);
+    setPendingReview(undefined);
+  };
+  const reviewButton = reviewer && (
+    <button onClick={() => reviewing ? closeReview() : setReviewing(true)}
+      title="Review submissions" aria-label="Review submissions" aria-pressed={reviewing}>
+      <ClipboardCheck size={15} />
+    </button>
+  );
+  const reviewPanel = reviewer && reviewing && (
+    <ReviewPanel
+      playing={playing}
+      editing={done && reviewEdit?.uri === track?.uri ? reviewEdit : undefined}
+      opening={pendingReview?.submission.id}
+      editorTtml={ttml}
+      onPlay={(uri) => onPlayer({ command: "play", uri })}
+      onOpen={(open) => {
+        setPendingReview(open);
+        if (playing?.uri !== open.uri) onPlayer({ command: "play", uri: open.uri });
+      }}
+      onCancelOpen={() => setPendingReview(undefined)}
+      onParse={async (text) => parseLocalTtml(text)}
+      onSubmitFix={async (text) => {
+        if (!track || track.uri !== reviewEdit?.uri) throw new Error("Open the submission in the editor first.");
+        notify(await onSubmit(track, text));
+      }}
+      onDecided={(_submission, action, uri) => {
+        setReviewEdit(undefined);
+        setPendingReview(undefined);
+        if (action !== "approve" || !uri) return;
+        const trackId = uri.split(":").at(-1)!;
+        revalidateLyssnaSong(trackId);
+        window.dispatchEvent(new CustomEvent(lyricsChanged, { detail: [trackId] }));
+      }}
+      notify={notify}
+      onClose={closeReview}
+    />
+  );
   const [editingMeta, setEditingMeta] = useState(false);
   const changeMetadata = (next: MetaEntry[]) => {
     setMetadata(next);
@@ -1932,8 +2054,10 @@ export function TtmlCreator({
           <History size={15} />
           Saves
         </button>
+        {reviewButton}
         {onClose && <button onClick={onClose}>Back to lyrics</button>}
         {savesDialog}
+        {reviewPanel}
       </section>
     );
 
@@ -1973,6 +2097,7 @@ export function TtmlCreator({
         )}
         <div className="ttml-actions">
           {!barSlot && onClose && <button onClick={onClose} aria-label="Close TTML Creator"><X size={15} /></button>}
+          {reviewButton}
           <span className="ttml-saved">
             {savedAt ? `Saved ${savedLabel(savedAt)}` : "Not saved yet"}
           </span>
@@ -3047,6 +3172,7 @@ export function TtmlCreator({
       {barSlot && createPortal(
         <CreatorSpectrogramToggle open={spectrogram} id={spectrogramId}
           onToggle={() => showSpectrogram(!spectrogram)} />, playbar?.spectrogram ?? barSlot)}
+      {reviewPanel}
     </section>
   );
 }
