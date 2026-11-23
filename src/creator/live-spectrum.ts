@@ -39,7 +39,9 @@ export function useLiveSpectrum(uri: string, canCapture: boolean) {
   useEffect(() => {
     let live = true;
     const generation = revision.current;
-    const cleared = () => {
+    const cleared = (event: Event) => {
+      const removed = (event as CustomEvent<string | undefined>).detail;
+      if (removed && removed !== uri) return;
       revision.current++;
       tiles.current.clear();
       setHasSaved(false);

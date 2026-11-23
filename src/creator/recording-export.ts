@@ -33,10 +33,14 @@ function encode(wav: Blob, format: Exclude<RecordingFormat, "wav">, metadata: Re
 
 export async function downloadRecording(wav: Blob, name: string, format: RecordingFormat, metadata: RecordingMetadata) {
   const blob = format === "wav" ? tagWav(wav, metadata) : await encode(wav, format, metadata);
+  downloadStoredFile(blob, name, format);
+}
+
+export function downloadStoredFile(blob: Blob, name: string, extension: string) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `${name.replace(/[<>:"/\\|?*\x00-\x1f]/g, "_").trim().slice(0, 160) || "Spotify recording"}.${format}`;
+  link.download = `${name.replace(/[<>:"/\\|?*\x00-\x1f]/g, "_").trim().slice(0, 160) || "Lyssna export"}.${extension}`;
   link.click();
   window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
 }

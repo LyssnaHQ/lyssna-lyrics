@@ -13,9 +13,8 @@ import type { Line } from "./types";
  * view. Each row gets one band of ink behind the text, a slanted rounded
  * stroke, with a brighter rounded pen tip at its end. Like a felt tip, the
  * band drifts a little across the row, its edges waver and carry a darker
- * line, the ink has a fine grain, and it starts a touch heavier. Ink is laid in place
- * and revealed as the pen passes, so what is drawn never moves or
- * stretches. Like a real pen, ink darkens where the pen lingers: a slow
+ * line, the ink has a fine grain, and it starts a touch heavier. The live
+ * end of the stroke follows the word's spring. Ink darkens where the pen lingers: a slow
  * word deepens while it is drawn, and where the singing pauses mid-line
  * the resting tip soaks in a darker mark. The pen glides after the song instead of snapping, and
  * sung lines keep their ink. Timed syllables set the pace; a line without
@@ -48,8 +47,26 @@ export interface Piece {
   end_ms: number;
 }
 
+function finishBeforeNext(piece: Piece, next?: number) {
+  if (next === undefined || next <= piece.start_ms || piece.end_ms - next > 85 || next - piece.end_ms > 45) return piece;
+  const end = Math.min(piece.end_ms, next);
+  return { ...piece, end_ms: end - Math.min(42, (end - piece.start_ms) * 0.2) };
+}
+
+export function nextMarkerStarts(lines: readonly Line[]) {
+  let lead: number | undefined;
+  let backing: number | undefined;
+  return [...lines].reverse().map((line) => {
+    const start = line.words[0]?.start_ms ?? line.start_ms;
+    const next = line.background ? backing : lead;
+    if (line.background) backing = start;
+    else lead = start;
+    return next;
+  }).reverse();
+}
+
 /** The stretches of a line the marker covers one after another. */
-export function highlighterPieces(line: Line): Piece[] {
+export function highlighterPieces(line: Line, followingStart?: number): Piece[] {
   if (line.words.length) {
     // Store spaces after words so they mark where a word group can wrap.
     const pieces = line.words.map(({ text, start_ms, end_ms }) => ({
@@ -63,7 +80,7 @@ export function highlighterPieces(line: Line): Piece[] {
       if (index) pieces[index - 1].text += space;
       piece.text = piece.text.slice(space.length);
     });
-    return pieces;
+    return pieces.map((piece, index) => finishBeforeNext(piece, pieces[index + 1]?.start_ms ?? followingStart));
   }
   const words = line.text.match(/\S+\s*/g) ?? [];
   const weights = words.map(
@@ -75,7 +92,7 @@ export function highlighterPieces(line: Line): Piece[] {
   return words.map((text, index) => {
     const start_ms = at;
     at += (span * weights[index]) / total;
-    return { text, start_ms, end_ms: at };
+    return finishBeforeNext({ text, start_ms, end_ms: at }, index < words.length - 1 ? at : followingStart);
   });
 }
 
@@ -138,67 +155,19 @@ interface Layout {
   spans: HTMLElement[];
 }
 
-/** Converts screen positions to the line's own pixels, so strokes line up
- *  even while the line is scaled or, in Space Gravity, turned. Every
- *  transform above the line folds into one linear map around its centre,
- *  which a transform keeps at the centre of its screen box. */
-function localFrame(root: HTMLElement) {
-  const box = root.getBoundingClientRect();
-  let a = 1,
-    b = 0,
-    c = 0,
-    d = 1;
-  for (
-    let node: Element | null = root;
-    node && node !== document.documentElement;
-    node = node.parentElement
-  ) {
-    const transform = getComputedStyle(node).transform;
-    if (!transform || transform === "none") continue;
-    const m = new DOMMatrixReadOnly(transform);
-    [a, b, c, d] = [
-      m.a * a + m.c * b,
-      m.b * a + m.d * b,
-      m.a * c + m.c * d,
-      m.b * c + m.d * d,
-    ];
-  }
-  const det = a * d - b * c || 1,
-    middleX = (box.left + box.right) / 2,
-    middleY = (box.top + box.bottom) / 2,
-    halfWidth = root.offsetWidth / 2,
-    halfHeight = root.offsetHeight / 2;
-  return (x: number, y: number) => {
-    const dx = x - middleX,
-      dy = y - middleY;
-    return {
-      x: (d * dx - c * dy) / det + halfWidth,
-      y: (a * dy - b * dx) / det + halfHeight,
-    };
-  };
-}
-
-/** A screen box's centre in the line's own pixels. */
-function centreOf(frame: ReturnType<typeof localFrame>, box: DOMRect) {
-  return frame((box.left + box.right) / 2, (box.top + box.bottom) / 2);
-}
-
 /** Measures the rows and pieces. Strokes are revealed over this fixed
  *  layout, so ink already laid never moves or stretches. */
 function measure(root: HTMLElement, pieces: Piece[]): Layout {
   const spans = [...root.querySelectorAll<HTMLElement>(".highlighter-piece")];
-  const frame = localFrame(root);
   const em = parseFloat(getComputedStyle(root).fontSize) || 16;
   const stretches: Stretch[] = spans.map((span, index) => {
-    const middle = centreOf(frame, span.getBoundingClientRect());
-    const left = middle.x - span.offsetWidth / 2,
-      right = middle.x + span.offsetWidth / 2;
+    const left = span.offsetLeft, right = left + span.offsetWidth;
     return {
       index,
       left,
       right,
-      top: middle.y - span.offsetHeight / 2,
-      bottom: middle.y + span.offsetHeight / 2,
+      top: span.offsetTop,
+      bottom: span.offsetTop + span.offsetHeight,
       alpha: inkAlpha(
         (right - left) / em,
         pieces[index].end_ms - pieces[index].start_ms,
@@ -230,63 +199,20 @@ function measure(root: HTMLElement, pieces: Piece[]): Layout {
 }
 
 /** How far along the pen's path the tip is at `time`. */
-function pathAt(
-  root: HTMLElement,
-  layout: Layout,
-  pieces: Piece[],
-  time: number,
-) {
+function pathAt(layout: Layout, pieces: Piece[], time: number) {
   if (time === -Infinity) return 0;
-  const current = pieces.findIndex((piece) => time < piece.end_ms);
-  if (current === -1) return layout.length;
-  const span = layout.spans[current],
-    text = span?.firstChild;
-  if (!span || !text) return 0;
-  // Ink is paced over the measured letters.
-  const ink = inkAt(pieces[current], time),
-    all = text.textContent?.length ?? 0;
-  const letters =
-    ink >= 1 ? all : ink * (text.textContent?.trimEnd().length ?? 0);
-  const frame = localFrame(root);
-  const stretch = layout.lanes
-    .flatMap((lane) => lane.stretches)
-    .find((stretch) => stretch.index === current);
-  if (!stretch) return 0;
-  // The tip glides through each letter rather than jumping letter by
-  // letter: it sits between the ends of the letters on either side. A
-  // run of letters starts at the piece's left edge, so its far end is
-  // found from its centre, which survives turning.
-  const range = document.createRange();
-  const after = (count: number) => {
-    if (!count)
-      return {
-        x: stretch.left,
-        y:
-          stretch.top +
-          Math.min(stretch.bottom - stretch.top, layout.em * 1.4) / 2,
-      };
-    range.setStart(text, 0);
-    range.setEnd(text, Math.min(count, text.textContent?.length ?? 0));
-    const boxes = range.getClientRects(),
-      end = boxes[boxes.length - 1];
-    if (!end) return null;
-    const middle = centreOf(frame, end);
-    return { x: 2 * middle.x - stretch.left, y: middle.y };
-  };
-  const whole = Math.floor(letters);
-  let tip = after(whole);
-  const next = letters > whole ? after(whole + 1) : null;
-  if (tip && next && Math.abs(next.y - tip.y) < 2)
-    tip = { x: tip.x + (next.x - tip.x) * (letters - whole), y: tip.y };
-  if (!tip) return 0;
-  const lane = layout.lanes.find(
-    (lane) => tip.y >= lane.top - 1 && tip.y <= lane.bottom + 1,
-  );
-  if (!lane) return 0;
-  return (
-    lane.start +
-    Math.min(lane.right - lane.left, Math.max(0, tip.x - lane.left))
-  );
+  let reached = 0;
+  for (const lane of layout.lanes) {
+    for (const piece of lane.stretches) {
+      const timing = pieces[piece.index];
+      if (time < timing.start_ms) return reached;
+      if (time < timing.end_ms) {
+        return lane.start + piece.left - lane.left + (piece.right - piece.left) * inkAt(timing, time);
+      }
+      reached = lane.start + piece.right - lane.left;
+    }
+  }
+  return layout.length;
 }
 
 /** The ink along one row, as a mask in that row's own pixels: each
@@ -395,15 +321,19 @@ function paint(
     tail = 0.1 * em,
     nib = 0.42 * em;
   const shown = layout.lanes.filter((lane) => path > lane.start + 0.5);
-  while (ink.children.length > shown.length * 2) ink.lastChild!.remove();
+  while (ink.children.length > shown.length * 3) ink.lastChild!.remove();
   shown.forEach((lane, index) => {
     const band =
-      (ink.children[index * 2] as HTMLElement | undefined) ??
+      (ink.children[index * 3] as HTMLElement | undefined) ??
+      ink.appendChild(document.createElement("span"));
+    const liftBand =
+      (ink.children[index * 3 + 1] as HTMLElement | undefined) ??
       ink.appendChild(document.createElement("span"));
     const tip =
-      (ink.children[index * 2 + 1] as HTMLElement | undefined) ??
+      (ink.children[index * 3 + 2] as HTMLElement | undefined) ??
       ink.appendChild(document.createElement("span"));
     band.className = "highlighter-stroke";
+    liftBand.className = "highlighter-stroke";
     tip.className = "highlighter-tip";
     const width = lane.right - lane.left,
       height = lane.bottom - lane.top;
@@ -422,22 +352,42 @@ function paint(
     // A hand drifts a little across a row.
     const tilt = wobble(seed + index) * 0.6,
       drift = Math.tan((tilt * Math.PI) / 180);
-    band.style.transform = `translate(${left}px, ${top}px) rotate(${tilt.toFixed(2)}deg) skewX(-8deg)`;
-    band.style.width = `${full}px`;
-    band.style.height = `${tall}px`;
-    band.style.clipPath = `inset(0 ${Math.max(0, full - end).toFixed(1)}px 0 ${(lead - opening).toFixed(1)}px round ${(0.14 * em).toFixed(1)}px)`;
-    band.style.setProperty("--shade", laneShade(lane, left, pieces, em, time));
+    const stroke = `translate(${left}px, ${top}px) rotate(${tilt.toFixed(2)}deg) skewX(-8deg)`;
+    const shade = laneShade(lane, left, pieces, em, time);
     const mask = `${laneMask(lane, left, pieces, em, time)}, ${WAVER}`;
     const size = `100% 100%, ${(2.8 * em).toFixed(1)}px 100%`;
     const place = `0 0, ${((wobble(seed - index) + 0.5) * 2.8 * em).toFixed(1)}px 0`;
-    band.style.maskImage = band.style.webkitMaskImage = mask;
-    band.style.maskSize = band.style.webkitMaskSize = size;
-    band.style.maskPosition = band.style.webkitMaskPosition = place;
+    const active = index === shown.length - 1
+      ? lane.stretches.findLast((stretch) => stretch.left < lane.left + reveal) : undefined;
+    const word = active && layout.spans[active.index];
+    const scale = Number(word?.style.scale) || 1;
+    const lift = (parseFloat(word?.style.translate.split(" ").at(-1) ?? "") || 0) * em;
+    const moving = !!active && (Math.abs(lift) > 0.2 || Math.abs(scale - 1) > 0.004);
+    const pivotX = active ? (active.left + active.right) / 2 : 0;
+    const pivotY = active ? active.top * 0.25 + active.bottom * 0.75 : 0;
+    const follow = moving
+      ? `matrix(${scale}, 0, 0, ${scale}, ${pivotX * (1 - scale)}, ${lift + pivotY * (1 - scale)}) ` : "";
+    function fill(part: HTMLElement, from: number, to: number, transform: string) {
+      part.hidden = to <= from;
+      if (part.hidden) return;
+      part.style.transform = transform;
+      part.style.width = `${full}px`;
+      part.style.height = `${tall}px`;
+      part.style.clipPath = `inset(0 ${Math.max(0, full - to).toFixed(1)}px 0 ${from.toFixed(1)}px round ${(0.14 * em).toFixed(1)}px)`;
+      part.style.setProperty("--shade", shade);
+      part.style.maskImage = part.style.webkitMaskImage = mask;
+      part.style.maskSize = part.style.webkitMaskSize = size;
+      part.style.maskPosition = part.style.webkitMaskPosition = place;
+    }
+    const start = lead - opening;
+    const seam = moving && active ? Math.max(start, active.left - left - 0.06 * em) : end;
+    fill(band, start, seam, stroke);
+    fill(liftBand, seam, end, follow + stroke);
     // The tip rides just past the ink's edge, so a finished word ends with
     // the tip after its last letter rather than on it.
     const nibWidth = nib;
     const along = end - 0.12 * em;
-    tip.style.transform = `translate(${left + along}px, ${top + along * drift}px) rotate(${tilt.toFixed(2)}deg) skewX(-8deg)`;
+    tip.style.transform = `${follow}translate(${left + along}px, ${top + along * drift}px) rotate(${tilt.toFixed(2)}deg) skewX(-8deg)`;
     tip.style.width = `${nibWidth}px`;
     tip.style.height = `${tall}px`;
     tip.style.setProperty(
@@ -479,11 +429,13 @@ function cancelBatched(key: object) {
 export const HighlighterWords = memo(function HighlighterWords({
   line,
   time,
+  followingStart,
 }: {
   line: Line;
   time: number;
+  followingStart?: number;
 }) {
-  const pieces = useMemo(() => highlighterPieces(line), [line]);
+  const pieces = useMemo(() => highlighterPieces(line, followingStart), [line, followingStart]);
   // Syllables of one word stay together, so rows break only between
   // words.
   const words = useMemo(() => {
@@ -512,20 +464,18 @@ export const HighlighterWords = memo(function HighlighterWords({
       const now = performance.now();
       const resized = !layout.current;
       const current = (layout.current ??= measure(element, pieces));
-      const target = pathAt(element, current, pieces, latest.current);
+      const target = pathAt(current, pieces, latest.current);
       const elapsed = state.at ? Math.min(100, now - state.at) : 1000 / 60;
       state.at = now;
-      // The pen follows the song exactly, so ink stays in sync. Only a
-      // jump forward (a quick word, or a line ending) eases, so the pen
-      // slides there instead of snapping. A new layout, a first drawing
-      // or a seek back lands at once.
+      // A small easing window bridges consecutive words without delaying
+      // held words. Seeking or replacing a layout still lands immediately.
       const finishing = latest.current === Infinity;
       const jump = target - state.path;
       state.path =
-        !state.drawn || resized || jump < -1 || jump <= 0.45 * current.em
+        !state.drawn || resized || jump < -1 || jump > current.em * 9
           ? target
           : state.path +
-            jump * (1 - Math.exp(-elapsed / (finishing ? 70 : 40)));
+            jump * (1 - Math.exp(-elapsed / (finishing ? 32 : 18)));
       state.drawn = true;
       const moving = Math.abs(target - state.path) > 0.3;
       if (!moving) {
@@ -545,12 +495,17 @@ export const HighlighterWords = memo(function HighlighterWords({
       state.path = 0;
       state.at = 0;
       state.drawn = false;
-    } else if (Number.isFinite(time)) {
-      // The line being sung draws now, not a frame later.
+    } else {
+      // The animator writes transforms before this batch paints.
+      step();
+    }
+    const lastWord = time === Infinity ? [...element.querySelectorAll(".highlighter-piece")].at(-1) : undefined;
+    const settling = lastWord && new MutationObserver(step);
+    if (settling && lastWord) settling.observe(lastWord, { attributes: true, attributeFilter: ["style"] });
+    return () => {
+      settling?.disconnect();
       cancelBatched(element);
-      read()();
-    } else step();
-    return () => cancelBatched(element);
+    };
   }, [pieces, time, seed]);
   // Rows move when the window or text size changes.
   useLayoutEffect(() => {
@@ -579,7 +534,9 @@ export const HighlighterWords = memo(function HighlighterWords({
               {word.map((index) => (
                 <span
                   key={index}
-                  className="highlighter-piece"
+                  className="highlighter-piece lyric-syllable"
+                  data-start={pieces[index].start_ms}
+                  data-end={pieces[index].end_ms}
                   style={{ "--ink": inkAt(pieces[index], time) } as CSSProperties}
                 >
                   {index === last ? pieces[index].text.trimEnd() : pieces[index].text}

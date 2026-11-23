@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { AudioSegment, CanvasInfo, Host } from "./host";
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import type { CanvasInfo, Host } from "./host";
 import { LyricsVisualiser } from "./lyssna/lyrics-visualiser";
+import { VISUALISER_BARS, type VisualiserFrame } from "./lyssna/visualiser-frame";
 import { playCanvasMedia } from "./canvas-media";
+import type { SpotifyCapture } from "./creator/spotify-capture";
 
 export function useCanvas(host: Host, trackId: string | undefined, enabled: boolean) {
   const [canvas, setCanvas] = useState<{ trackId: string; info: CanvasInfo }>();
@@ -82,28 +84,50 @@ export function CanvasArtwork({ info, cover, playing, onUnavailable, onVideo, he
     onCanPlay={(event) => syncFrame(event.currentTarget)} aria-label="Spotify Canvas" /></div>;
 }
 
-export function SpotifyVisualiser({ host, trackId, playing, opacity }: { host: Host; trackId: string; playing: boolean; opacity: number }) {
-  const [segments, setSegments] = useState<AudioSegment[]>([]);
+function preceding<Entry extends { start: number }>(entries: readonly Entry[], second: number): Entry | undefined {
+  let low = 0;
+  let high = entries.length;
+  while (low < high) {
+    const middle = (low + high) >>> 1;
+    if (entries[middle].start <= second) low = middle + 1;
+    else high = middle;
+  }
+  return entries[low - 1];
+}
+
+export function SpotifyVisualiser({ host, trackId, playing, opacity, capture, motion, read }: {
+  host: Host; trackId: string; playing: boolean; opacity: number; capture: SpotifyCapture;
+  motion: RefObject<VisualiserFrame>; read?: () => number;
+}) {
+  const [analysis, setAnalysis] = useState<Awaited<ReturnType<Host["analysis"]>>>();
   useEffect(() => {
     let active = true;
-    void host.analysis(trackId)?.then((result) => { if (active) setSegments(result?.segments ?? []); }).catch(() => {});
+    void host.analysis(trackId)?.then((result) => { if (active) setAnalysis(result); }).catch(() => {});
     return () => { active = false; };
   }, [host, trackId]);
 
-  const spectrum = useMemo(() => () => {
-    const time = host.position() / 1000;
-    let low = 0;
-    let high = segments.length;
-    while (low < high) {
-      const middle = (low + high) >>> 1;
-      if (segments[middle].start <= time) low = middle + 1;
-      else high = middle;
-    }
-    const segment = segments[low - 1];
-    if (!segment?.pitches?.length) return [];
-    const level = Math.max(0.15, Math.min(1, (segment.loudness_max + 30) / 30));
-    return segment.pitches.map((pitch) => Math.round(255 * level * pitch));
-  }, [host, segments]);
+  const spectrum = useMemo(() => {
+    const bars = new Uint8Array(VISUALISER_BARS);
+    return () => {
+      const time = (read?.() ?? host.position()) / 1000;
+      const beat = preceding(analysis?.beats ?? [], time);
+      const beatLevel = beat ? Math.max(0, 1 - (time - beat.start) / 0.14) : 0;
+      const captured = capture.spectrum(trackId);
+      if (captured) return { bars: captured, beat: beatLevel };
+      const segment = preceding(analysis?.segments ?? [], time);
+      if (!segment?.pitches?.length) return;
+      const level = Math.max(0, Math.min(1, (segment.loudness_max + 32) / 32));
+      // Spotify's analysis is pitch-class data. Interpolate it for display
+      // without presenting it as an actual frequency spectrum.
+      for (let bar = 0; bar < bars.length; bar++) {
+        const pitch = bar * (segment.pitches.length - 1) / (bars.length - 1);
+        const low = Math.floor(pitch);
+        const value = segment.pitches[low] + (segment.pitches[Math.ceil(pitch)] - segment.pitches[low]) * (pitch - low);
+        bars[bar] = Math.round(255 * level * value * (0.84 + beatLevel * 0.16));
+      }
+      return { bars, beat: beatLevel };
+    };
+  }, [host, trackId, analysis, capture, read]);
 
-  return segments.length > 0 && <LyricsVisualiser playing={playing} opacity={opacity} spectrum={spectrum} />;
+  return <LyricsVisualiser playing={playing} opacity={opacity} spectrum={spectrum} motion={motion} />;
 }

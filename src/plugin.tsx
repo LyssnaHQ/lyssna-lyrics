@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from "react";
 import { ChevronUp, Disc3, FoldVertical, MicVocal, Music2, PanelLeftOpen, Settings as GearIcon, UnfoldVertical, X } from "lucide-react";
 import { getHost, type CanvasInfo, type Host, type Track } from "./host";
 import { useArtworkColor } from "./lyssna/artwork-color";
@@ -8,6 +8,7 @@ import { FullscreenHeartIcon, FullscreenPauseIcon, FullscreenPlayIcon, Fullscree
 import { LyricsDisplay, LyricsSkeleton, WriterCredits } from "./lyssna/renderer";
 import { markerColour } from "./lyssna/highlighter";
 import { SpaceGravityLyrics } from "./lyssna/space-gravity-lyrics";
+import type { VisualiserFrame } from "./lyssna/visualiser-frame";
 import { CompactIcon, FullScreenIcon, HideArtworkIcon, RetryIcon, SwapSidesIcon, TranslateIcon, UploadIcon, WordSyncIcon } from "./lyssna/toolbar-icons";
 import type { Lyrics } from "./lyssna/types";
 import { setWindowActivity, setWindowPosition } from "./lyssna/window-activity";
@@ -120,16 +121,17 @@ function useTrackLyrics(track: Track, duration: number, view: Window, settings: 
   return { lyrics, waiting };
 }
 
-function LyricsForTrack({ track, host, playing, settings, view = window, fullView = false, openCreator, draft, showOriginal, draftReviewer, toggleReviewer, localPlayback }: {
+function LyricsForTrack({ track, host, playing, settings, view = window, fullView = false, openCreator, draft, showOriginal, draftReviewer, toggleReviewer, localPlayback, visualiser }: {
   track: Track; host: Host; playing: boolean; settings: Settings; view?: Window; fullView?: boolean;
   openCreator?(): void;
   draft?: Lyrics | null; showOriginal?(): void; localPlayback?: CreatorPlayback;
   draftReviewer?: boolean; toggleReviewer?(): void;
+  visualiser?: RefObject<VisualiserFrame>;
 }) {
   const duration = host.duration();
   const data = useTrackLyrics(track, duration, view, settings, host);
   const lyrics = <TrackLyrics track={track} host={host} playing={playing} settings={settings} view={view} fullView={fullView}
-    duration={duration} localPlayback={localPlayback} {...(draft ? { lyrics: draft, waiting: false } : data)} />;
+    duration={duration} localPlayback={localPlayback} visualiser={visualiser} {...(draft ? { lyrics: draft, waiting: false } : data)} />;
   if (!fullView) return lyrics;
   return <>
     <div className="lyrics-body">{lyrics}</div>
@@ -142,9 +144,10 @@ function LyricsForTrack({ track, host, playing, settings, view = window, fullVie
   </>;
 }
 
-function TrackLyrics({ track, host, playing, settings, compact = false, view = window, fullView = !compact, duration, lyrics, waiting, localPlayback }: {
+function TrackLyrics({ track, host, playing, settings, compact = false, view = window, fullView = !compact, duration, lyrics, waiting, localPlayback, visualiser }: {
   track: Track; host: Host; playing: boolean; settings: Settings; compact?: boolean; view?: Window; fullView?: boolean;
   duration: number; lyrics?: Lyrics; waiting: boolean; localPlayback?: CreatorPlayback;
+  visualiser?: RefObject<VisualiserFrame>;
 }) {
   const playMarker = useLyssnaPlay(host, track.id, lyrics?.lyssna?.songId, playing, view);
   const position = usePosition(host, playing, view, localPlayback?.read);
@@ -185,7 +188,7 @@ function TrackLyrics({ track, host, playing, settings, compact = false, view = w
 
   if (gravity && rendered?.synced && rendered.lines.some((line) => line.words.length)) {
     return <div className={fontClass} style={{ display: "contents" }}><span ref={playMarker} hidden /><SpaceGravityLyrics lyrics={rendered} time={time} reduceMotion={settings.reduce_motion}
-      tuning={settings.lyrics_animator} onSeek={(ms) => seek(ms - (playing && settings.lyrics_seek_compensation ? 300 : 0))}
+      tuning={settings.lyrics_animator} visualiser={visualiser} onSeek={(ms) => seek(ms - (playing && settings.lyrics_seek_compensation ? 300 : 0))}
       highlighter={settings.lyrics_highlighter ? markerColour(settings.lyrics_highlighter_color) : undefined}
       linkWidth={settings.gravity_links ? settings.gravity_link_width / 100 : 0}
       credits={<div className={upNext ? "lyric-credits-row" : undefined}>
@@ -427,6 +430,8 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
   const keepCreator = !!draft && preferences.ttml_creator && !!trackId && creatorTrackId === trackId;
   const localPlayback = keepCreator && creatorPlayback?.trackId === trackId ? creatorPlayback : undefined;
   const playing = localPlayback?.playing ?? spotifyPlaying;
+  const visualiser = useRef<VisualiserFrame>({ impact: 0, pulse: 0 });
+  const showVisualiser = settings.lyrics_visualiser && !settings.reduce_motion && !narrating;
   useLayoutEffect(() => setReviewerOverride(undefined), [draftUri, preferences.ttml_reviewer]);
   useEffect(() => {
     if (!draftUri) return;
@@ -680,6 +685,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
           {artworkDock && playback}
         </div>
         <LyricsForTrack key={track.id} track={track} host={host} playing={playing} settings={settings} view={view} fullView
+          visualiser={showVisualiser ? visualiser : undefined}
           draft={draft} localPlayback={localPlayback} draftReviewer={draftReviewer} toggleReviewer={() => setReviewerOverride(!draftReviewer)}
           showOriginal={() => {
             if (draftUri) dismissDraft(draftUri);
@@ -690,8 +696,8 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
             openCreator();
           } : undefined} />
       </> : <div className="lyrics-message"><Music2 /><h2>Play something you love</h2><p>Your lyrics will appear here.</p></div>)}
-      {track && settings.lyrics_visualiser && <SpotifyVisualiser key={track.id} host={host} trackId={track.id}
-        opacity={settings.lyrics_visualiser_opacity} playing={playing && !settings.reduce_motion} />}
+      {track && showVisualiser && <SpotifyVisualiser key={track.id} host={host} trackId={track.id}
+        opacity={settings.lyrics_visualiser_opacity} playing={playing} capture={capture} motion={visualiser} read={localPlayback?.read} />}
       <div className="lyrics-toolbar" role="toolbar" aria-label="View controls">
         {([
           ["romanized", "Romanization", TranslateIcon],
@@ -751,7 +757,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
       listSaved={listLocalLyrics} deleteSaved={removeLocalLyrics} onPlay={host.playTrack} onDownload={downloadTtml}
       onBulk={(files, signal) => loadBulkLyrics(files, host, signal)} searchSongs={host.searchTracks}
       attachSong={attachBulkLyrics} onClose={closeTtml} />}
-    {settingsPage && <SettingsPanel key={settingsPage} settings={preferences} change={change} close={closeSettings}
+    {settingsPage && <SettingsPanel key={settingsPage} host={host} settings={preferences} change={change} close={closeSettings}
       initialSubmenu={settingsPage === "storage" ? "storage" : undefined}
       canvasFrame={{ video: canvasVideo, heldFrame,
         hold: (seconds) => { if (canvasVideo) setCanvasFrame({ video: canvasVideo, seconds }); },
@@ -765,7 +771,7 @@ function ProfileSettings({ host, options, close, capture }: { host: Host; option
   const settings = useLiveSettings();
   const { track } = usePlayback(host);
   const [notice, setNotice] = useState("");
-  return <SettingsPanel settings={settings} change={(patch) => saveSettings({ ...readSettings(), ...patch })}
+  return <SettingsPanel host={host} settings={settings} change={(patch) => saveSettings({ ...readSettings(), ...patch })}
     onEnableAutoRecord={() => void capture.start("auto")}
     close={close} options={options} track={track ?? undefined} notice={notice} setNotice={setNotice} developerMode={host.developerMode} />;
 }

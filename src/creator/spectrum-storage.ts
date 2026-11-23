@@ -2,6 +2,7 @@ export const LIVE_TILE_MS = 5_000;
 export const LIVE_SAMPLE_MS = 20;
 export const LIVE_COLUMNS = LIVE_TILE_MS / LIVE_SAMPLE_MS;
 export const LIVE_ROWS = 256;
+const tileBytes = LIVE_COLUMNS * (LIVE_ROWS * Uint16Array.BYTES_PER_ELEMENT + Uint8Array.BYTES_PER_ELEMENT);
 export const MEASURED_COLUMN = 1;
 export const INTERPOLATED_COLUMN = 2;
 
@@ -52,18 +53,28 @@ export const liveSpectrumSaved = "lyssna-lyrics:spectrograms-saved";
 export async function savedSpectrogramBytes() {
   const db = await openSpectrum();
   const count = await result(db.transaction("tiles").objectStore("tiles").count());
-  return count * LIVE_COLUMNS * (LIVE_ROWS * Uint16Array.BYTES_PER_ELEMENT + Uint8Array.BYTES_PER_ELEMENT);
+  return count * tileBytes;
 }
 
-export async function clearLiveSpectrograms() {
+export async function listSpectrogramTracks() {
+  const db = await openSpectrum();
+  const keys = await result(db.transaction("tiles").objectStore("tiles").getAllKeys()) as [string, number][];
+  const entries = new Map<string, number>();
+  for (const [uri] of keys) entries.set(uri, (entries.get(uri) ?? 0) + tileBytes);
+  return [...entries].map(([key, bytes]) => ({ key, bytes }));
+}
+
+export async function clearLiveSpectrograms(uri?: string) {
   const db = await openSpectrum();
   await new Promise<void>((resolve, reject) => {
     const transaction = db.transaction("tiles", "readwrite");
     transaction.oncomplete = () => resolve();
     transaction.onabort = () => reject(transaction.error);
-    transaction.objectStore("tiles").clear();
+    const store = transaction.objectStore("tiles");
+    if (uri) store.delete(range(uri));
+    else store.clear();
   });
-  window.dispatchEvent(new Event(liveSpectrumCleared));
+  window.dispatchEvent(new CustomEvent(liveSpectrumCleared, { detail: uri }));
 }
 
 export function mergeLiveTile(target: LiveTile, update: LiveTile, overwrite: boolean) {

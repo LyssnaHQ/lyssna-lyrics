@@ -7,9 +7,11 @@ import {
   useState,
   type CSSProperties,
   type ReactNode,
+  type RefObject,
 } from "react";
 import {
   lineBlur,
+  Spring,
   tuneMotion,
   vocalGap,
   wordGroups,
@@ -42,9 +44,10 @@ import {
 } from "./space-gravity";
 import { windowPosition } from "./window-activity";
 import type { Line, Lyrics } from "./types";
-import { HighlighterWords } from "./highlighter";
+import { HighlighterWords, nextMarkerStarts } from "./highlighter";
 import { frameDue } from "./frame-cap";
 import { trackGravityStage } from "../gravity-frame";
+import type { VisualiserFrame } from "./visualiser-frame";
 
 interface Entity {
   key: string;
@@ -54,6 +57,7 @@ interface Entity {
   words: AnimatedWord[];
   /** The word as a line of its own, for the Highlighter's pen. */
   ink: Line;
+  followingStart?: number;
   start: number;
   end: number;
   /** Lead line ordinal this word belongs to (backing vocals use their parent). */
@@ -89,6 +93,7 @@ function groupByLine(entities: Entity[]) {
 /** Splits lyrics into floating word entities grouped by lead line. */
 export function prepareGravity(lyrics: Lyrics) {
   const entities: Entity[] = [];
+  const following = nextMarkerStarts(lyrics.lines);
   const leads: LeadLine[] = [];
   let total = 0;
   for (const [lineIndex, line] of lyrics.lines.entries()) {
@@ -126,6 +131,7 @@ export function prepareGravity(lyrics: Lyrics) {
           text: words.map((word) => word.text).join(""),
           words,
         },
+        followingStart: pieces[slot + 1]?.start ?? following[lineIndex],
         start: piece.start,
         end: piece.end,
         lead,
@@ -301,7 +307,7 @@ function measureField(stage: HTMLElement): Field {
   };
 }
 
-type GravityBody = Body & { spawned: boolean; entryFrame?: number };
+type GravityBody = Body & { spawned: boolean; entryFrame?: number; beatOffset?: number };
 
 let kept: { signature: string; bodies: Map<string, GravityBody> } | undefined;
 
@@ -342,12 +348,12 @@ function strengthOf(entity: Entity, elements: Map<string, HTMLElement>) {
 
 /** Where a turned, scaled word's left or right edge meets its middle,
  *  drawn in by `inset` pixels. */
-function edge(body: Body, side: -1 | 1, inset = 0) {
+function edge(body: GravityBody, side: -1 | 1, inset = 0) {
   const angle = (body.angle * Math.PI) / 180,
     reach = side * Math.max(0, (body.width * body.scale) / 2 - inset);
   return {
     x: body.x + Math.cos(angle) * reach,
-    y: body.y + Math.sin(angle) * reach,
+    y: body.y + (body.beatOffset ?? 0) + Math.sin(angle) * reach,
   };
 }
 
@@ -371,7 +377,7 @@ const ease = (t: number) =>
 const easeOut = (t: number) => 1 - (1 - t) ** 3;
 
 /** Lays a link along the edges of its two words as they drift. */
-function shapeLink(link: Link, a: Body, b: Body, width: number) {
+function shapeLink(link: Link, a: GravityBody, b: GravityBody, width: number) {
   const { path, gradient } = link;
   // As broad as the Highlighter's band on the smaller of the two words.
   const stroke =
@@ -585,7 +591,7 @@ const GravityWord = memo(function GravityWord({
       tabIndex={exiting ? -1 : 0}
     >
       {highlighter ? (
-        <HighlighterWords line={entity.ink} time={inkTime} />
+        <HighlighterWords line={entity.ink} time={inkTime} followingStart={entity.followingStart} />
       ) : (
         <LyricWord words={entity.words} />
       )}
@@ -603,6 +609,7 @@ export function SpaceGravityLyrics({
   credits,
   highlighter,
   linkWidth = 1,
+  visualiser,
 }: {
   lyrics: Lyrics;
   time: number;
@@ -613,6 +620,7 @@ export function SpaceGravityLyrics({
   /** Connecting lines' width as a share of the Highlighter's band; 0
    *  turns them off. */
   linkWidth?: number;
+  visualiser?: RefObject<VisualiserFrame>;
   tuning?: AnimatorSettings;
   onSeek: (position: number) => void;
   credits: ReactNode;
@@ -697,6 +705,7 @@ export function SpaceGravityLyrics({
     time,
     highlighter,
     linkWidth,
+    visualiser,
   });
   live.current = {
     visible,
@@ -706,6 +715,7 @@ export function SpaceGravityLyrics({
     time,
     highlighter,
     linkWidth,
+    visualiser,
   };
   const links = useRef<SVGSVGElement>(null);
   // A stable seek handler, so floating words skip re-rendering.
@@ -761,6 +771,8 @@ export function SpaceGravityLyrics({
       indexed: typeof prepared | undefined,
       byKey = new Map<string, Entity>();
     const motion: WindowMotion = { vx: 0, vy: 0 };
+    const beat = new Spring(0, 3.8, 0.64);
+    let lastPulse = live.current.visualiser?.current.pulse;
     const tick = (now: number) => {
       frame = frameWindow.requestAnimationFrame(tick);
       if (!frameDue(last, now)) return;
@@ -891,13 +903,20 @@ export function SpaceGravityLyrics({
         );
         step(active, dt, field, motion, exiting);
       }
+      const pulse = live.current.visualiser?.current;
+      if (pulse && lastPulse !== undefined && pulse.pulse !== lastPulse) {
+        beat.velocity = Math.max(-920, beat.velocity - 840 * pulse.impact);
+      }
+      lastPulse = pulse?.pulse;
+      const lift = reduceMotion || beat.asleep ? 0 : beat.step(dt);
       // Words that left the screen start fresh when they return.
       for (const key of bodies.current.keys())
         if (!elements.current.has(key)) bodies.current.delete(key);
       for (const [key, node] of elements.current) {
         const body = bodies.current.get(key);
         if (!body?.spawned) continue;
-        view.move(node, `translate3d(${body.x - body.width / 2}px, ${body.y - body.height / 2}px, 0) rotate(${body.angle}deg) scale(${body.scale})`);
+        body.beatOffset = lift * (0.65 + 0.35 * body.y / field.bounds.height);
+        view.move(node, `translate3d(${body.x - body.width / 2}px, ${body.y + body.beatOffset - body.height / 2}px, 0) rotate(${body.angle}deg) scale(${body.scale})`);
       }
       if (links.current)
         drawLinks(
@@ -947,7 +966,7 @@ export function SpaceGravityLyrics({
     );
     animator.current = instance;
     return () => instance.dispose();
-  }, [lyrics, reduceMotion, tuningKey]);
+  }, [lyrics, reduceMotion, highlighter, tuningKey]);
   // The credits line up with the lyrics column, where the normal view's
   // end credits sit, so they stay put when Space Gravity turns on or off.
   const credited = useRef<HTMLDivElement>(null);

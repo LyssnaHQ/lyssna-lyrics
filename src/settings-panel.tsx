@@ -13,7 +13,7 @@ import { pictureInPicture } from "./popout";
 import { quickEffects } from "./quick-effects";
 import { AccountSettings } from "./account-settings";
 import { StoredDataSettings } from "./creator/stored-data-settings";
-import type { Track } from "./host";
+import type { Host, Track } from "./host";
 
 export type Channel = "stable" | "beta" | "canary";
 export const channelLabels: Record<Channel, string> = { stable: "Stable", beta: "Beta", canary: "Canary" };
@@ -76,7 +76,8 @@ function visualRowKey(row: ReactNode) {
   return isValidElement(row) && row.key !== null ? String(row.key) : "";
 }
 
-export function SettingsPanel({ settings, change, close, options, track, notice, setNotice, view = window, developerMode, initialSubmenu, onEnableAutoRecord, canvasFrame }: {
+export function SettingsPanel({ host, settings, change, close, options, track, notice, setNotice, view = window, developerMode, initialSubmenu, onEnableAutoRecord, canvasFrame }: {
+  host: Host;
   settings: Settings;
   change: (patch: Partial<Settings>) => void;
   close: () => void;
@@ -454,7 +455,7 @@ export function SettingsPanel({ settings, change, close, options, track, notice,
       }}>
         {submenu === "sources" && <SourcesManager settings={settings} change={change} />}
         {submenu === "library" && <LyricsLibrary notice={setNotice} />}
-        {submenu === "storage" && <StoredDataSettings notice={setNotice} />}
+        {submenu === "storage" && <StoredDataSettings host={host} notice={setNotice} />}
         {submenu === "builds" && <div className="lyrics-settings-group">
           {(Object.keys(options.channels) as Channel[]).map((channel) => {
             const current = channel === options.channel && !clearHiddenBuild;

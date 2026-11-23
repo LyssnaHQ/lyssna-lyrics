@@ -742,7 +742,7 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   inset: auto 0 0;
   z-index: -1;
   width: 100%;
-  height: 65%;
+  height: 32.5%;
   color: var(--lyrics-cover-color, #8f8f8f);
   pointer-events: none;
 }
@@ -1668,6 +1668,43 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   color: var(--muted, #b3b3b3);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+.lyssna-lyrics-view .stored-data-items {
+  margin-top: 18px;
+}
+.lyssna-lyrics-view .stored-data-items h3 {
+  margin: 0 0 10px;
+  font-size: 14px;
+}
+.lyssna-lyrics-view .stored-data-items ul {
+  display: grid;
+  gap: 1px;
+  margin: 0 0 12px;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid #ffffff18;
+  border-radius: 10px;
+  background: #ffffff12;
+}
+.lyssna-lyrics-view .stored-data-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  min-width: 0;
+  padding: 10px 12px;
+  background: var(--lyrics-settings-card, #202020);
+}
+.lyssna-lyrics-view .stored-data-item > div:first-child {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.lyssna-lyrics-view .stored-data-item small {
+  color: var(--muted, #a9a9a9);
 }
 
 .lyssna-lyrics-view :is(.lyssna-account-form, .lyssna-build-key-form) {

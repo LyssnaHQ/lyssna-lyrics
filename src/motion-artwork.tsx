@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { lyssnaInstallReady, lyssnaRequest, lyssnaRetryAt } from "./lyssna-api";
 import { fetchSpotifyMedia } from "./spotify-media";
-import { clearStoredMotionArtwork, readStoredMotionArtwork, saveMotionArtwork } from "./motion-artwork-storage";
+import { clearStoredMotionArtwork, deleteStoredMotionArtwork, readStoredMotionArtwork, saveMotionArtwork } from "./motion-artwork-storage";
 import workerSource from "./motion-artwork-worker.js?raw";
 
 const digits = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -33,6 +33,13 @@ export function clearMotionArtworkCache() {
   recentCovers.clear();
   clearing = clearStoredMotionArtwork().finally(() => { clearing = undefined; });
   return clearing;
+}
+
+export function removeMotionArtworkCache(key: string) {
+  loads.get(key)?.cancel();
+  loads.delete(key);
+  recentCovers.delete(key);
+  return deleteStoredMotionArtwork(key);
 }
 
 function rememberCover(key: string, cover: Blob) {

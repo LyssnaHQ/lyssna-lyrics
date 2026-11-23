@@ -86,6 +86,7 @@ export class LyricAnimator {
     private simple = false,
     private view: Window = window,
     private motionStrength = 1,
+    private animateEstimatedWords = false,
   ) {
     this.ends = lyrics.lines.map(vocalEnd);
   }
@@ -226,7 +227,7 @@ export class LyricAnimator {
       ahead = time + MOTION.leadMs;
     let moving = false;
     this.lyrics.lines.forEach((line, index) => {
-      if (line.words.length) return;
+      if (line.words.length || this.animateEstimatedWords) return;
       const end = this.ends[index];
       if (this.simple || time < line.start_ms - 1000) {
         if (this.wiping.has(index)) this.wipe(index, undefined);
@@ -237,7 +238,7 @@ export class LyricAnimator {
     });
     if (this.simple) {
       this.lyrics.lines.forEach((line, index) => {
-        if (!line.words.length) return;
+        if (!line.words.length && !this.animateEstimatedWords) return;
         const active = line.start_ms <= time && time < this.ends[index];
         let syllables = this.live.get(index);
         if (!active && !syllables) return;
@@ -280,7 +281,7 @@ export class LyricAnimator {
     }
     this.dropOldLayers();
     this.lyrics.lines.forEach((line, index) => {
-      if (!line.words.length) return;
+      if (!line.words.length && !this.animateEstimatedWords) return;
       const active = line.start_ms <= time && time < this.ends[index];
       let syllables = this.live.get(index);
       if (!active && !syllables) return;

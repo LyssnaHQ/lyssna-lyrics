@@ -62,12 +62,25 @@ export async function saveMotionArtwork(key: string, blob: Blob) {
 }
 
 export async function cachedMotionArtworkBytes() {
+  return (await listStoredMotionArtwork()).reduce((total, { bytes }) => total + bytes, 0);
+}
+
+export async function listStoredMotionArtwork() {
   const db = await openCache();
   const transaction = db.transaction(storeName);
   const done = complete(transaction);
   const request = transaction.objectStore(storeName).getAll();
   await done;
-  return (request.result as Entry[]).reduce((total, entry) => total + entry.blob.size, 0);
+  return (request.result as Entry[]).sort((a, b) => b.usedAt - a.usedAt)
+    .map(({ key, blob }) => ({ key, bytes: blob.size }));
+}
+
+export async function deleteStoredMotionArtwork(key: string) {
+  const db = await openCache();
+  const transaction = db.transaction(storeName, "readwrite");
+  const done = complete(transaction);
+  transaction.objectStore(storeName).delete(key);
+  await done;
 }
 
 export async function clearStoredMotionArtwork() {

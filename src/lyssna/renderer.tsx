@@ -3,7 +3,7 @@ import { ChevronDown, ChevronUp, Music2 } from "lucide-react";
 import { LyricAnimator } from "./lyric-animator";
 import { presetOf } from "./animator-tuning";
 import { frameDue } from "./frame-cap";
-import { HighlighterWords, markerColour } from "./highlighter";
+import { HighlighterWords, markerColour, nextMarkerStarts } from "./highlighter";
 import { LyricCountdown } from "./lyric-countdown";
 import { LyricWord } from "./lyric-word";
 import { glideScroll, GLIDE_MS, lineBlur, stepScroll, tuneMotion, vocalEnd, vocalGap, vocalGaps, wordGroups, type ScrollSpring, type VocalGap } from "./lyric-motion";
@@ -226,15 +226,17 @@ export function LyricsDisplay({
       !!settings.reduce_motion,
       !!settings.lyrics_simple,
       scroll.current?.ownerDocument.defaultView ?? window,
+      1,
+      !!settings.lyrics_highlighter && lyrics.synced,
     );
     animator.current = instance;
     return () => instance.dispose();
-  }, [lyrics, settings.reduce_motion, settings.lyrics_simple, tuning]);
+  }, [lyrics, settings.reduce_motion, settings.lyrics_simple, settings.lyrics_highlighter, tuning]);
   useLayoutEffect(() => {
     if (!lyrics.synced) return;
     if (positionJumped || cueLine) animator.current?.reset();
     animator.current?.update(lyricTime);
-  }, [lyricTime, cueLine, lyrics, settings.reduce_motion, settings.lyrics_simple, tuning]);
+  }, [lyricTime, cueLine, lyrics, settings.reduce_motion, settings.lyrics_simple, settings.lyrics_highlighter, tuning]);
   // Romanization, translations or a word filter change only the words: the
   // view stays on the current line instead of sliding to where it rewraps.
   const timing = useMemo(
@@ -483,6 +485,7 @@ export function LyricsDisplay({
       setFollowing(true);
   }, [positionMs, following, primary, lyrics.synced]);
   const highlighter = !!settings.lyrics_highlighter && lyrics.synced;
+  const markerStarts = useMemo(() => nextMarkerStarts(lyrics.lines), [lyrics.lines]);
   if (lyrics.instrumental)
     return (
       <div className="lyrics-message">
@@ -572,6 +575,7 @@ export function LyricsDisplay({
                 blur={compact || playing ? 0 : lineBlur(distance)}
                 synced={lyrics.synced}
                 highlighter={highlighter}
+                followingStart={highlighter ? markerStarts[index] : undefined}
                 // A line keeps following the song until its last word ends,
                 // even after the next line takes over, so the pen finishes
                 // at the singing's pace; then it keeps all its ink. Lines
@@ -662,6 +666,7 @@ const LyricRow = memo(function LyricRow({
   blur,
   synced,
   highlighter,
+  followingStart,
   time,
   translation,
 }: {
@@ -675,6 +680,7 @@ const LyricRow = memo(function LyricRow({
   blur: number;
   synced: boolean;
   highlighter: boolean;
+  followingStart?: number;
   time: number;
   translation?: boolean;
 }) {
@@ -691,7 +697,7 @@ const LyricRow = memo(function LyricRow({
     >
       <span className="lyric-main">
         {highlighter ? (
-          <HighlighterWords line={line} time={time} />
+          <HighlighterWords line={line} time={time} followingStart={followingStart} />
         ) : (
           <LyricWords line={line} />
         )}

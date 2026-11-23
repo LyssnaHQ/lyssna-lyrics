@@ -440,7 +440,9 @@ export function CreatorSurface({ host, view: owner, settings, close, closeReview
   }
 
   useLayoutEffect(() => {
-    const cleared = () => {
+    const cleared = (event: Event) => {
+      const uri = (event as CustomEvent<string | undefined>).detail;
+      if (uri && uri !== activeUri.current) return;
       audioCacheGeneration.current++;
       audioLoad.current++;
       setCompleteAudio(undefined);

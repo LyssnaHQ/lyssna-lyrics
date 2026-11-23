@@ -173,6 +173,7 @@ type CatalogueAlbum = {
 export type TtmlTrack = {
   uri: string;
   name: string;
+  duration_ms?: number;
   artists: { name: string }[];
   album?: CatalogueAlbum;
   disc_number?: number;

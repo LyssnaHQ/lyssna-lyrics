@@ -1,4 +1,5 @@
 import type { Host } from "../host";
+import { VISUALISER_BARS } from "../lyssna/visualiser-frame";
 import { spectrumFrequency } from "./audio";
 import { spotifyWindowMarker } from "./spotify-window";
 import { createCapturedReplay, recordedCoverage, type ReplayPacket } from "./captured-replay";
@@ -54,6 +55,9 @@ export function createSpotifyCapture(host: Host, view: Window & typeof globalThi
   let transportRevision = 0;
   let usingLocalAudio = false;
   let syncProcessing: (() => void) | undefined;
+  const spectrum = new Uint8Array(VISUALISER_BARS);
+  let spectrumTrack = "";
+  let spectrumAt = 0;
 
   function publish(next: CaptureState) {
     state = next;
@@ -104,6 +108,7 @@ export function createSpotifyCapture(host: Host, view: Window & typeof globalThi
       if (stopping) return stopping;
       if (session !== active) return Promise.resolve();
       session = undefined;
+      spectrumAt = 0;
       view.clearInterval(timer);
       view.clearInterval(saveTimer);
       stopWatching?.();
@@ -301,6 +306,18 @@ export function createSpotifyCapture(host: Host, view: Window & typeof globalThi
       };
       const writeFrame = (uri: string, duration: number, frame: number, levels: Uint16Array, before?: Uint16Array, weight = 1) => {
         if (frame < 0 || frame * LIVE_SAMPLE_MS >= duration) return;
+        if (!before) {
+          // The existing worklet bands are logarithmic, ordered high to low.
+          for (let bar = 0; bar < spectrum.length; bar++) {
+            const start = LIVE_ROWS - Math.floor((bar + 1) * LIVE_ROWS / spectrum.length);
+            const end = LIVE_ROWS - Math.floor(bar * LIVE_ROWS / spectrum.length);
+            let peak = 0;
+            for (let row = start; row < end; row++) peak = Math.max(peak, levels[row]);
+            spectrum[bar] = Math.round(peak * 255 / 5400);
+          }
+          spectrumTrack = uri;
+          spectrumAt = view.performance.now();
+        }
         const index = Math.floor(frame / LIVE_COLUMNS);
         const column = frame % LIVE_COLUMNS;
         let tiles = dirty.get(uri);
@@ -455,10 +472,14 @@ export function createSpotifyCapture(host: Host, view: Window & typeof globalThi
     transportChanged: () => { transportRevision++; },
     setLocalAudio(active: boolean) {
       usingLocalAudio = active;
+      spectrumAt = 0;
       transportRevision++;
       syncProcessing?.();
     },
     state: () => state,
+    spectrum(trackId: string) {
+      if (spectrumAt && spectrumTrack === `spotify:track:${trackId}` && view.performance.now() - spectrumAt < 180) return spectrum;
+    },
     subscribe(listener: () => void) {
       listeners.add(listener);
       return () => { listeners.delete(listener); };

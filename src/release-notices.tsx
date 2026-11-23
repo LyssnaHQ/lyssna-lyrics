@@ -7,6 +7,7 @@ import noticeCss from "./release-notices.css?inline";
 const discord = "https://discord.gg/qfYAsFQawp";
 const github = "https://github.com/LyssnaHQ/lyssna-lyrics";
 const guide = "https://lyssna.org/guides";
+const canaryNotesUrl = "https://ipixelgalaxy.com/lyssna-plugin/rewrite/v1.0/patch-notes.md";
 const lastBuildKey = "lyssna-lyrics.v1.last-public-build";
 const integrationEvent = "lyssna-lyrics:integration-state";
 const checkInterval = 120_000;
@@ -26,12 +27,12 @@ function compareVersions(a: string, b: string) {
 }
 
 // Port of the Legacy patch notes parser by iPixelGalaxy.
-function getPatchNotes(markdown: string, from: string, to: string) {
+function getPatchNotes(markdown: string, from: string, to: string, exact: boolean) {
   const notes: { version: string; text: string }[] = [];
   let version = "";
   let current: string[] = [];
   const finishNote = () => {
-    if (current.length && version && compareVersions(version, from) > 0 && compareVersions(version, to) <= 0) {
+    if (current.length && version && (exact ? version === to : compareVersions(version, from) > 0 && compareVersions(version, to) <= 0)) {
       notes.push({ version, text: current.join(" ") });
     }
     current = [];
@@ -63,7 +64,7 @@ function inlineMarkdown(text: string) {
   return tokens;
 }
 
-function PatchNotes({ url, from, to }: { url: string; from: string; to: string }) {
+function PatchNotes({ url, from, to, exact }: { url: string; from: string; to: string; exact: boolean }) {
   const [notes, setNotes] = useState<ReturnType<typeof getPatchNotes>>();
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -75,11 +76,11 @@ function PatchNotes({ url, from, to }: { url: string; from: string; to: string }
         return response.text();
       })
       .then((markdown) => {
-        if (!controller.signal.aborted) setNotes(getPatchNotes(markdown, from, to));
+        if (!controller.signal.aborted) setNotes(getPatchNotes(markdown, from, to, exact));
       })
       .catch(() => { if (!controller.signal.aborted) setFailed(true); });
     return () => controller.abort();
-  }, [url, from, to, attempt]);
+  }, [url, from, to, exact, attempt]);
   return <section className="release-notes" aria-label="Patch notes" aria-live="polite">
     <h3>What changed</h3>
     {failed ? <p>Couldn’t load patch notes. <button type="button" className="release-text-button" onClick={() => {
@@ -210,7 +211,10 @@ export function startReleaseNotices(host: Host, options: BuildOptions) {
   const installed = options.hiddenVersion ?? options.channels[options.channel];
   if (!installed) return () => {};
   const version = installed;
-  const patchNotes = options.patchNotesUrl;
+  const canary = options.channel === "canary" && !options.hiddenVersion;
+  const patchNotes = canary ? canaryNotesUrl : options.patchNotesUrl;
+  // The Canary manifest is authoritative because commit hashes don't sort by release order.
+  const hasUpdate = (next: string, current: string) => canary ? next !== current : compareVersions(next, current) > 0;
   const controller = new AbortController();
   const previewWindow = window as Window & { LyssnaLyrics?: Record<string, unknown> };
   const mount = document.createElement("div");
@@ -253,12 +257,12 @@ export function startReleaseNotices(host: Host, options: BuildOptions) {
   });
 
   function showUpdatedDialog(from: string, to: string) {
-    const upgraded = from !== "0.0.0" && to !== "0.0.0" && compareVersions(to, from) > 0;
+    const upgraded = from !== "0.0.0" && to !== "0.0.0" && hasUpdate(to, from);
     show({
       title: `${upgraded ? "Updated" : "Changed"} to ${to}`,
       content: [
         <p>You were on <strong>{from}</strong>. You are now on <strong>{to}</strong>.</p>,
-        ...(upgraded && patchNotes ? [<PatchNotes url={patchNotes} from={from} to={to} />] : []),
+        ...(upgraded && patchNotes ? [<PatchNotes url={patchNotes} from={from} to={to} exact={canary} />] : []),
       ],
       primary: patchNotes ? { label: "See all patch notes", run: () => openExternal(patchNotes) } : { label: "Got it", run() {} },
       secondary: "Close",
@@ -325,7 +329,7 @@ export function startReleaseNotices(host: Host, options: BuildOptions) {
       const check = async () => {
         try {
           const latest = await latestVersion(controller.signal);
-          if (latest && latest !== announced && !noticeOpen && !controller.signal.aborted && compareVersions(latest, version) > 0) {
+          if (latest && latest !== announced && !noticeOpen && !controller.signal.aborted && hasUpdate(latest, version)) {
             presentUpdate(latest, () => window.location.reload());
             announced = latest;
           }
