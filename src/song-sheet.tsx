@@ -51,10 +51,10 @@ export function SongSheet({ url, onClose }: { url: string; onClose: () => void }
     onCancel={event => { event.preventDefault(); onClose(); }}
     onClick={event => { if (event.target === event.currentTarget) onClose(); }}>
     <div className="lyssna-song-sheet-content">
-      <header>
+      <div className="lyssna-song-sheet-actions">
         <a href={page} target="_blank" rel="noopener noreferrer"><ExternalLink size={15} /> Open in browser</a>
         <button type="button" onClick={onClose} aria-label="Close Lyssna song page"><X size={18} /></button>
-      </header>
+      </div>
       {status && <p role="status">{status}</p>}
       <iframe ref={frame} src={address} title="Lyssna song page"
         sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox" />
