@@ -410,7 +410,7 @@ function trailCurve(link: TrailLink, a: TrailPose, b: TrailPose, fraction: numbe
   return trail.draw(start, first, second, end, out, into, dt, fraction);
 }
 
-const TRAIL_DELAY_MS = 760;
+const TRAIL_DELAY_MS = 2280;
 
 function tailTrim(link: TrailLink, time: number) {
   const begin = Math.max(link.finish, link.from.start + TRAIL_DELAY_MS);
