@@ -82,15 +82,13 @@ export function LyricsDisplay({
   upNext?: ReactNode;
 }) {
   const scroll = useRef<HTMLDivElement>(null);
+  const scrollingWriters = useRef<HTMLDivElement>(null);
   const [following, setFollowing] = useState(true);
   const [atEnd, setAtEnd] = useState(false);
   const [returnDirection, setReturnDirection] = useState<"up" | "down">("down");
   const footerMode = settings.lyrics_pinned_footer ?? "off";
-  const writerCredits = (
-    <WriterCredits
-      names={lyrics.songwriters?.length ? lyrics.songwriters : writers}
-    />
-  );
+  const writerNames = lyrics.songwriters?.length ? lyrics.songwriters : writers;
+  const writerCredits = <WriterCredits names={writerNames} />;
   // As in Spicy Lyrics, browsing ends on its own once the user stops
   // scrolling with the current lyric still on screen; scrolled away from
   // it, browsing stays until they return or select a lyric.
@@ -525,6 +523,12 @@ export function LyricsDisplay({
         data-at-end={atEnd}
         onScroll={(event) => {
           const node = event.currentTarget;
+          const writersEnd = scrollingWriters.current;
+          let end = node.scrollHeight - node.clientHeight;
+          if (!following && writersEnd) {
+            end = Math.min(end, Math.max(0, writersEnd.offsetTop + writersEnd.offsetHeight - node.clientHeight));
+            if (node.scrollTop > end + 1) node.scrollTop = end;
+          }
           // Only the Now playing card fades its top by scroll distance. The
           // value stops changing once the fade is whole, so scrolling does
           // not restyle the lyrics on every frame.
@@ -533,9 +537,7 @@ export function LyricsDisplay({
             if (node.style.getPropertyValue("--scrolled") !== scrolled)
               node.style.setProperty("--scrolled", scrolled);
           }
-          setAtEnd(
-            node.scrollTop + node.clientHeight >= node.scrollHeight - 24,
-          );
+          setAtEnd(node.scrollTop >= end - 24);
           noteHeldRest(node, false);
           if (!following)
             setReturnDirection(
@@ -598,7 +600,8 @@ export function LyricsDisplay({
           );
         })}
         {footerMode !== "full" && (
-          <div className="lyric-end-credits">
+          <div className={footerMode === "no_writers" ? "lyric-end-credits lyric-writers-end" : "lyric-end-credits"}
+            ref={footerMode === "no_writers" && writerNames.length ? scrollingWriters : undefined}>
             {writerCredits}
             {footerMode === "off" && (
               <div className={upNext ? "lyric-credits-row" : undefined}>

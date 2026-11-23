@@ -26,7 +26,7 @@ import { enabledSources, readLyrics, refreshLyrics, sourceIds } from "./lyric-so
 import { LyricCredits } from "./credits";
 import { SongSheetScope } from "./song-sheet";
 import { CanvasArtwork, SpotifyVisualiser, useCanvas } from "./spotify-artwork";
-import { findNowPlaying, findNowPlayingCover, findPlaybarCover, nowPlayingArtwork, nowPlayingCanvas, placeNowPlayingPreview } from "./now-playing";
+import { findNowPlaying, findNowPlayingCover, findPlaybarCover, nowPlayingArtistCard, nowPlayingArtwork, nowPlayingCanvas, placeNowPlayingPreview } from "./now-playing";
 import { TrackMetadata } from "./track-metadata";
 import { useDefaultLyricsFont } from "./lyrics-font-fallback";
 import { clock, usePlayback, usePlaybackControls, usePosition } from "./playback";
@@ -1394,6 +1394,7 @@ export default function start(options: BuildOptions) {
 
   const playbarArtwork = spotifyMotionCover(host);
   const nowPlayingMotion = spotifyMotionCover(host);
+  const artistCard = nowPlayingArtistCard(host);
   syncSpotifyMotion = (panel = findNowPlaying()) => {
     playbarArtwork.sync(showSpotifyMotion ? findPlaybarCover() : null);
     nowPlayingMotion.sync(showSpotifyMotion && !sidebarCover ? findNowPlayingCover(panel) : null);
@@ -1458,6 +1459,7 @@ export default function start(options: BuildOptions) {
     const panel = findNowPlaying();
     syncBackdrop(panel);
     syncNowPlaying(panel);
+    artistCard.sync(panel);
     sidebarArtwork.sync(panel, sidebarCover);
     syncSpotifyMotion?.(panel);
   }
@@ -1507,6 +1509,7 @@ export default function start(options: BuildOptions) {
       viewButtons.dispose();
       playbarArtwork.dispose();
       nowPlayingMotion.dispose();
+      artistCard.dispose();
       sidebarArtwork.dispose();
       disposeRuntimeSettings();
       stopPreferenceSync();

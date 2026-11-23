@@ -867,6 +867,129 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   display: none;
 }
 
+.lyssna-npv-artist-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr) auto auto auto;
+  padding: 0 !important;
+  background: none !important;
+  color: #fff;
+  pointer-events: none;
+}
+
+.lyssna-npv-artist-layout :is(a, button) {
+  pointer-events: auto;
+}
+
+.lyssna-npv-artist-layout .lyssna-npv-artist-portrait {
+  position: relative;
+  grid-area: 1 / 1 / 4 / -1;
+  align-self: start;
+  box-sizing: border-box;
+  width: 100%;
+  aspect-ratio: 1.3;
+  padding: 14px 16px 0;
+  overflow: hidden;
+  background: none !important;
+}
+
+.lyssna-npv-artist-portrait > :not(:first-child, .lyssna-npv-artist-photo) {
+  display: none;
+}
+
+.lyssna-npv-artist-portrait > :first-child {
+  position: relative;
+  z-index: 1;
+}
+
+.lyssna-npv-artist-photo,
+.lyssna-npv-artist-portrait::after {
+  position: absolute;
+  inset: 0;
+}
+
+.lyssna-npv-artist-photo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 30%;
+}
+
+.lyssna-npv-artist-portrait::after {
+  content: "";
+  background: linear-gradient(#0006, transparent 32% 48%, #000b);
+}
+
+.lyssna-npv-artist-layout :is(.lyssna-npv-artist-details, .lyssna-npv-artist-stats) {
+  display: contents;
+}
+
+.lyssna-npv-artist-layout .lyssna-npv-artist-name {
+  grid-area: 2 / 1;
+  justify-self: start;
+  z-index: 2;
+  min-width: 0;
+  max-width: calc(100% - 16px);
+  margin-inline-start: 16px;
+}
+
+.lyssna-npv-artist-name > span[dir] {
+  min-width: 0;
+  overflow: hidden;
+  color: #fff;
+  font-size: 18px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lyssna-npv-artist-name svg {
+  flex-shrink: 0;
+}
+
+.lyssna-npv-artist-stats > :not(button) {
+  grid-area: 3 / 1;
+  z-index: 1;
+  min-width: 0;
+  margin: 4px 8px 14px 16px;
+  overflow: hidden;
+  color: #ffffffd9;
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lyssna-npv-artist-layout .lyssna-npv-artist-stats > button {
+  grid-area: 2 / 2 / 4 / -1;
+  align-self: center;
+  z-index: 2;
+  margin: 0 16px 14px 0;
+  border-color: #ffffffb3;
+  background: #0004;
+  color: #fff;
+  backdrop-filter: blur(12px);
+}
+
+.lyssna-npv-artist-layout .lyssna-npv-artist-bio {
+  grid-area: 4 / 1 / 5 / -1;
+  margin: 12px 16px 16px;
+  color: #ffffffb3;
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.lyssna-npv-artist-details > :not(.lyssna-npv-artist-name, .lyssna-npv-artist-stats, .lyssna-npv-artist-bio) {
+  grid-area: 1 / 2;
+  align-self: start;
+  z-index: 1;
+  margin: 16px;
+}
+
+.lyssna-npv-artist-portrait :is(button, h2, h3) {
+  color: #fff;
+  text-shadow: 0 2px 10px #0005;
+}
+
 .lyssna-npv-ambient-panel > .lyssna-lyrics-view.lyssna-npv-expanded {
   background: transparent;
 }
@@ -1157,6 +1280,10 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
 
 .lyssna-lyrics-view .has-pinned-footer > .lyric-scroll .writer-credits {
   margin-bottom: 0;
+}
+
+.lyssna-lyrics-view .lyrics-display[data-following="false"] > .lyric-scroll > .lyric-writers-end {
+  position: static;
 }
 
 .lyssna-lyrics-view .lyric-pinned-footer {

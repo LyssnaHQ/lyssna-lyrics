@@ -1,3 +1,5 @@
+import type { Host } from "./host";
+
 const panelContent = '[data-testid="NPV_Panel_OpenDiv"]';
 const nativePreview = '[data-testid="lyrics-npv-section"]';
 const trackVisual = '[data-testid="track-visual-enhancement"]';
@@ -44,6 +46,62 @@ export function placeNowPlayingPreview(panel: HTMLElement, preview: HTMLElement)
   if (section?.parentElement === content) {
     if (section.nextElementSibling !== preview) section.after(preview);
   } else if (preview.parentElement !== content) content.append(preview);
+}
+
+export function nowPlayingArtistCard(host: Host) {
+  let active: { layout: Element; name: HTMLAnchorElement; artistUri: string; parts: Element[]; clear(): void } | undefined;
+  function clear() {
+    active?.clear();
+    active = undefined;
+  }
+
+  return {
+    sync(panel: HTMLElement | null) {
+      const section = panel?.querySelector(":is(.main-nowPlayingView-aboutArtist, .main-nowPlayingView-aboutArtistV2)");
+      const name = section?.querySelector<HTMLAnchorElement>('a[href*="/artist/"]');
+      const id = name?.pathname.match(/\/artist\/([A-Za-z0-9]{22})\/?$/)?.[1];
+      const details = name?.parentElement;
+      const layout = details?.parentElement;
+      const artistUri = id && `spotify:artist:${id}`;
+      if (active && layout === active.layout && active.name === name && active.artistUri === artistUri &&
+          active.parts.every((part) => layout.contains(part))) return;
+      clear();
+
+      const portrait = details?.previousElementSibling;
+      const stats = Array.from(details?.children ?? []).find((element) => element.matches("div:has(> button)"));
+      const bio = stats?.nextElementSibling;
+      if (!name || !artistUri || !layout || !details || !portrait?.querySelector("button") || !stats || !bio) return;
+
+      const track = host.track();
+      const photo = host.artistGalleryPhoto(artistUri, track?.artistUri === artistUri ? track.id : undefined);
+      if (!photo) return;
+
+      const image = layout.ownerDocument.createElement("img");
+      image.className = "lyssna-npv-artist-photo";
+      image.alt = "";
+      image.decoding = "async";
+      const parts = [
+        [layout, "layout"], [portrait, "portrait"], [details, "details"],
+        [name, "name"], [stats, "stats"], [bio, "bio"],
+      ] as const;
+      const entry = active = { layout, name, artistUri, parts: parts.map(([element]) => element), clear() {
+        image.removeEventListener("load", show);
+        image.remove();
+        for (const [element, part] of parts) element.classList.remove(`lyssna-npv-artist-${part}`);
+      } };
+      function show() {
+        if (active !== entry || !layout?.isConnected || !entry.parts.every((part) => layout.contains(part))) return;
+        for (const [element, part] of parts) element.classList.add(`lyssna-npv-artist-${part}`);
+        portrait?.append(image);
+      }
+      void photo.then((url) => {
+        if (!url || active !== entry) return;
+        image.addEventListener("load", show, { once: true });
+        image.src = url;
+      });
+    },
+    dispose: clear,
+  };
 }
 
 export function nowPlayingArtwork(isPlaying: () => boolean) {

@@ -33,7 +33,7 @@ type HeaderImages = { sources?: ImageSource[] };
 type CatalogueResult = {
   data?: { trackUnion?: { canvas?: CanvasInfo | null }; albumUnion?: { date?: { isoString?: string; year?: number } }; artistUnion?: {
     headerImage?: { data?: HeaderImages };
-    visuals?: { headerImage?: HeaderImages };
+    visuals?: { headerImage?: HeaderImages; gallery?: { items?: HeaderImages[] } };
   } };
 };
 export type CanvasInfo = { fileId?: string; type?: string; url?: string };
@@ -246,9 +246,7 @@ function customAppRoutes(config?: HostConfig) {
     .map((entry) => entry.trim().toLowerCase()).filter(Boolean);
 }
 
-function headerImage(result: CatalogueResult) {
-  const artist = result?.data?.artistUnion;
-  const images = artist?.headerImage?.data?.sources ?? artist?.visuals?.headerImage?.sources ?? [];
+function largestArtistImage(images: ImageSource[] = []) {
   let preferred: { url: string; width: number } | undefined;
   for (const image of images) {
     if (!image.url) continue;
@@ -258,6 +256,22 @@ function headerImage(result: CatalogueResult) {
     if (!preferred || width > preferred.width) preferred = { url, width };
   }
   return preferred?.url;
+}
+
+function headerImage(result: CatalogueResult) {
+  const artist = result?.data?.artistUnion;
+  return largestArtistImage(artist?.headerImage?.data?.sources ?? artist?.visuals?.headerImage?.sources);
+}
+
+function firstGalleryImage(result?: CatalogueResult) {
+  return largestArtistImage(result?.data?.artistUnion?.visuals?.gallery?.items?.[0]?.sources);
+}
+
+function npvArtistVariables(artistUri: string, trackId: string) {
+  return {
+    artistUri, trackUri: `spotify:track:${trackId}`, contributorsLimit: 10, contributorsOffset: 0,
+    enableRelatedVideos: false, enableRelatedAudioTracks: false,
+  };
 }
 
 export function getHost() {
@@ -278,6 +292,7 @@ export function getHost() {
   };
 
   const artistHeaders = new Map<string, Promise<string | undefined>>();
+  const artistGalleryPhotos = new Map<string, Promise<string | undefined>>();
   const releaseYears = new Map<string, Promise<string | undefined>>();
   const canvases = new Map<string, Promise<CanvasInfo | null | undefined>>();
   const analyses = new Map<string, Promise<AudioAnalysis | null>>();
@@ -362,10 +377,7 @@ export function getHost() {
     if (!npv && !overview) return;
     const pending = (async () => {
       if (npv) {
-        const image = await request(npv, {
-          artistUri, trackUri: `spotify:track:${trackId}`, contributorsLimit: 10, contributorsOffset: 0,
-          enableRelatedVideos: false, enableRelatedAudioTracks: false,
-        }).then(headerImage).catch((error) => {
+        const image = await request(npv, npvArtistVariables(artistUri, trackId)).then(headerImage).catch((error) => {
           if (!overview) throw error;
         });
         if (image) return image;
@@ -376,6 +388,27 @@ export function getHost() {
       return undefined;
     });
     artistHeaders.set(artistUri, pending);
+    return pending;
+  }
+
+  function artistGalleryPhoto(artistUri: string, trackId?: string) {
+    const cached = artistGalleryPhotos.get(artistUri);
+    if (cached) return cached;
+    const { definitions, request } = graph();
+    const about = definitions?.queryArtistAboutModal;
+    const npv = definitions?.queryNpvArtist;
+    if (!request || (!about && !(npv && trackId))) return;
+
+    const pending = (async () => {
+      const aboutPhoto = about ? await request(about, { artistUri }).then(firstGalleryImage).catch(() => undefined) : undefined;
+      if (aboutPhoto) return aboutPhoto;
+      if (npv && trackId) return firstGalleryImage(await request(npv, npvArtistVariables(artistUri, trackId)));
+    })().catch(() => {
+      artistGalleryPhotos.delete(artistUri);
+      return undefined;
+    });
+    artistGalleryPhotos.set(artistUri, pending);
+    if (artistGalleryPhotos.size > 50) artistGalleryPhotos.delete(artistGalleryPhotos.keys().next().value!);
     return pending;
   }
 
@@ -514,6 +547,7 @@ export function getHost() {
       });
     },
     artistHeader,
+    artistGalleryPhoto,
     releaseYear,
     trackCanvas,
     navigate(path: string) {
