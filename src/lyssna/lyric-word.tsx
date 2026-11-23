@@ -36,7 +36,7 @@ export const LyricWord = memo(function LyricWord({
           return (
             <span
               key={part}
-              className={`lyric-syllable ${emphasis ? "emphasis" : ""} ${joined}`}
+              className={`lyric-syllable ${emphasis ? "emphasis" : ""} ${joined}${word.sung_by ? ` sung-${word.sung_by}` : ""}`}
               data-start={word.start_ms}
               data-end={word.end_ms}
               data-letter-offset={word.letterOffset}

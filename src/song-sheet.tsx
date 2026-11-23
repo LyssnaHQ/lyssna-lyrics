@@ -1,0 +1,63 @@
+import { useLayoutEffect, useRef, useState } from "react";
+import { ExternalLink, X } from "lucide-react";
+import { getHost } from "./host";
+
+const site = "https://lyssna.org";
+const songIdPattern = /^[\da-f]{8}-(?:[\da-f]{4}-){3}[\da-f]{12}$/i;
+const trackIdPattern = /^[A-Za-z0-9]{22}$/;
+
+export function lyssnaSongUrl(songId: string) {
+  return songIdPattern.test(songId) ? `${site}/song/${songId}` : undefined;
+}
+
+export function SongSheet({ url, onClose }: { url: string; onClose: () => void }) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const frame = useRef<HTMLIFrameElement>(null);
+  const [address] = useState(() => `${url}?embed&client=spicetify&opened=${Date.now()}`);
+  const [page, setPage] = useState(url);
+  const [status, setStatus] = useState("Loading song page…");
+
+  useLayoutEffect(() => {
+    const element = dialog.current!;
+    const view = element.ownerDocument.defaultView!;
+    const timer = view.setTimeout(() => setStatus("The song page couldn’t load here. You can open it in your browser."), 8_000);
+    const receive = (event: MessageEvent) => {
+      if (event.origin !== site || event.source !== frame.current?.contentWindow) return;
+      if (event.data?.type === "lyssna:sheet-close") onClose();
+      if (event.data?.type === "lyssna:sheet-ready" && typeof event.data.path === "string" &&
+          /^\/(?:song|u)\/[^/?#\\]+\/?$/.test(event.data.path)) {
+        view.clearTimeout(timer);
+        setStatus("");
+        setPage(site + event.data.path);
+      }
+      if (event.data?.type === "lyssna:sheet-play" && typeof event.data.id === "string" &&
+          trackIdPattern.test(event.data.id)) {
+        const host = getHost();
+        void host.playTrack(`spotify:track:${event.data.id}`).then(onClose).catch(() => {
+          view.open(`https://open.spotify.com/track/${event.data.id}`, "_blank", "noopener,noreferrer");
+        });
+      }
+    };
+    view.addEventListener("message", receive);
+    element.showModal();
+    return () => {
+      view.removeEventListener("message", receive);
+      view.clearTimeout(timer);
+      element.close();
+    };
+  }, [onClose]);
+
+  return <dialog ref={dialog} className="lyssna-song-sheet" aria-label="Lyssna song page"
+    onCancel={event => { event.preventDefault(); onClose(); }}
+    onClick={event => { if (event.target === event.currentTarget) onClose(); }}>
+    <div className="lyssna-song-sheet-content">
+      <header>
+        <a href={page} target="_blank" rel="noopener noreferrer"><ExternalLink size={15} /> Open in browser</a>
+        <button type="button" onClick={onClose} aria-label="Close Lyssna song page"><X size={18} /></button>
+      </header>
+      {status && <p role="status">{status}</p>}
+      <iframe ref={frame} src={address} title="Lyssna song page"
+        sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox" />
+    </div>
+  </dialog>;
+}

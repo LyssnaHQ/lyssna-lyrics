@@ -1,6 +1,7 @@
 import type { Line, Lyrics, Word } from "./lyssna/types";
 import type { TransferLyrics } from "./lyssna/transfer-format";
 import { fromLrc } from "./lrc";
+import { voicesOf } from "./creator/song-parts";
 
 export const lyricsChanged = "lyssna-lyrics:lyrics";
 const trackUri = /^spotify:track:[A-Za-z0-9]{22}$/;
@@ -71,7 +72,8 @@ function backgroundWrapper(text: string) {
   if (depth === 0) return { first, last };
 }
 
-function lyricLine(element: Element, start: number, end: number, background: boolean, opposite: boolean): Line {
+function lyricLine(element: Element, start: number, end: number, background: boolean, opposite: boolean,
+  voiceOf: (agent?: string) => Word["sung_by"], agent?: string): Line {
   let text = "";
   let translation = "";
   let romanization = "";
@@ -95,7 +97,10 @@ function lyricLine(element: Element, start: number, end: number, background: boo
       if (begin !== undefined && node.localName === "span" && !node.querySelector("[begin]")) {
         const value = node.textContent ?? "";
         text += value;
-        words.push({ text: value, start_ms: begin, end_ms: Math.max(begin, timestamp(node.getAttribute("end")) ?? end) });
+        const wordAgent = attribute(node, "agent");
+        const sung_by = wordAgent && wordAgent !== agent ? voiceOf(wordAgent) : undefined;
+        words.push({ text: value, start_ms: begin, end_ms: Math.max(begin, timestamp(node.getAttribute("end")) ?? end),
+          ...(sung_by && { sung_by }) });
       } else if (node.localName === "br") {
         text += " ";
         if (words.length) words[words.length - 1].text += " ";
@@ -115,10 +120,13 @@ function lyricLine(element: Element, start: number, end: number, background: boo
     }
     if (backgroundWrapper(romanization)) romanization = romanization.slice(1, -1).trim();
   }
+  const voice = voiceOf(agent);
+  const startAt = words[0]?.start_ms ?? start;
   return {
     text, words: background ? words.filter((word) => word.text.trim()) : words,
-    start_ms: start, end_ms: Math.max(start, end, words.at(-1)?.end_ms ?? 0),
+    start_ms: startAt, end_ms: Math.max(startAt, end, words.at(-1)?.end_ms ?? 0),
     background, opposite, translation, romanization,
+    ...(voice && voice !== "first" && { sung_by: voice }),
   };
 }
 
@@ -130,8 +138,11 @@ export function parseLocalTtml(text: string): Lyrics {
     throw new Error("Choose a valid TTML lyrics file.");
   }
   const paragraphs = Array.from(body.getElementsByTagNameNS("*", "p"));
-  const lead = Array.from(xml.getElementsByTagNameNS("*", "agent"))
-    .find((agent) => attribute(agent, "type") === "person");
+  const agents = Array.from(xml.getElementsByTagNameNS("*", "agent"));
+  const lead = agents.find((agent) => attribute(agent, "type") === "person");
+  const names = new Map(agents.map(agent => [
+    attribute(agent, "id"), agent.getElementsByTagNameNS("*", "name")[0]?.textContent?.trim(),
+  ]));
   const leadId = lead ? attribute(lead, "id") ?? "v1" : "v1";
   const annotations = new Map<string, { translation?: string; romanization?: string }>();
   for (const entry of Array.from(xml.getElementsByTagNameNS("*", "text"))) {
@@ -142,7 +153,8 @@ export function parseLocalTtml(text: string): Lyrics {
     data[kind === "translation" ? "translation" : "romanization"] = entry.textContent?.trim() ?? "";
     annotations.set(key, data);
   }
-  const lines = paragraphs.flatMap((element, index) => {
+  let previousSection: Element | null = null;
+  const groups = paragraphs.map((element, index) => {
     const firstWord = element.querySelector("span[begin]");
     const start = timestamp(element.getAttribute("begin")) ?? timestamp(firstWord?.getAttribute("begin") ?? null) ?? 0;
     const next = paragraphs[index + 1]?.getAttribute("begin") ?? null;
@@ -150,15 +162,37 @@ export function parseLocalTtml(text: string): Lyrics {
     const end = timestamp(element.getAttribute("end")) ?? (duration === undefined ? timestamp(next) ?? start + 2_000 : start + duration);
     const agent = attribute(element, "agent");
     const opposite = Boolean(agent && agent !== leadId && !agent.endsWith("000"));
-    const main = lyricLine(element, start, end, role(element) === "x-bg", opposite);
+    const section = element.closest("div");
+    const singer = section && attribute(section, "singer");
+    const voices = singer ? voicesOf(singer) : [];
+    const voiceOf = (id?: string): Word["sung_by"] => {
+      if (!id || voices.length < 2) return;
+      const index = id === "v1000" ? voices.findIndex(voice => voice.includes(" & "))
+        : voices.findIndex(voice => voice.toLowerCase() === names.get(id)?.toLowerCase());
+      return (["first", "second", "third"] as const)[index];
+    };
+    const main = lyricLine(element, start, end, role(element) === "x-bg", opposite, voiceOf, agent);
     const data = annotations.get(attribute(element, "key") ?? "");
     main.translation ||= data?.translation ?? "";
     main.romanization ||= data?.romanization ?? "";
     const background = Array.from(element.getElementsByTagNameNS("*", "span"))
       .filter((vocal) => role(vocal) === "x-bg")
-      .map((vocal) => lyricLine(vocal, timestamp(vocal.getAttribute("begin")) ?? start, timestamp(vocal.getAttribute("end")) ?? end, true, opposite));
-    return [main, ...background].filter((line) => line.text);
+      .map((vocal) => lyricLine(vocal, timestamp(vocal.getAttribute("begin")) ?? start,
+        timestamp(vocal.getAttribute("end")) ?? end, true, opposite, voiceOf, attribute(vocal, "agent") ?? agent));
+    const result = [main, ...background].filter((line) => line.text);
+    const part = section && attribute(section, "songPart");
+    if (result.length && section !== previousSection) {
+      previousSection = section;
+      if (part) {
+        result[0].section = part;
+        if (singer) result[0].section_singer = singer;
+      }
+    }
+    const timed = result.filter(line => line.words.length);
+    const order = timed.length ? Math.min(...timed.map(line => line.words[0].start_ms)) : start;
+    return { order, lines: result };
   });
+  const lines = groups.sort((a, b) => a.order - b.order).flatMap(group => group.lines);
   if (!lines.length) throw new Error("No lyric lines found in this TTML file.");
   const songwriters = Array.from(xml.getElementsByTagNameNS("*", "songwriter")).map((writer) => writer.textContent?.trim() ?? "").filter(Boolean).slice(0, 100);
   return { lines, songwriters, source: "Imported TTML", synced: paragraphs.some((line) => line.hasAttribute("begin") || line.querySelector("[begin]")), instrumental: false };

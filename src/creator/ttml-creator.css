@@ -2112,3 +2112,21 @@
   color: var(--muted);
   background: transparent;
 }
+.ttml-part {
+  margin: 10px 0 0 4px;
+  color: #ffffff8c;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.ttml-line.sung-second .ttml-word:not([class*="sung-"]),
+.ttml-word.sung-second {
+  font-style: italic;
+}
+
+.ttml-line.sung-third .ttml-word:not([class*="sung-"]),
+.ttml-word.sung-third {
+  font-weight: 900;
+}

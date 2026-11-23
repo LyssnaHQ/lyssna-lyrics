@@ -47,7 +47,7 @@ export function startEnhancements(host: Host) {
     window.addEventListener(SETTINGS_CHANGED_EVENT, syncVisibility);
     syncVisibility();
     for (const start of [startProfileMenuController, startPlaylistMenuController, startDisablePeekController,
-      startDevicePickerController, () => startShareMenuController(host)]) {
+      () => startDevicePickerController(host), () => startShareMenuController(host)]) {
       try { start(); } catch (error) { console.warn("[Lyssna Lyrics] Enhancement unavailable:", error); }
     }
   }

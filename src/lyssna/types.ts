@@ -5,6 +5,7 @@ export interface Word {
   text: string;
   /** Timing estimated by experimental word sync, not authored. */
   estimated?: boolean;
+  sung_by?: "first" | "second" | "third";
 }
 export interface Line {
   start_ms: number;
@@ -17,6 +18,9 @@ export interface Line {
   words: Word[];
   background: boolean;
   opposite: boolean;
+  sung_by?: "second" | "third";
+  section?: string;
+  section_singer?: string;
 }
 export interface LyssnaContributor {
   user_id?: string;

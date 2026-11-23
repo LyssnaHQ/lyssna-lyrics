@@ -50,7 +50,7 @@ export default function EnhancementsSection({ notice }: { notice: (message: stri
     finally { setScanning(false); }
   };
   return <>
-    {owner && <SettingRow label={`${owner} controls enhancements`} help="Changes here apply when this plugin controls Spotify’s interface." />}
+    {owner && <SettingRow label={`${owner} controls Spotify tweaks`} help="Changes here apply when this plugin controls Spotify’s interface." />}
     {groups.map(group => {
       const playlistGroup = group.title === "Playlists";
       return <section className="lyrics-settings-section" key={group.title}>

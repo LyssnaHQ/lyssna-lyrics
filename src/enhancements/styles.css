@@ -72,20 +72,22 @@ html.ll-enhancements-hideMiniplayerButton :is(button[data-testid="pip-toggle-but
   gap: 12px;
 }
 
-.SpotifyPlusDevicePickerHeading > svg,
-.SpotifyPlusDevicePickerRow > svg {
+.SpotifyPlusDevicePickerHeading > :is(svg, .SpotifyPlusDevicePickerDefaultIcon),
+.SpotifyPlusDevicePickerRow > :is(svg, .SpotifyPlusDevicePickerDefaultIcon) {
   width: 24px;
   height: 24px;
   flex: 0 0 24px;
   color: var(--text-base, #fff);
 }
 
-.SpotifyPlusDevicePickerHeading > svg path,
-.SpotifyPlusDevicePickerRow > svg path {
+.SpotifyPlusDevicePickerDefaultIcon > svg {
+  display: block;
+  width: 100%;
+  height: 100%;
   fill: currentColor;
 }
 
-.SpotifyPlusDevicePickerCurrent .SpotifyPlusDevicePickerHeading > svg {
+.SpotifyPlusDevicePickerCurrent .SpotifyPlusDevicePickerHeading > :is(svg, .SpotifyPlusDevicePickerDefaultIcon) {
   color: var(--text-bright-accent, #1ed760);
 }
 

@@ -31,7 +31,7 @@ export type BuildOptions = {
 };
 
 const tabs = [
-  ["Appearance", Palette], ["Lyrics", AlignLeft], ["Effects", FlaskConical], ["Layout", AppWindow], ["Enhancements", WandSparkles],
+  ["Appearance", Palette], ["Lyrics", AlignLeft], ["Effects", FlaskConical], ["Layout", AppWindow], ["Spotify Tweaks", WandSparkles],
   ["Sources", FileText], ["Advanced", Wrench], ["Credits", Info],
 ] as const;
 type Tab = (typeof tabs)[number][0];
@@ -483,7 +483,7 @@ export function SettingsPanel({ settings, change, close, options, track, notice,
                 <h3>{title}</h3><div className="lyrics-settings-group">{rows}</div>
               </section>
             ))}
-            {(searching || tab === "Enhancements") && <EnhancementsSection notice={setNotice} />}
+            {(searching || tab === "Spotify Tweaks") && <EnhancementsSection notice={setNotice} />}
             <p className="lyrics-settings-empty">No settings match.</p>
           </div>
         </SettingsQuery.Provider></HiddenSettings.Provider>}

@@ -4,16 +4,15 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFil
 import { join } from "node:path";
 import { build } from "vite";
 
-const [mode, hiddenVersion, ...extra] = process.argv.slice(2);
-if (extra.length || (mode !== undefined && !["--test", "--hidden"].includes(mode)) ||
-  (hiddenVersion !== undefined && mode !== "--hidden")) {
-  throw new Error("Usage: npm run build [-- --test | --hidden [version]]");
+const [mode, requestedVersion, ...extra] = process.argv.slice(2);
+if (extra.length || (mode !== undefined && !["--test", "--hidden"].includes(mode))) {
+  throw new Error("Usage: npm run build [-- --test [version] | --hidden [version]]");
 }
 
 const testBuild = mode === "--test";
 const hiddenBuild = mode === "--hidden";
 const { version: packageVersion } = JSON.parse(readFileSync("package.json", "utf8"));
-const version = hiddenVersion ?? packageVersion;
+const version = requestedVersion ?? packageVersion;
 if (typeof version !== "string" || !/^\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$/.test(version)) {
   throw new Error("Expected a build version like 7.2.7.");
 }

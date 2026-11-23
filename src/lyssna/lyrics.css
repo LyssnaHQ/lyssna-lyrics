@@ -2826,3 +2826,27 @@
 }
 
 }
+.lyric-line.sung-second .lyric-main {
+  font-style: italic;
+}
+
+.lyric-line.sung-third .lyric-main {
+  font-weight: 900;
+}
+
+.lyric-line .lyric-main .sung-first,
+.lyric-line .lyric-main .sung-third {
+  font-style: normal;
+}
+
+.lyric-line .lyric-main .sung-third {
+  font-weight: 900;
+}
+
+.lyric-line .lyric-main .sung-second {
+  font-style: italic;
+}
+
+.lyric-line.sung-third .lyric-main :is(.sung-first, .sung-second) {
+  font-weight: var(--lyric-weight, 700);
+}

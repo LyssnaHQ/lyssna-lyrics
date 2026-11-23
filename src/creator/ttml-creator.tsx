@@ -55,6 +55,7 @@ import {
   AUTHOR_KEYS,
   defaultMetadata,
   withSongwriters,
+  applySections,
   breakLine,
   clampCursor,
   clearAll,
@@ -66,6 +67,7 @@ import {
   fileName,
   formatTime,
   fromLyrics,
+  geniusBackgrounds,
   insertBlankLine,
   joinHyphenated,
   cursorAt,
@@ -105,6 +107,12 @@ import {
   clearLines,
   removeLines,
   canSeed,
+  lineVoice,
+  sectionVoices,
+  setLineVoice,
+  setUnitVoice,
+  unitVoice,
+  unknownSections,
 } from "./ttml-creator-model";
 import { romanizeCreatorLyrics } from "./romanize";
 import { MetadataDialog } from "./ttml-metadata";
@@ -173,6 +181,8 @@ const CLASSIC_KEY = "lyssna.ttml-classic-tabs";
 const WORD_ROMAN_KEY = "lyssna.ttml-word-roman";
 type Tab = "write" | "sync" | "preview";
 const HISTORY_LIMIT = 200;
+const VOICE_CLASS = ["", " sung-second", " sung-third"];
+const WORD_VOICE_CLASS = [" sung-first", " sung-second", " sung-third"];
 
 type Drag =
   | { kind: "line"; line: number }
@@ -476,22 +486,67 @@ export function TtmlCreator({
   }, []);
 
   const [textMode, setTextMode] = useState(false);
-  const fromGenius = () => {
+  const [geniusOpen, setGeniusOpen] = useState(false);
+  const [fetchingGenius, setFetchingGenius] = useState(false);
+  const openGenius = () => {
     if (!track) return;
     const query = new URLSearchParams({ q: [track.name, ...track.artists.map(({ name }) => name)].join(" ") });
     window.open(`https://genius.com/search?${query}`, "_blank", "noopener,noreferrer");
     setTextMode(true);
     notify("Copy the plain lyrics from Genius and paste them into the editor.");
   };
+  const fromGenius = async (sectionsOnly = false) => {
+    if (!track || fetchingGenius) return;
+    const uri = track.uri;
+    const previousText = current.current.text;
+    const query = new URLSearchParams({ title: track.name, artist: track.artists[0]?.name ?? "" });
+    setGeniusOpen(false);
+    setFetchingGenius(true);
+    try {
+      const response = await fetch(`https://lyssna.org/genius?${query}`, {
+        credentials: "omit", signal: AbortSignal.timeout(12_000),
+      });
+      if (!response.ok) throw new Error("Genius lyrics unavailable");
+      const { text: found } = await response.json() as { text?: unknown };
+      if (typeof found !== "string" || !found.trim()) throw new Error("Genius lyrics missing");
+      if (current.current.uri !== uri) return;
+      if (sectionsOnly) {
+        const tagged = applySections(current.current.lines, found);
+        if (!tagged) {
+          notify("Genius has no sections that match these lines.", true);
+          return;
+        }
+        setLines(tagged);
+        const count = tagged.filter(line => line.part).length;
+        notify(`Added ${count} ${count === 1 ? "section" : "sections"} from Genius.`);
+      } else {
+        if (current.current.text !== previousText) {
+          notify("Your lyrics changed while Genius was loading. Fetch again to replace the text.", true);
+          return;
+        }
+        editedFor.current = uri;
+        setText(geniusBackgrounds(found));
+        setTextMode(true);
+      }
+    } catch {
+      if (current.current.uri !== uri) return;
+      notify("Couldn’t get lyrics from Genius. Open Genius and paste the lyrics or section names.", true);
+      setGeniusOpen(true);
+    } finally {
+      setFetchingGenius(false);
+    }
+  };
   const geniusButton = (
-    <button
-      disabled={!track}
-      onClick={fromGenius}
-      title="Find plain lyrics on Genius to paste into the editor"
-    >
-      <Globe size={15} />
-      Lyrics from Genius
-    </button>
+    <span className="ttml-export ttml-genius">
+      <button disabled={!track || fetchingGenius} onClick={() => setGeniusOpen(!geniusOpen)} aria-expanded={geniusOpen}>
+        <Globe size={15} />{fetchingGenius ? "Asking Genius…" : "Genius"}
+      </button>
+      {geniusOpen && <div className="ttml-meta-menu" role="menu">
+        <button role="menuitem" onClick={() => void fromGenius()}>Lyrics from Genius</button>
+        <button role="menuitem" disabled={!lines.length} onClick={() => void fromGenius(true)}>Sections from Genius</button>
+        <button role="menuitem" onClick={() => { setGeniusOpen(false); openGenius(); }}>Open Genius in browser</button>
+      </div>}
+    </span>
   );
   const [previewOn, setPreviewOn] = useState(showsPreview);
   useEffect(() => {
@@ -638,6 +693,8 @@ export function TtmlCreator({
   }, [draftPreview]);
   const applyText = () => {
     const parsed = keepTimings(lines, parseText(text));
+    const unknown = [...new Set(unknownSections(text))];
+    if (unknown.length) notify(`Unrecognized section names left out: ${unknown.slice(0, 3).join(", ")}`, true);
     setLines(parsed);
     // Timing picks up at the first word still waiting for a tap.
     const line = parsed.findIndex((each) =>
@@ -685,14 +742,12 @@ export function TtmlCreator({
   const [replacing, setReplacing] = useState<Cursor | null>(null);
   const openMenu = (event: ReactMouseEvent, at: Cursor) => {
     event.preventDefault();
-    if (at.line !== cursor.line) clickedLine.current = true;
     setCursor(at);
     setMenu({ x: event.clientX, y: event.clientY, at });
   };
   const openLineMenu = (event: ReactMouseEvent, line: number) => {
     if (event.defaultPrevented) return;
     event.preventDefault();
-    if (line !== cursor.line) clickedLine.current = true;
     setCursor(clampCursor(lines, { line, unit: 0 }));
     setMenu({
       x: event.clientX,
@@ -931,6 +986,28 @@ export function TtmlCreator({
   };
   const dropClass = (key: string) =>
     drop.startsWith(`${key}:`) ? ` drop-${drop.slice(key.length + 1)}` : "";
+  const voiceGroup = (index: number): MenuAction[][] => {
+    const voices = sectionVoices(lines, index);
+    if (!voices.length) return [];
+    const currentVoice = lineVoice(lines, index);
+    const targets = picked.has(index) ? picked : [index];
+    return [voices.map((voice, at) => ({
+      label: `Line sung by ${voice}`,
+      checked: at === currentVoice,
+      run: () => setLines(setLineVoice(lines, targets, voice)),
+    }))];
+  };
+  const wordVoiceGroup = (at: Cursor, targets: Cursor[]): MenuAction[][] => {
+    const voices = sectionVoices(lines, at.line);
+    if (!voices.length) return [];
+    const own = unitVoice(lines, at);
+    const currentVoice = own >= 0 ? own : lineVoice(lines, at.line);
+    return [voices.map((voice, index) => ({
+      label: `${targets.length > 1 ? "Words" : "Word"} sung by ${voice}`,
+      checked: index === currentVoice,
+      run: () => setLines(setUnitVoice(lines, targets, voice)),
+    }))];
+  };
   const lineMenuGroups = (index: number): MenuAction[][] => {
     const line = lines[index];
     if (!line) return [];
@@ -955,12 +1032,13 @@ export function TtmlCreator({
           checked: line.background,
           run: () => flagLine(index, "background"),
         },
-        {
+        ...(!sectionVoices(lines, index).length ? [{
           label: "Second singer",
           checked: line.opposite,
           run: () => flagLine(index, "opposite"),
-        },
+        }] : []),
       ],
+      ...voiceGroup(index),
       [
         {
           label: "Play from this line",
@@ -1037,12 +1115,14 @@ export function TtmlCreator({
           checked: line.background,
           run: () => setLines(toggleLine(lines, at.line, "background")),
         },
-        {
+        ...(!sectionVoices(lines, at.line).length ? [{
           label: "Duet line",
           checked: line.opposite,
           run: () => setLines(toggleLine(lines, at.line, "opposite")),
-        },
+        }] : []),
       ],
+      ...wordVoiceGroup(at, chosen ? group : [at]),
+      ...voiceGroup(at.line),
       [
         {
           label: "Insert new line before",
@@ -1908,6 +1988,7 @@ export function TtmlCreator({
           <button onClick={copy} disabled={!done} title="Copy TTML">
             <Copy size={15} />
           </button>
+          {geniusButton}
           <button
             onClick={pickImport}
             title="Import lyrics file (TTML, LRC, QRC, YRC, Lyricify Syllable or ESLyric)"
@@ -2003,12 +2084,12 @@ export function TtmlCreator({
                   {seedHint}
                 </small>
               </button>
-              <button onClick={fromGenius} disabled={!track}>
+              <button onClick={() => void fromGenius()} disabled={!track || fetchingGenius}>
                 <Globe size={20} />
                 <strong>
                   Lyrics from Genius
                 </strong>
-                <small>Find plain lyrics to paste into the editor</small>
+                <small>Load plain lyrics into the text editor</small>
               </button>
             </div>
           )}
@@ -2016,14 +2097,15 @@ export function TtmlCreator({
             One lyric line per line. Split a word into syllables with{" "}
             <kbd>|</kbd>, like <code>beau|ti|ful</code>. Wrap a background vocal
             in parentheses. Start a line with <code>v2:</code> for the second
-            singer.
+            singer. Add section names on their own lines, such as <code>[Chorus]</code> or{" "}
+            <code>[Verse 1: Artist]</code>.
           </p>
           <textarea
             aria-label="Lyrics text"
             value={text}
             spellCheck={false}
             placeholder={
-              "First line of the song\n(background vocal)\nv2: a line the other singer takes"
+              "[Verse 1]\nFirst line of the song\n(background vocal)\nv2: a line the other singer takes"
             }
             onChange={(event) => {
               editedFor.current = track?.uri;
@@ -2042,7 +2124,6 @@ export function TtmlCreator({
                   <Wand2 size={15} />
                   Start from current lyrics
                 </button>
-                {geniusButton}
               </>
             )}
             <button
@@ -2169,7 +2250,6 @@ export function TtmlCreator({
                   <Wand2 size={15} />
                   Start from current lyrics
                 </button>
-                {geniusButton}
                 <button onClick={openText}>
                   <Type size={15} />
                   Edit as text
@@ -2284,7 +2364,6 @@ export function TtmlCreator({
                   <Wand2 size={15} />
                   Start from current lyrics
                 </button>
-                {geniusButton}
                 <button onClick={openText}>
                   <Type size={15} />
                   Edit as text
@@ -2389,12 +2468,13 @@ export function TtmlCreator({
                 />
               );
               return (
+                <Fragment key={lineIndex}>
+                {line.part && <p className="ttml-part">{line.singer ? `${line.part} - ${line.singer}` : line.part}</p>}
                 <div
-                  key={lineIndex}
                   data-line={lineIndex}
                   {...pickProps(lineIndex)}
                   onContextMenu={(event) => openLineMenu(event, lineIndex)}
-                  className={`ttml-card ttml-line${line.background ? " background" : ""}${line.opposite ? " opposite" : ""}${cursor.line === lineIndex ? " current" : ""}${line.units.length ? "" : " empty"}${playingLine === lineIndex || liveWords.singing.has(lineIndex) ? " playing" : ""}${picked.has(lineIndex) ? " picked" : ""}${drag?.kind === "line" && drag.line === lineIndex ? " dragging" : ""}${dropClass(`line:${lineIndex}`)}`}
+                  className={`ttml-card ttml-line${VOICE_CLASS[lineVoice(lines, lineIndex)] ?? ""}${line.background ? " background" : ""}${line.opposite ? " opposite" : ""}${cursor.line === lineIndex ? " current" : ""}${line.units.length ? "" : " empty"}${playingLine === lineIndex || liveWords.singing.has(lineIndex) ? " playing" : ""}${picked.has(lineIndex) ? " picked" : ""}${drag?.kind === "line" && drag.line === lineIndex ? " dragging" : ""}${dropClass(`line:${lineIndex}`)}`}
                   onClick={(event) => {
                     const target = event.target as Element;
                     if (
@@ -2811,7 +2891,7 @@ export function TtmlCreator({
                           >
                             <TimePill ms={unit.start} />
                             <span
-                              className="ttml-word"
+                              className={`ttml-word${WORD_VOICE_CLASS[unitVoice(lines, at)] ?? ""}`}
                               title={
                                 syncRoman && unit.roman ? unit.text : undefined
                               }
@@ -2875,6 +2955,7 @@ export function TtmlCreator({
                     </button>
                   </div>
                 </div>
+                </Fragment>
               );
             })}
           </div>

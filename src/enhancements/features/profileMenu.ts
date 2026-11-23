@@ -11,7 +11,9 @@ const items: [string, EnhancementKey][] = [
 function apply() {
   const settings = getSettings();
   for (const menu of document.querySelectorAll<HTMLElement>("#context-menu [role='menu'], [role='menu'][data-depth='0']")) {
-    const labels = [...menu.querySelectorAll<HTMLElement>('[role="menuitem"], [role="menuitemcheckbox"]')];
+    const labels = [...menu.querySelectorAll<HTMLElement>(
+      ':scope > li > .main-contextMenu-menuItemButton, :scope > li > [role="menuitem"], :scope > li > [role="menuitemcheckbox"]',
+    )];
     const labelOf = (item: HTMLElement) => normalizeText(item.querySelector(".main-contextMenu-menuItemLabel, [data-encore-id='text']")?.textContent ?? item.textContent);
     if (!labels.some(item => labelOf(item) === "settings") || !labels.some(item => items.some(([label]) => labelOf(item) === label))) continue;
     for (const item of labels) {

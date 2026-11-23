@@ -1,5 +1,11 @@
 import type { Line, Lyrics, Word } from "./types";
 import { repeatedPieces, symbolPieces } from "./ttml-syllables";
+import {
+  sectionLabel,
+  songSection,
+  voicesOf,
+  type SongSection,
+} from "./song-parts";
 
 export interface CreatorUnit {
   text: string;
@@ -7,6 +13,8 @@ export interface CreatorUnit {
   roman?: string;
   start?: number;
   end?: number;
+  /** Which of the section's voices sings this word, when not the line's. */
+  sungBy?: string;
 }
 export interface CreatorLine {
   units: CreatorUnit[];
@@ -16,6 +24,12 @@ export interface CreatorLine {
   romanization?: string;
   /** A space typed after the last word, waiting for the next one. */
   spaceAfter?: boolean;
+  /** The song section starting at this line, like "Chorus". Optional. */
+  part?: string;
+  /** Who sings that section, when the song has more than one artist. */
+  singer?: string;
+  /** Which of the section's voices sings this line; the first when unset. */
+  sungBy?: string;
 }
 export interface Cursor {
   line: number;
@@ -112,9 +126,222 @@ const OPPOSITE_PREFIX = "v2:";
  * syllables; a line wrapped in parentheses is a background vocal; a `v2:`
  * prefix gives the line to the second singer.
  */
+/**
+ * Genius brackets backing vocals inside the line they echo, with ";"
+ * between separate ones. Each bracketed part moves to a background line of
+ * its own after the line, so "Who am I? (I'm a star; I'm a star)" becomes
+ * the line plus two background lines. Lines with unbalanced brackets stay.
+ */
+export function geniusBackgrounds(text: string): string {
+  return text
+    .split(/\r?\n/)
+    .flatMap((raw) => {
+      let body = raw.trim();
+      let prefix = "";
+      if (body.toLowerCase().startsWith(OPPOSITE_PREFIX)) {
+        prefix = `${OPPOSITE_PREFIX} `;
+        body = body.slice(OPPOSITE_PREFIX.length).trim();
+      }
+      const groups: string[] = [];
+      let main = "";
+      let depth = 0;
+      let group = "";
+      for (const character of body) {
+        if (character === "(") {
+          if (depth++ > 0) group += character;
+        } else if (character === ")" && depth > 0) {
+          if (--depth > 0) group += character;
+          else {
+            groups.push(group);
+            group = "";
+            main += " ";
+          }
+        } else if (depth > 0) group += character;
+        else main += character;
+      }
+      if (depth > 0 || !groups.length) return [raw];
+      const backgrounds = groups.flatMap((inner) =>
+        inner
+          .split(";")
+          .map((part) => part.trim())
+          .filter(Boolean)
+          .map((part) => `${prefix}(${part})`),
+      );
+      main = main
+        .replace(/\s+/g, " ")
+        .replace(/\s+([,.!?])/g, "$1")
+        .trim();
+      return [...(main ? [`${prefix}${main}`] : []), ...backgrounds];
+    })
+    .join("\n");
+}
+
+/**
+ * The Genius section a "[Chorus]" style line names, in any language Genius
+ * writes them: "[Verse 2: Someone]" names a Verse, "[Refrão]" a Chorus.
+ * Undefined for "[]" and names Genius doesn't use; such lines are still
+ * never lyrics.
+ */
+export function sectionName(text: string): string | undefined {
+  return sectionOf(text)?.part;
+}
+export function sectionOf(text: string): SongSection | undefined {
+  const match = /^\[([^\]]*)\]$/.exec(text.trim());
+  return match ? songSection(match[1]) : undefined;
+}
+const sectionFrom = (line: CreatorLine): SongSection | undefined =>
+  line.part
+    ? { part: line.part, ...(line.singer && { singer: line.singer }) }
+    : undefined;
+const isSectionLine = (text: string) => /^\[[^\]]*\]$/.test(text.trim());
+
+const plain = (text: string) =>
+  text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+const words = (text: string) =>
+  text.split(/[^\p{L}\p{N}']+/u).map(plain).filter(Boolean);
+const lineWords = (line: CreatorLine) =>
+  words(
+    line.units
+      .map((unit, index) => (index && !unit.joined ? " " : "") + unit.text)
+      .join(""),
+  );
+
+function edits(a: string, b: string) {
+  let row = Array.from({ length: b.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= a.length; i++) {
+    const next = [i];
+    for (let j = 1; j <= b.length; j++)
+      next[j] = Math.min(
+        row[j] + 1,
+        next[j - 1] + 1,
+        row[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1),
+      );
+    row = next;
+  }
+  return row[b.length];
+}
+
+// Spellings drift between Genius and a draft ("walkin'" against "walking"),
+// so longer words a letter apart still match.
+const sameWord = (a: string, b: string) =>
+  a === b || (Math.min(a.length, b.length) >= 4 && edits(a, b) <= 1);
+
+/** Word positions the two lists share, in order, as many as fit (longest common subsequence). */
+function alignWords(ours: string[], theirs: string[]) {
+  const width = theirs.length + 1;
+  const best = new Uint16Array((ours.length + 1) * width);
+  for (let i = ours.length - 1; i >= 0; i--)
+    for (let j = theirs.length - 1; j >= 0; j--)
+      best[i * width + j] = sameWord(ours[i], theirs[j])
+        ? best[(i + 1) * width + j + 1] + 1
+        : Math.max(best[(i + 1) * width + j], best[i * width + j + 1]);
+  const pairs = new Map<number, number>();
+  let i = 0;
+  let j = 0;
+  while (i < ours.length && j < theirs.length) {
+    if (
+      sameWord(ours[i], theirs[j]) &&
+      best[i * width + j] === best[(i + 1) * width + j + 1] + 1
+    )
+      pairs.set(j++, i++);
+    else if (best[(i + 1) * width + j] >= best[i * width + j + 1]) i++;
+    else j++;
+  }
+  return pairs;
+}
+
+/**
+ * Puts the sections named in `text` ("[Chorus]" lines, as Genius writes
+ * them) on the matching lines of a synced draft. Words and timings stay
+ * as they are. Genius often breaks lines elsewhere than the draft does, so
+ * the two are lined up word by word, and each section starts at the draft
+ * line nearest its first word.
+ * Undefined when no section could be placed.
+ */
+export function applySections(
+  lines: CreatorLine[],
+  text: string,
+): CreatorLine[] | undefined {
+  const ours: string[] = [];
+  const lineOf: number[] = [];
+  const firstWord = new Map<number, number>();
+  const leads: number[] = [];
+  lines.forEach((line, index) => {
+    if (line.background) return;
+    leads.push(index);
+    firstWord.set(index, ours.length);
+    for (const word of lineWords(line)) {
+      ours.push(word);
+      lineOf.push(index);
+    }
+  });
+
+  const named = parseText(geniusBackgrounds(text)).filter(
+    (line) => !line.background,
+  );
+  const theirs: string[] = [];
+  const lineStart: number[] = [];
+  const sections: { section: SongSection; from: number; to: number }[] = [];
+  let pending: SongSection | undefined;
+  for (const line of named) {
+    pending = sectionFrom(line) ?? pending;
+    const found = lineWords(line);
+    if (!found.length) continue;
+    if (pending)
+      sections.push({ section: pending, from: theirs.length, to: 0 });
+    pending = undefined;
+    for (const _ of found) lineStart.push(theirs.length);
+    theirs.push(...found);
+    if (sections.length) sections[sections.length - 1].to = theirs.length;
+  }
+
+  const pairs = alignWords(ours, theirs);
+  const parts = new Map<number, SongSection>();
+  for (const { section, from, to } of sections) {
+    let j = from;
+    while (j < to && !pairs.has(j)) j++;
+    if (j === to) continue;
+    // Step back over words of that Genius line the draft left out, then
+    // round to the nearest line start.
+    let before = j - 1;
+    while (before >= 0 && !pairs.has(before)) before--;
+    const word = Math.max(
+      before < 0 ? 0 : pairs.get(before)! + 1,
+      pairs.get(j)! - (j - lineStart[j]),
+    );
+    const lead = leads.indexOf(lineOf[word]);
+    const start = firstWord.get(leads[lead])!;
+    const end = firstWord.get(leads[lead + 1]) ?? ours.length;
+    const at = word - start <= (end - start) / 2 ? lead : lead + 1;
+    if (at < leads.length && !parts.has(leads[at]))
+      parts.set(leads[at], section);
+  }
+  if (!parts.size) return;
+  return lines.map((line, index) => {
+    const { part: _, singer: __, ...rest } = line;
+    const section = parts.get(index);
+    return section ? { ...rest, ...section } : rest;
+  });
+}
+
+/** "[...]" lines that name no Genius section, so add no tag. */
+export function unknownSections(text: string): string[] {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(
+      (line) => isSectionLine(line) && line !== "[]" && !sectionName(line),
+    );
+}
+
 export function parseText(text: string): CreatorLine[] {
   const lines: CreatorLine[] = [];
+  let section: SongSection | undefined;
   for (const raw of text.split(/\r?\n/)) {
+    if (isSectionLine(raw)) {
+      section = sectionOf(raw);
+      continue;
+    }
     let body = raw.trim();
     let opposite = false;
     if (body.toLowerCase().startsWith(OPPOSITE_PREFIX)) {
@@ -142,7 +369,10 @@ export function parseText(text: string): CreatorLine[] {
           }),
         );
     }
-    if (units.length) lines.push({ units, background, opposite });
+    if (units.length) {
+      lines.push({ units, background, opposite, ...section });
+      section = undefined;
+    }
   }
   return lines;
 }
@@ -182,7 +412,9 @@ export function toText(lines: CreatorLine[]): string {
         )
         .join("");
       const wrapped = line.background ? `(${body})` : body;
-      return line.opposite ? `${OPPOSITE_PREFIX} ${wrapped}` : wrapped;
+      const text = line.opposite ? `${OPPOSITE_PREFIX} ${wrapped}` : wrapped;
+      const section = sectionFrom(line);
+      return section ? `[${sectionLabel(section)}]\n${text}` : text;
     })
     .join("\n");
 }
@@ -206,12 +438,16 @@ export function keepTimings(
           ...line,
           translation: match.translation,
           romanization: match.romanization,
+          ...(match.sungBy && { sungBy: match.sungBy }),
           units: line.units.map((unit, index) => ({
             ...unit,
             start: match.units[index].start,
             end: match.units[index].end,
             ...(match.units[index].roman && {
               roman: match.units[index].roman,
+            }),
+            ...(match.units[index].sungBy && {
+              sungBy: match.units[index].sungBy,
             }),
           })),
         }
@@ -225,9 +461,15 @@ export function canSeed(lyrics: Lyrics) {
   return ["Imported TTML", "Imported LRC", "Lyssna", "lrc.red", "LRCLIB", "Netease", "Spotify"].includes(lyrics.source);
 }
 
+const STYLE_INDEX = { first: 0, second: 1, third: 2 } as const;
+
 export function fromLyrics(lyrics: Lyrics): CreatorLine[] {
+  let voices: string[] = [];
   return lyrics.lines
     .map((line): CreatorLine => {
+      if (line.section) voices = voicesOf(line.section_singer ?? "");
+      const voiceFor = (style?: keyof typeof STYLE_INDEX) =>
+        style && voices.length > 1 ? voices[STYLE_INDEX[style]] : undefined;
       const syllableTiming =
         lyrics.synced &&
         line.words.length > 0 &&
@@ -241,8 +483,10 @@ export function fromLyrics(lyrics: Lyrics): CreatorLine[] {
             gap ||= /\s/u.test(word.text);
             continue;
           }
+          const sungBy = voiceFor(word.sung_by);
           units.push({
             text,
+            ...(sungBy && { sungBy }),
             joined: !gap && !/^\s/u.test(word.text),
             start: word.start_ms,
             end: word.end_ms,
@@ -274,6 +518,9 @@ export function fromLyrics(lyrics: Lyrics): CreatorLine[] {
         ...(line.translation && { translation: line.translation }),
         ...(line.romanization &&
           !perWord && { romanization: line.romanization }),
+        ...(line.section && { part: line.section }),
+        ...(line.section && line.section_singer && { singer: line.section_singer }),
+        ...(voiceFor(line.sung_by) && { sungBy: voiceFor(line.sung_by) }),
       };
     })
     .filter((line) => line.units.length > 0);
@@ -1196,17 +1443,24 @@ export function toLyrics(lines: CreatorLine[]): Lyrics {
   const shown: Line[] = [];
   // Background vocals sit with the singer before them, as in the TTML file.
   let leadOpposite = false;
+  let voices: string[] = [];
   for (const line of lines) {
+    if (line.part) voices = voicesOf(line.singer ?? "");
+    const voiceOf = (name?: string): Word["sung_by"] =>
+      name ? (["first", "second", "third"] as const)[voices.indexOf(name)] : undefined;
+    const voice = voiceOf(line.sungBy);
     if (!line.background && line.units.length) leadOpposite = line.opposite;
     const words: Word[] = [];
     let gap = false;
     for (const unit of line.units) {
       gap ||= !unit.joined;
       if (unit.start === undefined) continue;
+      const sung_by = voiceOf(unit.sungBy);
       words.push({
         start_ms: unit.start,
         end_ms: Math.max(unit.start, unit.end ?? unit.start),
         text: gap && words.length ? ` ${unit.text}` : unit.text,
+        ...(sung_by && { sung_by }),
       });
       gap = false;
     }
@@ -1227,6 +1481,8 @@ export function toLyrics(lines: CreatorLine[]): Lyrics {
       words,
       background: line.background,
       opposite: line.background ? leadOpposite : line.opposite,
+      ...(voice && voice !== "first" && { sung_by: voice }),
+      ...(line.part && { section: line.part, section_singer: line.singer }),
     });
   }
   return {
@@ -1255,12 +1511,17 @@ const escape = (text: string) =>
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 
-function spans(line: CreatorLine, roman = false): string {
+function spans(
+  line: CreatorLine,
+  roman = false,
+  agentOf: (unit: CreatorUnit) => string | undefined = () => undefined,
+): string {
   return line.units
     .filter(timed)
     .map((unit, index) => {
       const text = roman ? unit.roman || unit.text : unit.text;
-      const span = `<span begin="${formatTime(unit.start!)}" end="${formatTime(Math.max(unit.start!, unit.end!))}">${escape(text)}</span>`;
+      const agent = agentOf(unit);
+      const span = `<span begin="${formatTime(unit.start!)}" end="${formatTime(Math.max(unit.start!, unit.end!))}"${agent ? ` ttm:agent="${agent}"` : ""}>${escape(text)}</span>`;
       return index > 0 && !unit.joined ? ` ${span}` : span;
     })
     .join("");
@@ -1282,59 +1543,134 @@ function extras(line: CreatorLine): string {
  * Word-timed TTML in the Apple Music style AMLL and Spicy Lyrics read.
  * Background lines nest inside the lead line sung before them.
  */
+/** Lyssna's own TTML attributes, such as who sings a section. */
+export const LYSSNA_NS = "https://lyssna.org/ns/ttml";
+
 export function toTtml(
   lines: CreatorLine[],
   meta: SongMeta,
   entries: MetaEntry[] = defaultMetadata(meta),
 ): string {
-  type Paragraph = { lead?: CreatorLine; backgrounds: CreatorLine[] };
+  type Paragraph = {
+    lead?: CreatorLine;
+    backgrounds: CreatorLine[];
+    section?: SongSection;
+  };
   const paragraphs: Paragraph[] = [];
+  let section: SongSection | undefined;
   for (const line of lines) {
+    section = sectionFrom(line) ?? section;
     if (!lineSpan(line, true)) continue;
     const last = paragraphs.at(-1);
-    if (line.background && last) last.backgrounds.push(line);
-    else if (line.background) paragraphs.push({ backgrounds: [line] });
-    else paragraphs.push({ lead: line, backgrounds: [] });
+    if (line.background && last && !section) last.backgrounds.push(line);
+    else if (line.background) paragraphs.push({ backgrounds: [line], section });
+    else paragraphs.push({ lead: line, backgrounds: [], section });
+    section = undefined;
   }
+  // Each artist the sections name gets a voice of their own, in order;
+  // voices that are groups ("A & B") share v1000, Apple's group voice.
+  const artistAgents = new Map<string, string>();
+  for (const line of lines)
+    for (const voice of line.part && line.singer ? voicesOf(line.singer) : [])
+      if (!voice.includes(" & ") && !artistAgents.has(voice))
+        artistAgents.set(voice, `v${artistAgents.size + 1}`);
+  const agentOfVoice = (voice: string) =>
+    voice.includes(" & ") ? "v1000" : artistAgents.get(voice)!;
+  const used = new Set<string>(["v1"]);
+  let voices: string[] = [];
   const opposite = lines.some((line) => line.opposite);
   let end = 0;
   const readings: string[] = [];
-  const body = paragraphs
-    .map((paragraph, index) => {
-      const all = [paragraph.lead, ...paragraph.backgrounds].filter(
-        (line): line is CreatorLine => !!line,
+  const sections: {
+    section?: SongSection;
+    begin: number;
+    end: number;
+    ps: string[];
+  }[] = [];
+  paragraphs.forEach((paragraph, index) => {
+    const all = [paragraph.lead, ...paragraph.backgrounds].filter(
+      (line): line is CreatorLine => !!line,
+    );
+    const spansOf = all.map((line) => lineSpan(line, true)!);
+    const begin = Math.min(...spansOf.map((span) => span.start));
+    const finish = Math.max(...spansOf.map((span) => span.end));
+    end = Math.max(end, finish);
+    if (paragraph.section)
+      voices = paragraph.section.singer ? voicesOf(paragraph.section.singer) : [];
+    const first = paragraph.lead ?? paragraph.backgrounds[0];
+    const voiceOf = (sungBy?: string) =>
+      voices.length
+        ? agentOfVoice(
+            sungBy && voices.includes(sungBy) ? sungBy : voices[0],
+          )
+        : undefined;
+    const agent = voiceOf(first.sungBy) ?? (first.opposite ? "v2" : "v1");
+    used.add(agent);
+    // A word or backing vocal another voice sings names its own voice.
+    const own = (sungBy?: string) => {
+      if (voices.length < 2 || !sungBy || !voices.includes(sungBy)) return;
+      const voice = agentOfVoice(sungBy);
+      used.add(voice);
+      return voice === agent ? undefined : voice;
+    };
+    if (paragraph.lead && hasWordRoman(paragraph.lead))
+      readings.push(
+        `<text for="L${index + 1}">${spans(paragraph.lead, true)}</text>`,
       );
-      const spansOf = all.map((line) => lineSpan(line, true)!);
-      const begin = Math.min(...spansOf.map((span) => span.start));
-      const finish = Math.max(...spansOf.map((span) => span.end));
-      end = Math.max(end, finish);
-      const agent = (paragraph.lead ?? paragraph.backgrounds[0]).opposite
-        ? "v2"
-        : "v1";
-      if (paragraph.lead && hasWordRoman(paragraph.lead))
-        readings.push(
-          `<text for="L${index + 1}">${spans(paragraph.lead, true)}</text>`,
-        );
-      const lead = paragraph.lead
-        ? spans(paragraph.lead) + extras(paragraph.lead)
-        : "";
-      const backgrounds = paragraph.backgrounds
-        .map((line) => {
-          const span = lineSpan(line, true)!;
-          return `<span ttm:role="x-bg" begin="${formatTime(span.start)}" end="${formatTime(span.end)}">${spans(line)}</span>`;
-        })
-        .join("");
-      return `<p begin="${formatTime(begin)}" end="${formatTime(finish)}" ttm:agent="${agent}" itunes:key="L${index + 1}">${lead}${backgrounds}</p>`;
-    })
-    .join("");
+    const lead = paragraph.lead
+      ? spans(paragraph.lead, false, (unit) => own(unit.sungBy)) +
+        extras(paragraph.lead)
+      : "";
+    const backgrounds = paragraph.backgrounds
+      .map((line) => {
+        const span = lineSpan(line, true)!;
+        const voice = own(line.sungBy);
+        return `<span ttm:role="x-bg" begin="${formatTime(span.start)}" end="${formatTime(span.end)}"${voice ? ` ttm:agent="${voice}"` : ""}>${spans(line, false, (unit) => (unit.sungBy && unit.sungBy !== line.sungBy ? own(unit.sungBy) : undefined))}</span>`;
+      })
+      .join("");
+    const p = `<p begin="${formatTime(begin)}" end="${formatTime(finish)}" ttm:agent="${agent}" itunes:key="L${index + 1}">${lead}${backgrounds}</p>`;
+    const last = sections.at(-1);
+    if (!last || paragraph.section)
+      sections.push({
+        section: paragraph.section,
+        begin,
+        end: finish,
+        ps: [p],
+      });
+    else {
+      last.end = Math.max(last.end, finish);
+      last.ps.push(p);
+    }
+  });
+  // Apple's attribute is itunes:songPart. Spicy Lyrics drops every line of
+  // a section marked Instrumental, so sung lines never carry that mark.
+  const body = sections.length
+    ? sections
+        .map(
+          ({ section, begin, end, ps }) =>
+            `<div begin="${formatTime(begin)}" end="${formatTime(end)}"${section && section.part !== "Instrumental" ? ` itunes:songPart="${escape(section.part)}"` : ""}${section?.singer ? ` lyssna:singer="${escape(section.singer)}"` : ""}>${ps.join("")}</div>`,
+        )
+        .join("")
+    : `<div begin="${formatTime(0)}" end="${formatTime(0)}"></div>`;
   const songwriters = filled(
     entries
       .filter((entry) => entry.key.trim() === "songwriters")
       .flatMap((entry) => entry.values),
   );
   const metadata = [
-    `<ttm:agent type="person" xml:id="v1"/>`,
-    opposite ? `<ttm:agent type="other" xml:id="v2"/>` : "",
+    ...[...used, ...(opposite && !artistAgents.size ? ["v2"] : [])]
+      .filter((agent, index, all) => all.indexOf(agent) === index)
+      .sort()
+      .map((agent) => {
+        const name = [...artistAgents].find(([, id]) => id === agent)?.[0];
+        const type =
+          agent === "v1000"
+            ? "group"
+            : agent === "v1" || name
+              ? "person"
+              : "other";
+        return `<ttm:agent type="${type}" xml:id="${agent}">${name ? `<ttm:name type="full">${escape(name)}</ttm:name>` : ""}</ttm:agent>`;
+      }),
     ...[
       ...entries.filter((entry) => !SONG_KEYS.includes(entry.key.trim())),
       { key: "album", values: meta.album ? [meta.album] : [] },
@@ -1360,7 +1696,7 @@ export function toTtml(
       : "",
   ].join("");
   const duration = Math.max(end, meta.durationMs ?? 0);
-  return `<tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata" xmlns:amll="http://www.example.com/ns/amll" xmlns:itunes="http://music.apple.com/lyric-ttml-internal" itunes:timing="Word"><head><metadata>${metadata}</metadata></head><body dur="${formatTime(duration)}"><div begin="${formatTime(paragraphs.length ? Math.min(...paragraphs.map((p) => lineSpan(p.lead ?? p.backgrounds[0], true)!.start)) : 0)}" end="${formatTime(end)}">${body}</div></body></tt>`;
+  return `<tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata" xmlns:amll="http://www.example.com/ns/amll" xmlns:itunes="http://music.apple.com/lyric-ttml-internal"${lines.some((line) => line.part && line.singer) ? ` xmlns:lyssna="${LYSSNA_NS}"` : ""} itunes:timing="Word"><head><metadata>${metadata}</metadata></head><body dur="${formatTime(duration)}">${body}</body></tt>`;
 }
 
 export function fileName(meta: SongMeta): string {
@@ -1431,4 +1767,66 @@ export function applyRomanized(
       : line;
   });
   return changed ? next : lines;
+}
+
+/** The voices the section around a line names; empty when it names fewer than two. */
+export function sectionVoices(lines: CreatorLine[], index: number): string[] {
+  for (let at = index; at >= 0; at--) {
+    const line = lines[at];
+    if (line?.part) {
+      const voices = line.singer ? voicesOf(line.singer) : [];
+      return voices.length > 1 ? voices : [];
+    }
+  }
+  return [];
+}
+
+/** Which voice sings a line, by its place in the section's list (0 is the first). */
+export function lineVoice(lines: CreatorLine[], index: number) {
+  const voices = sectionVoices(lines, index);
+  const at = voices.indexOf(lines[index]?.sungBy ?? "");
+  return voices.length ? Math.max(0, at) : -1;
+}
+
+/** Which voice sings a word, or -1 when it follows its line. */
+export function unitVoice(lines: CreatorLine[], at: Cursor) {
+  const voices = sectionVoices(lines, at.line);
+  const sungBy = lines[at.line]?.units[at.unit]?.sungBy;
+  return sungBy ? voices.indexOf(sungBy) : -1;
+}
+
+/** Sets who sings each of these lines; the first voice clears it. */
+export function setLineVoice(
+  lines: CreatorLine[],
+  indexes: Iterable<number>,
+  voice: string,
+): CreatorLine[] {
+  const chosen = new Set(indexes);
+  return lines.map((line, index) => {
+    if (!chosen.has(index)) return line;
+    const voices = sectionVoices(lines, index);
+    const { sungBy: _, ...rest } = line;
+    return voice === voices[0] ? rest : { ...rest, sungBy: voice };
+  });
+}
+
+/** Sets who sings these words; their line's own voice clears it. */
+export function setUnitVoice(
+  lines: CreatorLine[],
+  cursors: Cursor[],
+  voice: string,
+): CreatorLine[] {
+  return lines.map((line, index) => {
+    const here = cursors.filter((at) => at.line === index);
+    if (!here.length) return line;
+    const lineVoice = line.sungBy ?? sectionVoices(lines, index)[0];
+    return {
+      ...line,
+      units: line.units.map((unit, at) => {
+        if (!here.some((cursor) => cursor.unit === at)) return unit;
+        const { sungBy: _, ...rest } = unit;
+        return voice === lineVoice ? rest : { ...rest, sungBy: voice };
+      }),
+    };
+  });
 }

@@ -1,7 +1,8 @@
-import { useEffect, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useState, type CSSProperties, type MouseEvent } from "react";
 import { UserRound } from "lucide-react";
 import { CREDIT_NAME_OVERRIDES, lookupDiscordUser, type DiscordIdentity } from "./discord-lookup";
 import type { Contributor, Lyrics } from "./lyssna/types";
+import { lyssnaSongUrl, SongSheet } from "./song-sheet";
 
 function CreditPerson({ role, person, usernames }: { role: string; person: Contributor; usernames: boolean }) {
   const [identity, setIdentity] = useState<DiscordIdentity | null>(null);
@@ -54,9 +55,17 @@ export function LyricCredits({ lyrics, expanded = false, discord = false }: {
 }
 
 function LyssnaCredits({ attribution, timing, expanded }: { attribution: NonNullable<Lyrics["lyssna"]>; timing: string; expanded: boolean }) {
+  const songUrl = lyssnaSongUrl(attribution.songId);
+  const [open, setOpen] = useState(false);
+  const close = useCallback(() => setOpen(false), []);
+  const openSong = (event: MouseEvent<HTMLAnchorElement>) => {
+    if (!songUrl || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    setOpen(true);
+  };
   const contributors = attribution.contributors.slice(0, 5);
   const named = contributors.slice(0, (contributors[1]?.share ?? 0) >= 30 ? 2 : 1);
-  return <div className={`lyric-source lyssna-provider-credits${expanded ? " expanded" : ""}`}>
+  return <><div className={`lyric-source lyssna-provider-credits${expanded ? " expanded" : ""}`}>
     <div>Lyrics provided by: Lyssna
       {timing && <> <span className="lyssna-credit-timing">{timing}</span></>}
     </div>
@@ -72,7 +81,7 @@ function LyssnaCredits({ attribution, timing, expanded }: { attribution: NonNull
               onError={(event) => { event.currentTarget.hidden = true; }} />}
           </>;
           return username
-            ? <a key={user_id ?? index} className="lyssna-contributor-avatar" style={position} href={lyssnaProfile(username)}
+            ? <a key={user_id ?? index} className="lyssna-contributor-avatar" style={position} onClick={openSong} href={songUrl ?? lyssnaProfile(username)}
               target="_blank" rel="noopener noreferrer" title={name} aria-label={name}>{avatar}</a>
             : <span key={user_id ?? index} className="lyssna-contributor-avatar" style={position} role="img"
               title={name} aria-label={name}>{avatar}</span>;
@@ -80,13 +89,13 @@ function LyssnaCredits({ attribution, timing, expanded }: { attribution: NonNull
       </span>
       <span className="lyssna-contributor-names">
         {named.map(({ user_id, username }, index) => <span key={user_id ?? index}>
-          {username ? <a className="lyssna-credit-profile" href={lyssnaProfile(username)} target="_blank" rel="noopener noreferrer">
+          {username ? <a className="lyssna-credit-profile" onClick={openSong} href={songUrl ?? lyssnaProfile(username)} target="_blank" rel="noopener noreferrer">
             <span className="lyssna-credit-name">{username}</span>
           </a> : "Deleted user"}{index < named.length - 1 && ","}
         </span>)}
       </span>
     </div>}
-  </div>;
+  </div>{open && songUrl && <SongSheet key={songUrl} url={songUrl} onClose={close} />}</>;
 }
 
 function lyssnaProfile(username: string) {
