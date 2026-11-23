@@ -789,7 +789,7 @@ export function TtmlCreator({
       if (event.shiftKey || event.ctrlKey || event.metaKey)
         event.preventDefault();
     },
-    onClickCapture: (event: ReactMouseEvent) => {
+    onClickCapture: (event: ReactMouseEvent<HTMLDivElement>) => {
       if (
         (event.shiftKey || event.ctrlKey || event.metaKey) &&
         !(event.target as Element).closest(
@@ -798,6 +798,7 @@ export function TtmlCreator({
       ) {
         event.preventDefault();
         event.stopPropagation();
+        event.currentTarget.focus({ preventScroll: true });
         pick(index, event.shiftKey);
       }
     },
@@ -1325,13 +1326,27 @@ export function TtmlCreator({
       }
       const words = groupRef.current,
         gaps = spacesRef.current;
-      const linesPicked = pickedRef.current.size > 0 && !words.length;
+      const pickedLines = pickedRef.current;
+      const timingLine = target?.closest(".ttml-unit")?.closest<HTMLElement>(".ttml-line");
+      const lineIndex = Number(timingLine?.dataset.line);
       let handled = true;
       if (ctrl && key === "z") (event.shiftKey ? redo : undo)();
       else if (ctrl && key === "y") redo();
-      else if (
+      else if (!ctrl && erase && pickedLines.size) {
+        const next = removeLines(lines, pickedLines);
+        setLines(next);
+        setCursor(clampCursor(next, cursor));
+        setPicked(new Set());
+      } else if (
+        !ctrl && event.key === "Delete" && !writingRef.current &&
+        !words.length && !gaps.length && lines[lineIndex]
+      ) {
+        const next = removeLine(lines, lineIndex);
+        setLines(next);
+        setCursor(clampCursor(next, { line: lineIndex, unit: 0 }));
+      } else if (
         (ctrl && erase) ||
-        (!ctrl && event.key === "Delete" && !linesPicked)
+        (!ctrl && event.key === "Delete")
       ) {
         const next =
           words.length || gaps.length
@@ -1367,12 +1382,7 @@ export function TtmlCreator({
         setLines(duplicateLine(lines, cursor.line));
         setCursor({ line: cursor.line + 1, unit: cursor.unit });
       } else if (ctrl) handled = false;
-      else if (erase && linesPicked) {
-        const next = removeLines(lines, pickedRef.current);
-        setLines(next);
-        setCursor(clampCursor(next, cursor));
-        setPicked(new Set());
-      } else if (writingRef.current && erase) {
+      else if (writingRef.current && erase) {
         const next =
           words.length || gaps.length
             ? deletePicked(lines, words, gaps)
@@ -2571,12 +2581,14 @@ export function TtmlCreator({
                 {line.part && <p className="ttml-part">{line.singer ? `${line.part} - ${line.singer}` : line.part}</p>}
                 <div
                   data-line={lineIndex}
+                  tabIndex={-1}
                   {...pickProps(lineIndex)}
                   onContextMenu={(event) => openLineMenu(event, lineIndex)}
                   className={`ttml-card ttml-line${VOICE_CLASS[lineVoice(lines, lineIndex)] ?? ""}${line.background ? " background" : ""}${line.opposite ? " opposite" : ""}${cursor.line === lineIndex ? " current" : ""}${line.units.length ? "" : " empty"}${playingLine === lineIndex || liveWords.singing.has(lineIndex) ? " playing" : ""}${picked.has(lineIndex) ? " picked" : ""}${drag?.kind === "line" && drag.line === lineIndex ? " dragging" : ""}${dropClass(`line:${lineIndex}`)}`}
                   onClick={(event) => {
                     const target = event.target as Element;
                     if (target.closest("button, input, textarea")) return;
+                    event.currentTarget.focus({ preventScroll: true });
                     if (cursor.line !== lineIndex) {
                       clickedLine.current = true;
                       setCursor(
