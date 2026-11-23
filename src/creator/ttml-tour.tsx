@@ -112,14 +112,9 @@ function steps(keys: KeyMap): Step[] {
       body: (
         <>
           <K>Backspace</K> clears the word's timing.{" "}
-          {IS_MAC ? (
-            <>
-              <K>Cmd</K> + <K>Backspace</K>
-            </>
-          ) : (
-            <K>Del</K>
-          )}{" "}
-          deletes the word. <K>{MODIFIER}</K> + <K>Z</K> undoes anything.
+          <K>{IS_MAC ? "Fn + Delete" : "Del"}</K> deletes the selected word.
+          Select a row by its line number to delete the whole line.{" "}
+          <K>{MODIFIER}</K> + <K>Z</K> undoes the change.
         </>
       ),
     },

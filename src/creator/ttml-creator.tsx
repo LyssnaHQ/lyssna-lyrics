@@ -1317,9 +1317,10 @@ export function TtmlCreator({
       const { lines, cursor } = stateRef.current;
       const ctrl = IS_MAC ? event.metaKey : event.ctrlKey;
       const key = event.key.toLowerCase();
-      const erase = event.key === "Delete" || event.key === "Backspace";
+      const deleteKey = event.key === "Delete" || event.code === "Delete";
+      const erase = deleteKey || event.key === "Backspace";
       // Holding Delete after removing a line must not erase the next word.
-      if (!ctrl && event.key === "Delete" && event.repeat) {
+      if (!ctrl && deleteKey && event.repeat) {
         event.preventDefault();
         event.stopPropagation();
         return;
@@ -1327,8 +1328,6 @@ export function TtmlCreator({
       const words = groupRef.current,
         gaps = spacesRef.current;
       const pickedLines = pickedRef.current;
-      const timingLine = target?.closest(".ttml-unit")?.closest<HTMLElement>(".ttml-line");
-      const lineIndex = Number(timingLine?.dataset.line);
       let handled = true;
       if (ctrl && key === "z") (event.shiftKey ? redo : undo)();
       else if (ctrl && key === "y") redo();
@@ -1338,15 +1337,8 @@ export function TtmlCreator({
         setCursor(clampCursor(next, cursor));
         setPicked(new Set());
       } else if (
-        !ctrl && event.key === "Delete" && !writingRef.current &&
-        !words.length && !gaps.length && lines[lineIndex]
-      ) {
-        const next = removeLine(lines, lineIndex);
-        setLines(next);
-        setCursor(clampCursor(next, { line: lineIndex, unit: 0 }));
-      } else if (
         (ctrl && erase) ||
-        (!ctrl && event.key === "Delete")
+        (!ctrl && deleteKey)
       ) {
         const next =
           words.length || gaps.length
@@ -2638,7 +2630,7 @@ export function TtmlCreator({
                       );
                   }}
                 >
-                  <span className="ttml-card-number">{lineIndex + 1}</span>
+                  <span className="ttml-card-number" title="Select line, then press Delete">{lineIndex + 1}</span>
                   {writing ? (
                     <div className="ttml-card-body">
                       <div className="ttml-chips">
@@ -2785,6 +2777,7 @@ export function TtmlCreator({
                                         );
                                     }}
                                     onClick={(event) => {
+                                      event.currentTarget.focus({ preventScroll: true });
                                       if (
                                         event.shiftKey ||
                                         event.ctrlKey ||
@@ -2968,6 +2961,7 @@ export function TtmlCreator({
                               );
                             }}
                             onClick={(event) => {
+                              event.currentTarget.focus({ preventScroll: true });
                               if (lineIndex !== cursor.line)
                                 clickedLine.current = true;
                               if (
