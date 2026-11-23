@@ -339,7 +339,6 @@ interface TrailPose {
   exit: { x: number; y: number };
   angle: number;
   band: number;
-  opacity: number;
 }
 
 interface TrailLink {
@@ -349,19 +348,14 @@ interface TrailLink {
   finish: number;
   wordAt: number;
   trail?: GravityLinkTrail;
-}
-
-interface TrailStroke {
-  path: SVGPathElement;
-  links: TrailLink[];
-  time: number;
+  path?: SVGPathElement;
   geometry?: string;
-  leavingAt?: number;
+  dash?: string;
+  offset?: string;
 }
 
 const sheets = new WeakMap<SVGSVGElement, {
   links: Map<string, TrailLink>;
-  strokes: Map<number, TrailStroke>;
   connected: Set<string>;
 }>();
 
@@ -375,14 +369,10 @@ function wordPose(body: GravityBody, word: HTMLElement): TrailPose {
     const y = anchor ? (anchor.y - body.height / 2) * body.scale : 0;
     return { x: body.x + cos * x - sin * y, y: body.y + sin * x + cos * y };
   };
-  const classes = word.classList;
-  const opacity = classes.contains("exiting") ? 0
-    : classes.contains("current") ? 1 : classes.contains("next") ? 0.34 : 0.22;
   return {
     entry: project(ink?.entry, -1),
     exit: project(ink?.exit, 1),
     angle,
-    opacity,
     band: body.height * body.scale * 0.84,
   };
 }
@@ -420,56 +410,39 @@ function trailCurve(link: TrailLink, a: TrailPose, b: TrailPose, fraction: numbe
   return trail.draw(start, first, second, end, out, into, dt, fraction);
 }
 
-/** Each connected run is one SVG stroke beneath and between its words. */
-function paintTrail(stroke: TrailStroke, pose: (key: string) => TrailPose | undefined,
-  connected: Set<string>, width: number, dt?: number) {
-  const next = new Map<string, TrailLink>();
-  const incoming = new Set<string>();
-  for (const link of stroke.links) {
-    if (!pose(link.from.key) || !pose(link.to.key)) continue;
-    next.set(link.from.key, link);
-    incoming.add(link.to.key);
-  }
-  let geometry = "";
-  let band = Infinity, strength = 0;
-  for (const [head, first] of next) {
-    if (incoming.has(head)) continue;
-    let a = pose(head)!;
-    geometry += `M${coordinates(a.entry)}L${coordinates(a.exit)}`;
-    connected.add(head);
-    band = Math.min(band, a.band);
-    strength = Math.max(strength, a.opacity);
-    for (let link: TrailLink | undefined = first; link; link = next.get(link.to.key)) {
-      const b = pose(link.to.key)!;
-      const progress = Math.min(1, Math.max(0, (stroke.time - link.begin) / (link.finish - link.begin)));
-      const reveal = progress * progress * (3 - 2 * progress);
-      geometry += trailCurve(link, a, b, Math.min(1, reveal / link.wordAt), dt);
-      if (reveal >= link.wordAt) {
-        const throughWord = (reveal - link.wordAt) / (1 - link.wordAt);
-        const tip = throughWord >= 1 ? b.exit : interpolatePoint(b.entry, b.exit, throughWord);
-        geometry += `L${coordinates(tip)}`;
-        connected.add(link.to.key);
-        band = Math.min(band, b.band);
-        strength = Math.max(strength, b.opacity);
-      }
-      // Later links share this path. Revealing one independently would leave a gap.
-      if (progress < 1) break;
-      a = b;
-    }
-  }
-  if (!geometry) return;
-  const { path } = stroke;
-  if (stroke.geometry !== geometry) {
-    stroke.geometry = geometry;
-    path.setAttribute("d", geometry);
-  }
-  const size = `${(band * width).toFixed(1)}px`;
-  if (path.style.strokeWidth !== size) path.style.strokeWidth = size;
-  const opacity = (strength * 0.64).toFixed(2);
-  if (path.style.strokeOpacity !== opacity) path.style.strokeOpacity = opacity;
+const TRAIL_DELAY_MS = 760;
+
+function tailTrim(link: TrailLink, time: number) {
+  const begin = Math.max(link.finish, link.from.start + TRAIL_DELAY_MS);
+  const end = Math.max(link.finish, link.to.start) + TRAIL_DELAY_MS;
+  const progress = Math.max(0, Math.min(1, (time - begin) / Math.max(1, end - begin)));
+  return progress * progress * (3 - 2 * progress);
 }
 
-/** Lead words share a trail. Each backing phrase has its own trail. */
+/** Split adjacent passes at the same point and tangent under the word.
+ *  Separate passes can multiply at crossings without doubling at the joins. */
+function paintPass(sheet: SVGSVGElement, link: TrailLink, geometry: string, width: number, trim: number) {
+  let path = link.path;
+  if (!path) {
+    path = sheet.ownerDocument.createElementNS(SVG, "path");
+    path.setAttribute("pathLength", "1");
+    sheet.append(path);
+    link.path = path;
+  }
+  if (link.geometry !== geometry) {
+    link.geometry = geometry;
+    path.setAttribute("d", geometry);
+  }
+  const size = `${width.toFixed(1)}px`;
+  const dash = trim > 0 ? `${(1 - trim).toFixed(4)} 2` : "none";
+  const offset = trim > 0 ? (-trim).toFixed(4) : "0";
+  if (path.style.strokeWidth !== size) path.style.strokeWidth = size;
+  if (link.dash !== dash || link.offset !== offset) {
+    path.style.strokeDasharray = link.dash = dash;
+    path.style.strokeDashoffset = link.offset = offset;
+  }
+}
+
 function drawLinks(
   sheet: SVGSVGElement,
   entities: ReadonlyMap<string, Entity>,
@@ -477,11 +450,10 @@ function drawLinks(
   elements: Map<string, HTMLElement>,
   time: number,
   width: number,
-  now: number,
   dt?: number,
 ) {
   let state = sheets.get(sheet);
-  if (!state) sheets.set(sheet, state = { links: new Map(), strokes: new Map(), connected: new Set() });
+  if (!state) sheets.set(sheet, state = { links: new Map(), connected: new Set() });
   const poses = new Map<string, TrailPose>();
   const pose = (key: string) => {
     const cached = poses.get(key);
@@ -492,71 +464,54 @@ function drawLinks(
     poses.set(key, next);
     return next;
   };
-  let current = -1;
-  const candidates = new Map<string, TrailLink>();
+
+  const next = new Map<string, TrailLink>();
+  const incoming = new Set<string>();
   if (width > 0) {
-    for (const key of elements.keys()) {
-      const entity = entities.get(key);
-      if (entity && !entity.background && entity.start <= time) current = Math.max(current, entity.lead);
-    }
     for (const word of elements.keys()) {
       const to = entities.get(word), from = to?.previous;
       if (!to || !from || to.start - time > MAX_LINK_TRAVEL_MS + LINK_LEAD_MS) continue;
-      if (to.background ? time >= to.phraseEnd : to.lead < current - 1) continue;
+      if (time >= Math.max(to.start, from.start + 16) + TRAIL_DELAY_MS) continue;
       const a = pose(from.key), b = pose(to.key);
       if (!a || !b) continue;
-      const key = `${from.key}>${to.key}`;
-      const link = state.links.get(key) ?? timeLink(from, to, a, b);
-      if (time < link.begin) continue;
-      if (!to.background) current = Math.max(current, to.lead);
-      candidates.set(key, link);
+      const link = state.links.get(from.key) ?? timeLink(from, to, a, b);
+      if (time < link.begin || tailTrim(link, time) >= 1) continue;
+      next.set(from.key, link);
+      incoming.add(to.key);
     }
   }
 
-  const wanted = new Map<number, TrailLink[]>();
-  state.links.clear();
-  for (const [key, link] of candidates) {
-    const { from, to } = link;
-    const within = from.lead === to.lead && (to.lead === current || to.lead === current - 1);
-    const across = from.lead === current - 1 && to.lead === current;
-    if (!(to.background || within || across)) continue;
-    state.links.set(key, link);
-    const scope = to.background ? to.line : -1;
-    const links = wanted.get(scope);
-    if (links) links.push(link);
-    else wanted.set(scope, [link]);
-  }
-
+  const drawn = new Map<string, TrailLink>();
   const connected = new Set<string>();
-  for (const [scope, links] of wanted) {
-    let stroke = state.strokes.get(scope);
-    if (!stroke) {
-      const path = sheet.ownerDocument.createElementNS(SVG, "path");
-      sheet.append(path);
-      stroke = { path, links, time };
-      state.strokes.set(scope, stroke);
-    }
-    if (stroke.leavingAt !== undefined) {
-      stroke.leavingAt = undefined;
-      stroke.path.classList.remove("leaving");
-    }
-    stroke.links = links;
-    stroke.time = time;
-    paintTrail(stroke, pose, connected, width, dt);
-  }
-  for (const [scope, stroke] of state.strokes) {
-    if (wanted.has(scope)) continue;
-    if (stroke.leavingAt === undefined) {
-      stroke.leavingAt = now;
-      stroke.path.classList.add("leaving");
-    }
-    if (now - stroke.leavingAt >= 1200) {
-      stroke.path.remove();
-      state.strokes.delete(scope);
-    } else if (width > 0) {
-      paintTrail(stroke, pose, connected, width, dt);
+  for (const [head, first] of next) {
+    if (incoming.has(head)) continue;
+    let a = pose(head)!;
+    for (let link: TrailLink | undefined = first; link; link = next.get(link.to.key)) {
+      const b = pose(link.to.key)!;
+      const progress = Math.min(1, Math.max(0, (time - link.begin) / (link.finish - link.begin)));
+      const reveal = progress * progress * (3 - 2 * progress);
+      const midpoint = interpolatePoint(a.entry, a.exit, 0.5);
+      let geometry = `M${coordinates(midpoint)}L${coordinates(a.exit)}`;
+      geometry += trailCurve(link, a, b, Math.min(1, reveal / link.wordAt), dt);
+      if (reveal >= link.wordAt) {
+        const throughWord = (reveal - link.wordAt) / (1 - link.wordAt);
+        const joinsNext = progress === 1 && next.has(link.to.key);
+        const tip = interpolatePoint(b.entry, b.exit, joinsNext ? 0.5 : throughWord);
+        geometry += `L${coordinates(tip)}`;
+        connected.add(link.to.key);
+      }
+      paintPass(sheet, link, geometry, Math.min(a.band, b.band) * width, tailTrim(link, time));
+      drawn.set(link.from.key, link);
+      // Only the tip advances. Later passes stay hidden until it reaches them.
+      if (progress < 1) break;
+      a = b;
     }
   }
+
+  for (const [key, link] of state.links) {
+    if (!drawn.has(key)) link.path?.remove();
+  }
+  state.links = drawn;
   for (const key of state.connected) {
     if (!connected.has(key)) elements.get(key)?.removeAttribute("data-marker-connected");
   }
@@ -935,7 +890,6 @@ export function SpaceGravityLyrics({
           elements.current,
           live.current.time,
           live.current.linkWidth,
-          now,
           reduceMotion ? undefined : dt,
         );
       for (const [key, node] of elements.current) {

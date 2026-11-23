@@ -1280,15 +1280,6 @@
   background: light-dark(#00000017, #ffffff17);
   overflow: hidden;
 }
-/* Translucent placeholders let the visualiser's bars show through, so they
-   looked drawn under them; solid ones sit visibly on top. */
-.lyrics-page:has(> .lyrics-visualiser) .lyrics-skeleton-lines span {
-  background: color-mix(
-    in srgb,
-    var(--lyrics-cover-color, #808080) 14%,
-    light-dark(#e2e2e2, #262626)
-  );
-}
 .lyrics-skeleton-lines span::after {
   content: "";
   position: absolute;
@@ -1658,18 +1649,16 @@
   height: 100%;
   overflow: visible;
   pointer-events: none;
+  isolation: isolate;
+  opacity: 0.64;
 }
 .gravity-links path {
   fill: none;
-  stroke: var(--highlighter-ink);
-  /* The same ink as the words' bands; each trail sets its width. */
+  stroke: color-mix(in srgb, var(--highlighter-ink) 95%, #000);
   stroke-width: 11px;
-  stroke-linecap: round;
+  stroke-linecap: butt;
   stroke-linejoin: round;
-  transition: opacity 1.2s ease-out, stroke-opacity 180ms ease-out;
-}
-.gravity-links path.leaving {
-  opacity: 0;
+  mix-blend-mode: multiply;
 }
 /* The shared trail paints the connected words. The timed layer stays on top. */
 .gravity-lyrics.linked .gravity-word[data-marker-connected] {
