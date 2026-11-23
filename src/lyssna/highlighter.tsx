@@ -203,13 +203,22 @@ function pathAt(layout: Layout, pieces: Piece[], time: number) {
   if (time === -Infinity) return 0;
   let reached = 0;
   for (const lane of layout.lanes) {
+    let previous: Stretch | undefined;
     for (const piece of lane.stretches) {
       const timing = pieces[piece.index];
-      if (time < timing.start_ms) return reached;
+      const start = lane.start + piece.left - lane.left;
+      if (time < timing.start_ms) {
+        if (!previous || start <= reached) return reached;
+        const gap = start - reached;
+        const depart = Math.max(pieces[previous.index].end_ms, timing.start_ms - Math.min(110, 20 + gap * 2));
+        const progress = Math.max(0, (time - depart) / Math.max(1, timing.start_ms - depart));
+        return reached + gap * progress * progress * (3 - 2 * progress);
+      }
       if (time < timing.end_ms) {
-        return lane.start + piece.left - lane.left + (piece.right - piece.left) * inkAt(timing, time);
+        return start + (piece.right - piece.left) * inkAt(timing, time);
       }
       reached = lane.start + piece.right - lane.left;
+      previous = piece;
     }
   }
   return layout.length;
@@ -304,10 +313,35 @@ function wobble(seed: number) {
   return value - Math.floor(value) - 0.5;
 }
 
+type InkPoint = { x: number; y: number };
+export const highlighterTails = new WeakMap<HTMLElement, { start: InkPoint; end: InkPoint }>();
+
+function stretchMotion(layout: Layout, stretch: Stretch) {
+  const { style } = layout.spans[stretch.index];
+  const scale = Number(style.scale) || 1;
+  const lift = (parseFloat(style.translate.split(" ").at(-1) ?? "") || 0) * layout.em;
+  if (Math.abs(lift) <= 0.2 && Math.abs(scale - 1) <= 0.004) return;
+  const pivotX = (stretch.left + stretch.right) / 2;
+  const pivotY = stretch.top * 0.25 + stretch.bottom * 0.75;
+  return { scale, x: pivotX * (1 - scale), y: lift + pivotY * (1 - scale) };
+}
+
+function strokeFollow(motion: ReturnType<typeof stretchMotion>) {
+  return motion ? `matrix(${motion.scale}, 0, 0, ${motion.scale}, ${motion.x}, ${motion.y}) ` : "";
+}
+
+function tailOffset(layout: Layout, stretch: Stretch, atEnd: boolean): InkPoint {
+  const motion = stretchMotion(layout, stretch);
+  if (!motion) return { x: 0, y: 0 };
+  return {
+    x: (atEnd ? stretch.right : stretch.left) * (motion.scale - 1) + motion.x,
+    y: (stretch.top + stretch.bottom) / 2 * (motion.scale - 1) + motion.y,
+  };
+}
+
 /** Shows the ink revealed up to `path` along the pen's path. Each row has
- *  one band laid over the whole row and clipped at the tip, plus the
- *  brighter pen tip, shown once per line: on the row the pen is on, or
- *  where it finished. */
+ *  a continuous band that splits where sung pieces move, so the opening
+ *  mark and the whole painted tail stay under their words. */
 function paint(
   ink: HTMLElement,
   layout: Layout,
@@ -315,25 +349,27 @@ function paint(
   path: number,
   time: number,
   seed: number,
+  floating: HTMLElement | null,
 ) {
   const { em } = layout;
   const lead = 0.16 * em,
     tail = 0.1 * em,
     nib = 0.42 * em;
   const shown = layout.lanes.filter((lane) => path > lane.start + 0.5);
-  while (ink.children.length > shown.length * 3) ink.lastChild!.remove();
+  if (floating && layout.lanes.length) {
+    highlighterTails.set(floating, {
+      start: tailOffset(layout, layout.lanes[0].stretches[0], false),
+      end: tailOffset(layout, layout.lanes.at(-1)!.stretches.at(-1)!, true),
+    });
+  }
+  while (ink.children.length > shown.length) ink.lastChild!.remove();
   shown.forEach((lane, index) => {
-    const band =
-      (ink.children[index * 3] as HTMLElement | undefined) ??
-      ink.appendChild(document.createElement("span"));
-    const liftBand =
-      (ink.children[index * 3 + 1] as HTMLElement | undefined) ??
+    const row =
+      (ink.children[index] as HTMLElement | undefined) ??
       ink.appendChild(document.createElement("span"));
     const tip =
-      (ink.children[index * 3 + 2] as HTMLElement | undefined) ??
-      ink.appendChild(document.createElement("span"));
-    band.className = "highlighter-stroke";
-    liftBand.className = "highlighter-stroke";
+      (row.firstElementChild as HTMLElement | null) ??
+      row.appendChild(document.createElement("span"));
     tip.className = "highlighter-tip";
     const width = lane.right - lane.left,
       height = lane.bottom - lane.top;
@@ -357,32 +393,40 @@ function paint(
     const mask = `${laneMask(lane, left, pieces, em, time)}, ${WAVER}`;
     const size = `100% 100%, ${(2.8 * em).toFixed(1)}px 100%`;
     const place = `0 0, ${((wobble(seed - index) + 0.5) * 2.8 * em).toFixed(1)}px 0`;
-    const active = index === shown.length - 1
-      ? lane.stretches.findLast((stretch) => stretch.left < lane.left + reveal) : undefined;
-    const word = active && layout.spans[active.index];
-    const scale = Number(word?.style.scale) || 1;
-    const lift = (parseFloat(word?.style.translate.split(" ").at(-1) ?? "") || 0) * em;
-    const moving = !!active && (Math.abs(lift) > 0.2 || Math.abs(scale - 1) > 0.004);
-    const pivotX = active ? (active.left + active.right) / 2 : 0;
-    const pivotY = active ? active.top * 0.25 + active.bottom * 0.75 : 0;
-    const follow = moving
-      ? `matrix(${scale}, 0, 0, ${scale}, ${pivotX * (1 - scale)}, ${lift + pivotY * (1 - scale)}) ` : "";
-    function fill(part: HTMLElement, from: number, to: number, transform: string) {
-      part.hidden = to <= from;
-      if (part.hidden) return;
+    const start = lead - opening;
+    let output = 1;
+    function fill(from: number, to: number, transform: string) {
+      if (to <= from) return;
+      const part = (row.children[output++] as HTMLElement | undefined) ?? row.appendChild(document.createElement("span"));
+      part.className = "highlighter-stroke";
       part.style.transform = transform;
       part.style.width = `${full}px`;
       part.style.height = `${tall}px`;
-      part.style.clipPath = `inset(0 ${Math.max(0, full - to).toFixed(1)}px 0 ${from.toFixed(1)}px round ${(0.14 * em).toFixed(1)}px)`;
+      const radius = `${(0.14 * em).toFixed(1)}px`;
+      const leftRadius = from === start ? radius : "0";
+      const rightRadius = to === end ? radius : "0";
+      part.style.clipPath = `inset(0 ${Math.max(0, full - to).toFixed(1)}px 0 ${from.toFixed(1)}px round ${leftRadius} ${rightRadius} ${rightRadius} ${leftRadius})`;
       part.style.setProperty("--shade", shade);
       part.style.maskImage = part.style.webkitMaskImage = mask;
       part.style.maskSize = part.style.webkitMaskSize = size;
       part.style.maskPosition = part.style.webkitMaskPosition = place;
     }
-    const start = lead - opening;
-    const seam = moving && active ? Math.max(start, active.left - left - 0.06 * em) : end;
-    fill(band, start, seam, stroke);
-    fill(liftBand, seam, end, follow + stroke);
+    let painted = start;
+    let follow = "";
+    for (const [slot, stretch] of lane.stretches.entries()) {
+      if (stretch.left >= lane.left + reveal) break;
+      const previous = lane.stretches[slot - 1], next = lane.stretches[slot + 1];
+      const from = previous ? (previous.right + stretch.left) / 2 - left : start;
+      const to = next ? Math.min(end, (stretch.right + next.left) / 2 - left) : end;
+      const transform = strokeFollow(stretchMotion(layout, stretch));
+      if (to === end) follow = transform;
+      if (!transform) continue;
+      fill(painted, from, stroke);
+      fill(from, to, transform + stroke);
+      painted = to;
+    }
+    fill(painted, end, stroke);
+    while (row.children.length > output) row.lastChild!.remove();
     // The tip rides just past the ink's edge, so a finished word ends with
     // the tip after its last letter rather than on it.
     const nibWidth = nib;
@@ -459,6 +503,7 @@ export const HighlighterWords = memo(function HighlighterWords({
     const element = root.current,
       sheet = ink.current;
     if (!element || !sheet) return;
+    const floating = element.closest<HTMLElement>(".gravity-word");
     const state = pen.current;
     const read = () => {
       const now = performance.now();
@@ -483,7 +528,7 @@ export const HighlighterWords = memo(function HighlighterWords({
         state.at = 0;
       }
       return () => {
-        paint(sheet, current, pieces, state.path, latest.current, seed);
+        paint(sheet, current, pieces, state.path, latest.current, seed, floating);
         if (moving) step();
       };
     };
@@ -491,6 +536,7 @@ export const HighlighterWords = memo(function HighlighterWords({
     redraw.current = step;
     // Lines not yet sung have no ink and need no measuring.
     if (time === -Infinity) {
+      if (floating) highlighterTails.delete(floating);
       sheet.replaceChildren();
       state.path = 0;
       state.at = 0;
@@ -499,9 +545,12 @@ export const HighlighterWords = memo(function HighlighterWords({
       // The animator writes transforms before this batch paints.
       step();
     }
-    const lastWord = time === Infinity ? [...element.querySelectorAll(".highlighter-piece")].at(-1) : undefined;
-    const settling = lastWord && new MutationObserver(step);
-    if (settling && lastWord) settling.observe(lastWord, { attributes: true, attributeFilter: ["style"] });
+    const settling = time === Infinity ? new MutationObserver(step) : undefined;
+    if (settling) {
+      for (const piece of element.querySelectorAll(".highlighter-piece")) {
+        settling.observe(piece, { attributes: true, attributeFilter: ["style"] });
+      }
+    }
     return () => {
       settling?.disconnect();
       cancelBatched(element);
@@ -511,6 +560,7 @@ export const HighlighterWords = memo(function HighlighterWords({
   useLayoutEffect(() => {
     const element = root.current;
     if (!element) return;
+    const floating = element.closest<HTMLElement>(".gravity-word");
     const observer = new ResizeObserver(() => {
       layout.current = undefined;
       if (latest.current !== -Infinity) redraw.current();
@@ -518,6 +568,7 @@ export const HighlighterWords = memo(function HighlighterWords({
     observer.observe(element);
     return () => {
       observer.disconnect();
+      if (floating) highlighterTails.delete(floating);
       cancelBatched(element);
       layout.current = undefined;
     };

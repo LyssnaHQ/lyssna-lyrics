@@ -11,7 +11,6 @@ import {
 } from "react";
 import {
   lineBlur,
-  Spring,
   tuneMotion,
   vocalGap,
   wordGroups,
@@ -44,10 +43,10 @@ import {
 } from "./space-gravity";
 import { windowPosition } from "./window-activity";
 import type { Line, Lyrics } from "./types";
-import { HighlighterWords, nextMarkerStarts } from "./highlighter";
+import { HighlighterWords, highlighterTails, nextMarkerStarts } from "./highlighter";
 import { frameDue } from "./frame-cap";
 import { trackGravityStage } from "../gravity-frame";
-import type { VisualiserFrame } from "./visualiser-frame";
+import { collideWithVisualiser, type VisualiserFrame } from "./visualiser-frame";
 
 interface Entity {
   key: string;
@@ -255,10 +254,13 @@ const contains = (outer: Rect | undefined, inner: Rect | undefined) =>
  * page above the credits. Over Canvas only the song details and controls
  * block words; otherwise words also drift around the artwork, above it and
  * below the title. Lines start laid out in the lyrics column. */
-function measureField(stage: HTMLElement): Field {
+type GravityField = Field & { bars?: Rect };
+
+function measureField(stage: HTMLElement, visualiser?: HTMLCanvasElement): GravityField {
   const box = stage.getBoundingClientRect();
   const page = stage.closest(".lyrics-page");
   const bounds = { width: stage.clientWidth, height: stage.clientHeight };
+  const bars = relative(visualiser, box);
   const canvas =
     !!page?.matches(".canvas-lyrics:not(.narrow)") &&
     !page.matches(".no-artwork");
@@ -288,6 +290,10 @@ function measureField(stage: HTMLElement): Field {
       );
   return {
     bounds,
+    bars: bars && box.width && box.height ? {
+      left: bars.left * bounds.width / box.width, right: bars.right * bounds.width / box.width,
+      top: bars.top * bounds.height / box.height, bottom: bars.bottom * bounds.height / box.height,
+    } : undefined,
     area,
     layout: column && {
       ...column,
@@ -307,7 +313,7 @@ function measureField(stage: HTMLElement): Field {
   };
 }
 
-type GravityBody = Body & { spawned: boolean; entryFrame?: number; beatOffset?: number };
+type GravityBody = Body & { spawned: boolean; entryFrame?: number };
 
 let kept: { signature: string; bodies: Map<string, GravityBody> } | undefined;
 
@@ -330,6 +336,8 @@ interface Link {
   from: string;
   to: string;
   seed: number;
+  begin: number;
+  finish: number;
 }
 const sheets = new WeakMap<SVGSVGElement, Map<string, Link>>();
 
@@ -348,44 +356,47 @@ function strengthOf(entity: Entity, elements: Map<string, HTMLElement>) {
 
 /** Where a turned, scaled word's left or right edge meets its middle,
  *  drawn in by `inset` pixels. */
-function edge(body: GravityBody, side: -1 | 1, inset = 0) {
+function edge(body: GravityBody, side: -1 | 1, inset: number, node?: HTMLElement) {
   const angle = (body.angle * Math.PI) / 180,
     reach = side * Math.max(0, (body.width * body.scale) / 2 - inset);
+  const tail = node && highlighterTails.get(node)?.[side < 0 ? "start" : "end"];
+  const x = reach + (tail?.x ?? 0) * body.scale;
+  const y = (tail?.y ?? 0) * body.scale;
   return {
-    x: body.x + Math.cos(angle) * reach,
-    y: body.y + (body.beatOffset ?? 0) + Math.sin(angle) * reach,
+    x: body.x + Math.cos(angle) * x - Math.sin(angle) * y,
+    y: body.y + Math.sin(angle) * x + Math.cos(angle) * y,
   };
 }
 
-/** How long before its word starts a link lands, so the word's ink sets
- *  off from the line. */
-const LANDS_EARLY_MS = 100;
-
-/** The shortest time a link takes to draw, so words sung back to back
- *  still pass the pen along instead of snapping. */
-const MIN_DRAW_MS = 160;
+const LINK_LEAD_MS = 28;
+const MAX_LINK_TRAVEL_MS = 680;
 
 /** The shortest pause between lines that shows the waiting dots. */
 const BREAK_MS = 2500;
 
-/** Eases in and out, so a link's pen starts and lands softly. */
-const ease = (t: number) =>
-  t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2;
+function linkTiming(from: Entity, to: Entity, a: GravityBody, b: GravityBody, width: number,
+  elements: Map<string, HTMLElement>) {
+  const inset = linkWidth(a, b, width) / 2;
+  const start = edge(a, 1, inset, elements.get(from.key)), end = edge(b, -1, inset, elements.get(to.key));
+  const distance = Math.hypot(end.x - start.x, end.y - start.y);
+  const travel = Math.min(MAX_LINK_TRAVEL_MS, Math.max(135, 90 + distance * 1.1));
+  const depart = from.start + Math.min(90, (from.end - from.start) * 0.28);
+  const finish = Math.max(depart + 55, to.start - LINK_LEAD_MS);
+  return { begin: Math.max(depart, finish - travel), finish };
+}
 
-/** Sets off at speed and lands softly, so a link hurried between words
- *  sung back to back covers most of the way at once. */
-const easeOut = (t: number) => 1 - (1 - t) ** 3;
+const linkWidth = (a: GravityBody, b: GravityBody, width: number) =>
+  Math.min(a.height * a.scale, b.height * b.scale) * 0.84 * width;
 
 /** Lays a link along the edges of its two words as they drift. */
-function shapeLink(link: Link, a: GravityBody, b: GravityBody, width: number) {
+function shapeLink(link: Link, a: GravityBody, b: GravityBody, width: number, elements: Map<string, HTMLElement>) {
   const { path, gradient } = link;
   // As broad as the Highlighter's band on the smaller of the two words.
-  const stroke =
-    Math.min(a.height * a.scale, b.height * b.scale) * 0.84 * width;
+  const stroke = linkWidth(a, b, width);
   // Each end tucks under its word's ink, so line and words read as one
   // unbroken stroke.
-  const start = edge(a, 1, stroke / 2),
-    end = edge(b, -1, stroke / 2);
+  const start = edge(a, 1, stroke / 2, elements.get(link.from)),
+    end = edge(b, -1, stroke / 2, elements.get(link.to));
   const length = Math.hypot(end.x - start.x, end.y - start.y) || 1;
   // Leave and arrive along each word's slant, with a seeded lift so
   // links swing their own way.
@@ -432,47 +443,30 @@ function drawLinks(
   const lead = entities.filter(
     (entity) => entity.index >= 0 && elements.has(entity.key),
   );
-  // A link sets off only once the word before is fully inked, and lands
-  // just before its word is sung, so that word's ink starts from the line.
-  // Words sung back to back still give it a short glide, ending by the
-  // time its word ends, when the next link sets off, so links never overlap.
-  const setsOff = (from: Entity) => from.end;
-  const lands = (from: Entity, to: Entity) =>
-    Math.max(
-      to.start - LANDS_EARLY_MS,
-      from.end + Math.min(MIN_DRAW_MS, Math.max(0, to.end - from.end)),
-    );
-  // The latest line under way, counting the link drawing into it, and the
-  // line before it keep their links.
-  let current = -1;
-  lead.forEach((entity, index) => {
-    const before = lead[index - 1];
-    if (
-      entity.start <= time ||
-      (before && before.index + 1 === entity.index && setsOff(before) <= time)
-    )
-      current = Math.max(current, entity.lead);
-  });
   const now = performance.now();
   const wanted = new Set<string>();
   let drawn = sheets.get(sheet);
   if (!drawn) sheets.set(sheet, (drawn = new Map()));
+  let current = lead.reduce((latest, entity) => entity.start <= time ? Math.max(latest, entity.lead) : latest, -1);
+  const connections: { from: Entity; to: Entity; a: GravityBody; b: GravityBody; key: string; begin: number; finish: number }[] = [];
   for (let index = 1; index < lead.length; index++) {
-    const from = lead[index - 1],
-      to = lead[index];
-    const finish = lands(from, to),
-      begin = setsOff(from);
+    const from = lead[index - 1], to = lead[index];
+    if (to.index !== from.index + 1 || to.lead < current - 1 || to.start - time > MAX_LINK_TRAVEL_MS + LINK_LEAD_MS) continue;
+    const a = bodies.get(from.key), b = bodies.get(to.key);
+    if (!a?.spawned || !b?.spawned) continue;
+    const key = `${from.key}>${to.key}`;
+    const { begin, finish } = drawn.get(key) ?? linkTiming(from, to, a, b, width, elements);
+    if (time < begin) continue;
+    current = Math.max(current, to.lead);
+    connections.push({ from, to, a, b, key, begin, finish });
+  }
+  for (const { from, to, a, b, key, begin, finish } of connections) {
     // Links within the sung line and the one before, and the link from
     // that earlier line into the sung one.
     const within =
       from.lead === to.lead && (to.lead === current || to.lead === current - 1);
     const across = from.lead === current - 1 && to.lead === current;
-    if (!(within || across) || to.index !== from.index + 1 || time < begin)
-      continue;
-    const a = bodies.get(from.key),
-      b = bodies.get(to.key);
-    if (!a?.spawned || !b?.spawned) continue;
-    const key = `${from.key}>${to.key}`;
+    if (!(within || across)) continue;
     wanted.add(key);
     let link = drawn.get(key);
     if (!link) {
@@ -498,13 +492,15 @@ function drawLinks(
         path,
         gradient,
         stops,
-        drawn: 0,
+        drawn: time >= finish ? 1 : 0,
         at: now,
         strengths: [strengthOf(from, elements), strengthOf(to, elements)],
         leaving: false,
         from: from.key,
         to: to.key,
         seed: from.seed,
+        begin,
+        finish,
       };
       drawn.set(key, link);
     }
@@ -512,7 +508,7 @@ function drawLinks(
       link.leaving = false;
       link.path.classList.remove("leaving");
     }
-    shapeLink(link, a, b, width);
+    shapeLink(link, a, b, width, elements);
     const elapsed = Math.min(100, now - link.at);
     link.at = now;
     // The link dims with its words: each half eases toward its own word's
@@ -534,14 +530,9 @@ function drawLinks(
     });
     // The pen follows song time softly, so coarse time updates don't step,
     // but it is always whole once it should have landed.
-    const target =
-      time >= finish
-        ? 1
-        : (finish - begin <= MIN_DRAW_MS ? easeOut : ease)(
-            Math.max(0, (time - begin) / Math.max(1, finish - begin)),
-          );
-    link.drawn += (target - link.drawn) * (1 - Math.exp(-elapsed / 20));
-    if (target === 1 && link.drawn > 0.995) link.drawn = 1;
+    const progress = Math.min(1, (time - begin) / (finish - begin));
+    const target = progress * progress * (3 - 2 * progress);
+    link.drawn = progress === 1 ? 1 : link.drawn + (target - link.drawn) * (1 - Math.exp(-elapsed / 15));
     link.path.style.strokeDashoffset = `${(1 - link.drawn).toFixed(3)}`;
   }
   for (const [key, link] of drawn) {
@@ -549,7 +540,7 @@ function drawLinks(
     // A fading link keeps following its words while they drift.
     const a = bodies.get(link.from),
       b = bodies.get(link.to);
-    if (a?.spawned && b?.spawned) shapeLink(link, a, b, width);
+    if (a?.spawned && b?.spawned) shapeLink(link, a, b, width, elements);
     if (link.leaving) continue;
     link.leaving = true;
     link.path.classList.add("leaving");
@@ -620,7 +611,7 @@ export function SpaceGravityLyrics({
   /** Connecting lines' width as a share of the Highlighter's band; 0
    *  turns them off. */
   linkWidth?: number;
-  visualiser?: RefObject<VisualiserFrame>;
+  visualiser?: RefObject<VisualiserFrame | null>;
   tuning?: AnimatorSettings;
   onSeek: (position: number) => void;
   credits: ReactNode;
@@ -766,13 +757,12 @@ export function SpaceGravityLyrics({
       renderFrame = 0,
       last = frameWindow.performance.now(),
       fieldAt = 0,
-      field: Field | undefined,
+      field: GravityField | undefined,
+      lastCanvas: HTMLCanvasElement | undefined,
       staticKey = "",
       indexed: typeof prepared | undefined,
       byKey = new Map<string, Entity>();
     const motion: WindowMotion = { vx: 0, vy: 0 };
-    const beat = new Spring(0, 3.8, 0.64);
-    let lastPulse = live.current.visualiser?.current.pulse;
     const tick = (now: number) => {
       frame = frameWindow.requestAnimationFrame(tick);
       if (!frameDue(last, now)) return;
@@ -780,10 +770,13 @@ export function SpaceGravityLyrics({
       const dt = Math.min(0.1, Math.max(0, (now - last) / 1000));
       last = now;
       let measured = false;
-      if (view.takeStageResize() || !field || now - fieldAt > 250) {
+      const visualiser = live.current.visualiser?.current;
+      const canvas = visualiser?.canvas;
+      if (view.takeStageResize() || !field || canvas !== lastCanvas || now - fieldAt > 250) {
         fieldAt = now;
         measured = true;
-        field = measureField(element);
+        lastCanvas = canvas;
+        field = measureField(element, canvas);
         const next = visibleWordCount(field);
         setCount((current) => (current === next ? current : next));
       }
@@ -902,21 +895,19 @@ export function SpaceGravityLyrics({
           dt,
         );
         step(active, dt, field, motion, exiting);
+        if (visualiser && field.bars) {
+          for (const body of active) {
+            if (body.entryFrame !== renderFrame) collideWithVisualiser(body, visualiser, field.bars);
+          }
+        }
       }
-      const pulse = live.current.visualiser?.current;
-      if (pulse && lastPulse !== undefined && pulse.pulse !== lastPulse) {
-        beat.velocity = Math.max(-920, beat.velocity - 840 * pulse.impact);
-      }
-      lastPulse = pulse?.pulse;
-      const lift = reduceMotion || beat.asleep ? 0 : beat.step(dt);
       // Words that left the screen start fresh when they return.
       for (const key of bodies.current.keys())
         if (!elements.current.has(key)) bodies.current.delete(key);
       for (const [key, node] of elements.current) {
         const body = bodies.current.get(key);
         if (!body?.spawned) continue;
-        body.beatOffset = lift * (0.65 + 0.35 * body.y / field.bounds.height);
-        view.move(node, `translate3d(${body.x - body.width / 2}px, ${body.y + body.beatOffset - body.height / 2}px, 0) rotate(${body.angle}deg) scale(${body.scale})`);
+        view.move(node, `translate3d(${body.x - body.width / 2}px, ${body.y - body.height / 2}px, 0) rotate(${body.angle}deg) scale(${body.scale})`);
       }
       if (links.current)
         drawLinks(

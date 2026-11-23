@@ -97,7 +97,7 @@ function preceding<Entry extends { start: number }>(entries: readonly Entry[], s
 
 export function SpotifyVisualiser({ host, trackId, playing, opacity, capture, motion, read }: {
   host: Host; trackId: string; playing: boolean; opacity: number; capture: SpotifyCapture;
-  motion: RefObject<VisualiserFrame>; read?: () => number;
+  motion: RefObject<VisualiserFrame | null>; read?: () => number;
 }) {
   const [analysis, setAnalysis] = useState<Awaited<ReturnType<Host["analysis"]>>>();
   useEffect(() => {
@@ -113,7 +113,7 @@ export function SpotifyVisualiser({ host, trackId, playing, opacity, capture, mo
       const beat = preceding(analysis?.beats ?? [], time);
       const beatLevel = beat ? Math.max(0, 1 - (time - beat.start) / 0.14) : 0;
       const captured = capture.spectrum(trackId);
-      if (captured) return { bars: captured, beat: beatLevel };
+      if (captured) return captured;
       const segment = preceding(analysis?.segments ?? [], time);
       if (!segment?.pitches?.length) return;
       const level = Math.max(0, Math.min(1, (segment.loudness_max + 32) / 32));
@@ -125,7 +125,7 @@ export function SpotifyVisualiser({ host, trackId, playing, opacity, capture, mo
         const value = segment.pitches[low] + (segment.pitches[Math.ceil(pitch)] - segment.pitches[low]) * (pitch - low);
         bars[bar] = Math.round(255 * level * value * (0.84 + beatLevel * 0.16));
       }
-      return { bars, beat: beatLevel };
+      return bars;
     };
   }, [host, trackId, analysis, capture, read]);
 

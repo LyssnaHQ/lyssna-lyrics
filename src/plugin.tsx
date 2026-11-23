@@ -126,7 +126,7 @@ function LyricsForTrack({ track, host, playing, settings, view = window, fullVie
   openCreator?(): void;
   draft?: Lyrics | null; showOriginal?(): void; localPlayback?: CreatorPlayback;
   draftReviewer?: boolean; toggleReviewer?(): void;
-  visualiser?: RefObject<VisualiserFrame>;
+  visualiser?: RefObject<VisualiserFrame | null>;
 }) {
   const duration = host.duration();
   const data = useTrackLyrics(track, duration, view, settings, host);
@@ -147,7 +147,7 @@ function LyricsForTrack({ track, host, playing, settings, view = window, fullVie
 function TrackLyrics({ track, host, playing, settings, compact = false, view = window, fullView = !compact, duration, lyrics, waiting, localPlayback, visualiser }: {
   track: Track; host: Host; playing: boolean; settings: Settings; compact?: boolean; view?: Window; fullView?: boolean;
   duration: number; lyrics?: Lyrics; waiting: boolean; localPlayback?: CreatorPlayback;
-  visualiser?: RefObject<VisualiserFrame>;
+  visualiser?: RefObject<VisualiserFrame | null>;
 }) {
   const playMarker = useLyssnaPlay(host, track.id, lyrics?.lyssna?.songId, playing, view);
   const position = usePosition(host, playing, view, localPlayback?.read);
@@ -430,8 +430,8 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
   const keepCreator = !!draft && preferences.ttml_creator && !!trackId && creatorTrackId === trackId;
   const localPlayback = keepCreator && creatorPlayback?.trackId === trackId ? creatorPlayback : undefined;
   const playing = localPlayback?.playing ?? spotifyPlaying;
-  const visualiser = useRef<VisualiserFrame>({ impact: 0, pulse: 0 });
-  const showVisualiser = settings.lyrics_visualiser && !settings.reduce_motion && !narrating;
+  const visualiser = useRef<VisualiserFrame | null>(null);
+  const showVisualiser = settings.lyrics_visualiser && settings.lyrics_visualiser_opacity > 0 && !settings.reduce_motion && !narrating;
   useLayoutEffect(() => setReviewerOverride(undefined), [draftUri, preferences.ttml_reviewer]);
   useEffect(() => {
     if (!draftUri) return;
