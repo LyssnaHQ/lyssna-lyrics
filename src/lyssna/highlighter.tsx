@@ -155,11 +155,12 @@ interface Layout {
   length: number;
   em: number;
   spans: HTMLElement[];
+  inkOrigin?: { x: number; y: number };
 }
 
 /** Measures the rows and pieces. Strokes are revealed over this fixed
  *  layout, so ink already laid never moves or stretches. */
-function measure(root: HTMLElement, pieces: Piece[]): Layout {
+function measure(root: HTMLElement, pieces: Piece[], floating: boolean): Layout {
   const spans = [...root.querySelectorAll<HTMLElement>(".highlighter-piece")];
   const em = parseFloat(getComputedStyle(root).fontSize) || 16;
   const stretches: Stretch[] = spans.map((span, index) => {
@@ -197,7 +198,8 @@ function measure(root: HTMLElement, pieces: Piece[]): Layout {
     lane.start = length;
     length += lane.right - lane.left;
   }
-  return { lanes, length, em, spans };
+  const inkOrigin = floating ? { x: root.offsetLeft, y: root.offsetTop } : undefined;
+  return { lanes, length, em, spans, inkOrigin };
 }
 
 /** How far along the pen's path the tip is at `time`. */
@@ -315,8 +317,10 @@ function wobble(seed: number) {
   return value - Math.floor(value) - 0.5;
 }
 
-type InkPoint = { x: number; y: number };
-export const highlighterTails = new WeakMap<HTMLElement, { start: InkPoint; end: InkPoint }>();
+export type InkAnchor = { x: number; y: number; height: number };
+export const highlighterAnchors = new WeakMap<HTMLElement, { entry: InkAnchor; exit: InkAnchor }>();
+const INK_SKEW = -8;
+const INK_SKEW_TANGENT = Math.tan(INK_SKEW * Math.PI / 180);
 
 function stretchMotion(layout: Layout, stretch: Stretch) {
   const { style } = layout.spans[stretch.index];
@@ -330,15 +334,6 @@ function stretchMotion(layout: Layout, stretch: Stretch) {
 
 function strokeFollow(motion: ReturnType<typeof stretchMotion>) {
   return motion ? `matrix(${motion.scale}, 0, 0, ${motion.scale}, ${motion.x}, ${motion.y}) ` : "";
-}
-
-function tailOffset(layout: Layout, stretch: Stretch, atEnd: boolean): InkPoint {
-  const motion = stretchMotion(layout, stretch);
-  if (!motion) return { x: 0, y: 0 };
-  return {
-    x: (atEnd ? stretch.right : stretch.left) * (motion.scale - 1) + motion.x,
-    y: (stretch.top + stretch.bottom) / 2 * (motion.scale - 1) + motion.y,
-  };
 }
 
 /** Shows the ink revealed up to `path` along the pen's path. Each row has
@@ -358,12 +353,9 @@ function paint(
     tail = 0.1 * em,
     nib = 0.42 * em;
   const shown = layout.lanes.filter((lane) => path > lane.start + 0.5);
-  if (floating && layout.lanes.length) {
-    highlighterTails.set(floating, {
-      start: tailOffset(layout, layout.lanes[0].stretches[0], false),
-      end: tailOffset(layout, layout.lanes.at(-1)!.stretches.at(-1)!, true),
-    });
-  }
+  const origin = layout.inkOrigin;
+  let entry: InkAnchor | undefined;
+  let exit: InkAnchor | undefined;
   while (ink.children.length > shown.length) ink.lastChild!.remove();
   shown.forEach((lane, index) => {
     const row =
@@ -388,20 +380,32 @@ function paint(
       closing = tail * Math.max(0, Math.min(1, (reveal - width + ramp) / ramp));
     const end = lead + reveal + closing;
     // A hand drifts a little across a row.
-    const tilt = wobble(seed + index) * 0.6,
-      drift = Math.tan((tilt * Math.PI) / 180);
-    const stroke = `translate(${left}px, ${top}px) rotate(${tilt.toFixed(2)}deg) skewX(-8deg)`;
+    const tilt = (wobble(seed + index) * 0.6).toFixed(2),
+      angle = Number(tilt) * Math.PI / 180,
+      drift = Math.tan(angle);
+    const cos = origin ? Math.cos(angle) : 1, sin = origin ? Math.sin(angle) : 0;
+    const stroke = `translate(${left}px, ${top}px) rotate(${tilt}deg) skewX(${INK_SKEW}deg)`;
     const shade = laneShade(lane, left, pieces, em, time);
     const mask = `${laneMask(lane, left, pieces, em, time)}, ${WAVER}`;
     const size = `100% 100%, ${(2.8 * em).toFixed(1)}px 100%`;
     const place = `0 0, ${((wobble(seed - index) + 0.5) * 2.8 * em).toFixed(1)}px 0`;
     const start = lead - opening;
     let output = 1;
-    function fill(from: number, to: number, transform: string) {
+    function anchor(at: number, motion?: ReturnType<typeof stretchMotion>): InkAnchor {
+      const y = tall / 2;
+      const x = at + INK_SKEW_TANGENT * y;
+      const scale = motion?.scale ?? 1;
+      return {
+        x: (origin?.x ?? 0) + (left + cos * x - sin * y) * scale + (motion?.x ?? 0),
+        y: (origin?.y ?? 0) + (top + sin * x + cos * y) * scale + (motion?.y ?? 0),
+        height: tall * scale,
+      };
+    }
+    function fill(from: number, to: number, motion?: ReturnType<typeof stretchMotion>) {
       if (to <= from) return;
       const part = (row.children[output++] as HTMLElement | undefined) ?? row.appendChild(document.createElement("span"));
       part.className = "highlighter-stroke";
-      part.style.transform = transform;
+      part.style.transform = strokeFollow(motion) + stroke;
       part.style.width = `${full}px`;
       part.style.height = `${tall}px`;
       const radius = `${(0.14 * em).toFixed(1)}px`;
@@ -412,6 +416,12 @@ function paint(
       part.style.maskImage = part.style.webkitMaskImage = mask;
       part.style.maskSize = part.style.webkitMaskSize = size;
       part.style.maskPosition = part.style.webkitMaskPosition = place;
+      if (origin) {
+        // Keep the curve under the painted band even while it is only partly revealed.
+        const overlap = Math.min(0.24 * em, (to - from) / 2);
+        entry ??= anchor(from + overlap, motion);
+        exit = anchor(to - overlap, motion);
+      }
     }
     let painted = start;
     let follow = "";
@@ -420,20 +430,20 @@ function paint(
       const previous = lane.stretches[slot - 1], next = lane.stretches[slot + 1];
       const from = previous ? (previous.right + stretch.left) / 2 - left : start;
       const to = next ? Math.min(end, (stretch.right + next.left) / 2 - left) : end;
-      const transform = strokeFollow(stretchMotion(layout, stretch));
-      if (to === end) follow = transform;
-      if (!transform) continue;
-      fill(painted, from, stroke);
-      fill(from, to, transform + stroke);
+      const motion = stretchMotion(layout, stretch);
+      if (to === end) follow = strokeFollow(motion);
+      if (!motion) continue;
+      fill(painted, from);
+      fill(from, to, motion);
       painted = to;
     }
-    fill(painted, end, stroke);
+    fill(painted, end);
     while (row.children.length > output) row.lastChild!.remove();
     // The tip rides just past the ink's edge, so a finished word ends with
     // the tip after its last letter rather than on it.
     const nibWidth = nib;
     const along = end - 0.12 * em;
-    tip.style.transform = `${follow}translate(${left + along}px, ${top + along * drift}px) rotate(${tilt.toFixed(2)}deg) skewX(-8deg)`;
+    tip.style.transform = `${follow}translate(${left + along}px, ${top + along * drift}px) rotate(${tilt}deg) skewX(${INK_SKEW}deg)`;
     tip.style.width = `${nibWidth}px`;
     tip.style.height = `${tall}px`;
     tip.style.setProperty(
@@ -444,6 +454,10 @@ function paint(
     // as the pen moves on, rather than vanishing.
     tip.classList.toggle("lifted", index !== shown.length - 1);
   });
+  if (floating) {
+    if (entry && exit) highlighterAnchors.set(floating, { entry, exit });
+    else highlighterAnchors.delete(floating);
+  }
 }
 
 /** Read every line before drawing any ink, including animation and resize
@@ -510,7 +524,7 @@ export const HighlighterWords = memo(function HighlighterWords({
     const read = () => {
       const now = performance.now();
       const resized = !layout.current;
-      const current = (layout.current ??= measure(element, pieces));
+      const current = (layout.current ??= measure(element, pieces, !!floating));
       const target = pathAt(current, pieces, latest.current);
       const elapsed = state.at ? Math.min(100, now - state.at) : 1000 / 60;
       state.at = now;
@@ -538,7 +552,7 @@ export const HighlighterWords = memo(function HighlighterWords({
     redraw.current = step;
     // Lines not yet sung have no ink and need no measuring.
     if (time === -Infinity) {
-      if (floating) highlighterTails.delete(floating);
+      if (floating) highlighterAnchors.delete(floating);
       sheet.replaceChildren();
       state.path = 0;
       state.at = 0;
@@ -570,7 +584,7 @@ export const HighlighterWords = memo(function HighlighterWords({
     observer.observe(element);
     return () => {
       observer.disconnect();
-      if (floating) highlighterTails.delete(floating);
+      if (floating) highlighterAnchors.delete(floating);
       cancelBatched(element);
       layout.current = undefined;
     };

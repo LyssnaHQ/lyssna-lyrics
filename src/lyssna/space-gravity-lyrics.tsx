@@ -43,7 +43,7 @@ import {
 } from "./space-gravity";
 import { windowPosition } from "./window-activity";
 import type { Line, Lyrics } from "./types";
-import { HighlighterWords, highlighterTails, nextMarkerStarts } from "./highlighter";
+import { HighlighterWords, highlighterAnchors, nextMarkerStarts, type InkAnchor } from "./highlighter";
 import { frameDue } from "./frame-cap";
 import { trackGravityStage } from "../gravity-frame";
 import { collideWithVisualiser, type VisualiserFrame } from "./visualiser-frame";
@@ -374,14 +374,19 @@ function strengthOf(entity: Entity, elements: Map<string, HTMLElement>) {
       : 0.22;
 }
 
-/** Where a turned, scaled word's left or right edge meets its middle,
- *  drawn in by `inset` pixels. */
-function edge(body: GravityBody, side: -1 | 1, inset: number, node?: HTMLElement) {
-  const angle = (body.angle * Math.PI) / 180,
-    reach = side * Math.max(0, (body.width * body.scale) / 2 - inset);
-  const tail = node && highlighterTails.get(node)?.[side < 0 ? "start" : "end"];
-  const x = reach + (tail?.x ?? 0) * body.scale;
-  const y = (tail?.y ?? 0) * body.scale;
+function wordInk(elements: Map<string, HTMLElement>, key: string) {
+  const word = elements.get(key);
+  return word && highlighterAnchors.get(word);
+}
+
+/** Convert a point under the word's ink to stage coordinates. For a word
+ *  still waiting to be sung, land just inside its text box. */
+function linkPoint(body: GravityBody, side: -1 | 1, anchor?: InkAnchor) {
+  const angle = body.angle * Math.PI / 180;
+  const localX = anchor ? anchor.x - body.width / 2
+    : side * Math.max(0, body.width / 2 - body.height * 0.2);
+  const x = localX * body.scale;
+  const y = anchor ? (anchor.y - body.height / 2) * body.scale : 0;
   return {
     x: body.x + Math.cos(angle) * x - Math.sin(angle) * y,
     y: body.y + Math.sin(angle) * x + Math.cos(angle) * y,
@@ -391,10 +396,8 @@ function edge(body: GravityBody, side: -1 | 1, inset: number, node?: HTMLElement
 /** The shortest pause between lines that shows the waiting dots. */
 const BREAK_MS = 2500;
 
-function linkTiming(from: Entity, to: Entity, a: GravityBody, b: GravityBody, width: number,
-  elements: Map<string, HTMLElement>) {
-  const inset = linkWidth(a, b, width) / 2;
-  const start = edge(a, 1, inset, elements.get(from.key)), end = edge(b, -1, inset, elements.get(to.key));
+function linkTiming(from: Entity, to: Entity, a: GravityBody, b: GravityBody, startInk: InkAnchor, endInk?: InkAnchor) {
+  const start = linkPoint(a, 1, startInk), end = linkPoint(b, -1, endInk);
   const distance = Math.hypot(end.x - start.x, end.y - start.y);
   const travel = Math.min(MAX_LINK_TRAVEL_MS, Math.max(135, 90 + distance * 1.1));
   const depart = from.start + Math.min(90, (from.end - from.start) * 0.28);
@@ -402,18 +405,12 @@ function linkTiming(from: Entity, to: Entity, a: GravityBody, b: GravityBody, wi
   return { begin: Math.max(depart, finish - travel), finish };
 }
 
-const linkWidth = (a: GravityBody, b: GravityBody, width: number) =>
-  Math.min(a.height * a.scale, b.height * b.scale) * 0.84 * width;
-
-/** Lays a link along the edges of its two words as they drift. */
-function shapeLink(link: Link, a: GravityBody, b: GravityBody, width: number, elements: Map<string, HTMLElement>, dt?: number) {
+/** Lays a link beneath the two strokes as their words drift. */
+function shapeLink(link: Link, a: GravityBody, b: GravityBody, width: number, startInk: InkAnchor,
+  endInk: InkAnchor | undefined, dt?: number) {
   const { path, gradient } = link;
-  // As broad as the Highlighter's band on the smaller of the two words.
-  const stroke = linkWidth(a, b, width);
-  // Each end tucks under its word's ink, so line and words read as one
-  // unbroken stroke.
-  const start = edge(a, 1, stroke / 2, elements.get(link.from)),
-    end = edge(b, -1, stroke / 2, elements.get(link.to));
+  const stroke = width * Math.min(startInk.height * a.scale, (endInk?.height ?? b.height * 0.84) * b.scale);
+  const start = linkPoint(a, 1, startInk), end = linkPoint(b, -1, endInk);
   const dx = end.x - start.x, dy = end.y - start.y;
   const length = Math.hypot(dx, dy);
   // Leave and arrive along each word's slant, with a seeded lift so
@@ -477,7 +474,8 @@ function drawLinks(
       if (entity && !entity.background && entity.start <= time) current = Math.max(current, entity.lead);
     }
   }
-  const connections: { from: Entity; to: Entity; a: GravityBody; b: GravityBody; key: string; begin: number; finish: number }[] = [];
+  const connections: { from: Entity; to: Entity; a: GravityBody; b: GravityBody;
+    startInk: InkAnchor; endInk?: InkAnchor; key: string; begin: number; finish: number }[] = [];
   for (const word of elements.keys()) {
     if (width <= 0) break;
     const to = entities.get(word), from = to?.previous;
@@ -485,13 +483,16 @@ function drawLinks(
     if (to.background ? time >= to.phraseEnd : to.lead < current - 1) continue;
     const a = bodies.get(from.key), b = bodies.get(to.key);
     if (!a?.spawned || !b?.spawned) continue;
+    const startInk = wordInk(elements, from.key)?.exit;
+    if (!startInk) continue;
+    const endInk = wordInk(elements, to.key)?.entry;
     const key = `${from.key}>${to.key}`;
-    const { begin, finish } = drawn.get(key) ?? linkTiming(from, to, a, b, width, elements);
+    const { begin, finish } = drawn.get(key) ?? linkTiming(from, to, a, b, startInk, endInk);
     if (time < begin) continue;
     if (!to.background) current = Math.max(current, to.lead);
-    connections.push({ from, to, a, b, key, begin, finish });
+    connections.push({ from, to, a, b, startInk, endInk, key, begin, finish });
   }
-  for (const { from, to, a, b, key, begin, finish } of connections) {
+  for (const { from, to, a, b, startInk, endInk, key, begin, finish } of connections) {
     // Links within the sung line and the one before, and the link from
     // that earlier line into the sung one.
     const within =
@@ -546,7 +547,7 @@ function drawLinks(
     if (from.background && fromWord && !fromWord.hasAttribute("data-backing-trail")) {
       fromWord.setAttribute("data-backing-trail", "");
     }
-    shapeLink(link, a, b, width, elements, dt);
+    shapeLink(link, a, b, width, startInk, endInk, dt);
     const elapsed = Math.min(100, now - link.at);
     link.at = now;
     // The link dims with its words: each half eases toward its own word's
@@ -595,7 +596,10 @@ function drawLinks(
     }
     // A fading link keeps following its words while they drift.
     const a = bodies.get(link.from), b = bodies.get(link.to);
-    if (width > 0 && a?.spawned && b?.spawned) shapeLink(link, a, b, width, elements, dt);
+    const startInk = wordInk(elements, link.from)?.exit;
+    if (width > 0 && a?.spawned && b?.spawned && startInk) {
+      shapeLink(link, a, b, width, startInk, wordInk(elements, link.to)?.entry, dt);
+    }
   }
 }
 
