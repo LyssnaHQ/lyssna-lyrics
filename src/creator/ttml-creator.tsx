@@ -1293,7 +1293,11 @@ export function TtmlCreator({
     if (!editable) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.code === "Space" || event.key === " ") return;
+      const deleteKey = event.key === "Delete" || event.code === "Delete";
+      // Spotify can deliver Delete's release without its initial keydown.
+      if (deleteKey !== (event.type === "keyup")) return;
       const target = event.composedPath()[0] as HTMLElement | null;
+      if (deleteKey && !root.contains(target)) return;
       if (target?.closest(".lyrics-settings-backdrop, .ttml-recording-popover, .review-panel")) return;
       if (root.querySelector(".ttml-menu, .ttml-dialog")) return;
       if (target?.closest(".ttml-bar button, .ttml-spectrum button") && event.key === "Enter") return;
@@ -1317,14 +1321,7 @@ export function TtmlCreator({
       const { lines, cursor } = stateRef.current;
       const ctrl = IS_MAC ? event.metaKey : event.ctrlKey;
       const key = event.key.toLowerCase();
-      const deleteKey = event.key === "Delete" || event.code === "Delete";
       const erase = deleteKey || event.key === "Backspace";
-      // Holding Delete after removing a line must not erase the next word.
-      if (!ctrl && deleteKey && event.repeat) {
-        event.preventDefault();
-        event.stopPropagation();
-        return;
-      }
       const words = groupRef.current,
         gaps = spacesRef.current;
       const pickedLines = pickedRef.current;
@@ -1463,7 +1460,11 @@ export function TtmlCreator({
       }
     };
     window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
+    window.addEventListener("keyup", onKey, true);
+    return () => {
+      window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("keyup", onKey, true);
+    };
   }, [
     editable,
     showSync,
