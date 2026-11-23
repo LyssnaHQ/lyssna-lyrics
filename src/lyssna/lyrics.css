@@ -993,7 +993,7 @@
   .lyrics-page:not(.reduce-motion) [data-icon="lyrics_compact"]:is(:hover, :focus-visible) .part-row-bottom {
     translate: 0 -1.5px;
   }
-  .lyrics-page:not(.reduce-motion) [data-icon="lyrics_hide_artwork"]:is(:hover, :focus-visible) .part-chevron {
+  .lyrics-page:not(.reduce-motion) [data-icon="lyrics_hide_artwork"]:is(:hover, :focus-visible) :is(.part-chevron, .part-divider) {
     translate: -2px 0;
   }
   .lyrics-page:not(.reduce-motion) [data-icon="lyrics_artwork_right"]:is(:hover, :focus-visible) .part-left {
