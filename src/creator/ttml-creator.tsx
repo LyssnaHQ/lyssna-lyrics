@@ -13,7 +13,6 @@ import {
 } from "react";
 import {
   ChevronDown,
-  ClipboardCheck,
   Copy,
   Download,
   Eye,
@@ -40,10 +39,8 @@ import {
 import { IS_MAC, MODIFIER, useCreatorClock, useCreatorEnvironment } from "./environment";
 import type { CreatorState } from "./types";
 import type { Lyrics, PlayerRequest, Track } from "./types";
-import { accountChanged, hasLyssnaSession, readLyssnaProfile } from "../lyssna-account";
 import { lyricsChanged, parseLocalTtml } from "../local-lyrics";
 import { revalidateLyssnaSong } from "../lyssna-provider";
-import { canReview } from "./review-api";
 import { ReviewPanel, type ReviewOpen } from "./review-panel";
 import {
   forgetWorking,
@@ -276,6 +273,7 @@ export function TtmlCreator({
   barSlot,
   playbar,
   onClose,
+  onCloseReview,
   draftPreview = false,
 }: {
   state: CreatorState;
@@ -294,6 +292,7 @@ export function TtmlCreator({
   barSlot?: HTMLElement | null;
   playbar?: CreatorPlaybarSlots;
   onClose?: () => void;
+  onCloseReview?: () => void;
   draftPreview?: boolean;
 }) {
   const { root, view: window, waveform, playClip, recording, playingFullRecording, replayAvailable, replayCaptured, openAudio } = useCreatorEnvironment();
@@ -1663,35 +1662,12 @@ export function TtmlCreator({
     [metadata, track],
   );
   const ttml = () => (track ? toTtml(lines, meta(track), entries) : "");
-  const [reviewer, setReviewer] = useState(false);
-  const [reviewing, setReviewing] = useState(false);
+  const reviewing = !!onCloseReview && !draftPreview;
   const [pendingReview, setPendingReview] = useState<ReviewOpen>();
   const [reviewEdit, setReviewEdit] = useState<{ id: string; uri: string; baseline: string }>();
   useEffect(() => {
-    if (draftPreview) return;
-    let request = 0;
-    const update = () => {
-      const id = ++request;
-      if (!hasLyssnaSession()) {
-        setReviewer(false);
-        setReviewing(false);
-        setReviewEdit(undefined);
-        setPendingReview(undefined);
-        return;
-      }
-      void readLyssnaProfile().then((profile) => {
-        if (id === request && profile) setReviewer(canReview(profile.role));
-      }).catch(() => {});
-    };
-    update();
-    window.addEventListener(accountChanged, update);
-    return () => {
-      request++;
-      window.removeEventListener(accountChanged, update);
-    };
-  }, [draftPreview, window]);
-  useEffect(() => {
-    if (!reviewing || !reviewer || !pendingReview) return;
+    if (!pendingReview) return;
+    if (!reviewing) { setPendingReview(undefined); return; }
     if (playing?.uri !== pendingReview.uri) {
       const timeout = window.setTimeout(() => {
         setPendingReview(undefined);
@@ -1739,18 +1715,8 @@ export function TtmlCreator({
       notify(`Couldn’t open the submission: ${String(error)}`, true);
     });
     return () => { live = false; };
-  }, [pendingReview, playing, track, reviewing, reviewer, setLines, notify, window]);
-  const closeReview = () => {
-    setReviewing(false);
-    setPendingReview(undefined);
-  };
-  const reviewButton = reviewer && (
-    <button onClick={() => reviewing ? closeReview() : setReviewing(true)}
-      title="Review submissions" aria-label="Review submissions" aria-pressed={reviewing}>
-      <ClipboardCheck size={15} />
-    </button>
-  );
-  const reviewPanel = reviewer && reviewing && (
+  }, [pendingReview, playing, track, reviewing, setLines, notify, window]);
+  const reviewPanel = reviewing && onCloseReview && (
     <ReviewPanel
       playing={playing}
       editing={done && reviewEdit?.uri === track?.uri ? reviewEdit : undefined}
@@ -1776,7 +1742,7 @@ export function TtmlCreator({
         window.dispatchEvent(new CustomEvent(lyricsChanged, { detail: [trackId] }));
       }}
       notify={notify}
-      onClose={closeReview}
+      onClose={onCloseReview}
     />
   );
   const [editingMeta, setEditingMeta] = useState(false);
@@ -2054,7 +2020,6 @@ export function TtmlCreator({
           <History size={15} />
           Saves
         </button>
-        {reviewButton}
         {onClose && <button onClick={onClose}>Back to lyrics</button>}
         {savesDialog}
         {reviewPanel}
@@ -2097,7 +2062,6 @@ export function TtmlCreator({
         )}
         <div className="ttml-actions">
           {!barSlot && onClose && <button onClick={onClose} aria-label="Close TTML Creator"><X size={15} /></button>}
-          {reviewButton}
           <span className="ttml-saved">
             {savedAt ? `Saved ${savedLabel(savedAt)}` : "Not saved yet"}
           </span>

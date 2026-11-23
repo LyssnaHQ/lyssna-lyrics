@@ -94,6 +94,26 @@
   order: -1;
 }
 
+.lyssna-review-topbar {
+  display: inline-grid;
+  flex: 0 0 32px;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-subdued, #b3b3b3);
+  cursor: pointer;
+}
+.lyssna-review-topbar:hover {
+  color: var(--text-base, #fff);
+  transform: scale(1.04);
+}
+.lyssna-review-topbar[aria-pressed="true"] {
+  color: var(--text-bright-accent, #1ed760);
+}
 .lyssna-playbar-button[aria-pressed="true"] {
   position: relative;
   color: var(--spice-button, #1ed760);

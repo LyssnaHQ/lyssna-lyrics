@@ -59,9 +59,10 @@ async function seedTimings(host: Host, lyrics: Lyrics, duration: number, trackId
   } : undefined) ?? lyrics;
 }
 
-export function CreatorSurface({ host, view: owner, settings, close, previewing, onLocalPlayback, manageStoredData, capture }: {
+export function CreatorSurface({ host, view: owner, settings, close, closeReview, previewing, onLocalPlayback, manageStoredData, capture }: {
   host: Host; view: Window; settings: Settings; close: () => void; previewing: boolean;
   capture: SpotifyCapture;
+  closeReview?: () => void;
   onLocalPlayback(playback: CreatorPlayback | undefined): void; manageStoredData(trigger: HTMLElement | null): void;
 }) {
   const view = owner as Window & typeof globalThis;
@@ -499,6 +500,7 @@ export function CreatorSurface({ host, view: owner, settings, close, previewing,
         <TtmlCreator state={state} onPlayer={player} onToggle={toggle} draftPreview={previewing}
           onSpeed={setSpeed} notify={notify} barSlot={previewing ? undefined : playbar?.wave ?? bar} playbar={playbar}
           onClose={close}
+          onCloseReview={closeReview}
           onParse={async (filename, text, song) => {
             const ms = song?.duration_ms ?? 0;
             const lyrics = /\.lrc$/i.test(filename)
