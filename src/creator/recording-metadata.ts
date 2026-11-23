@@ -1,9 +1,20 @@
 import type { Host, Track } from "../host";
 import { within } from "./current-lyrics";
+import type { SavedRecording } from "./captured-replay";
+import { downloadRecording, type RecordingFormat } from "./recording-export";
+import { formatTime } from "./ttml-creator-model";
 
 type Tag = { name: string; value: string; id3?: string; riff?: string };
 type Cover = { blob: Blob; type: "image/jpeg" | "image/png" };
 export type RecordingMetadata = { tags: Tag[]; cover?: Cover };
+
+export async function exportSavedAudio(host: Host, track: Track, recording: SavedRecording, format: RecordingFormat, writers?: string[]) {
+  const metadata = await readRecordingMetadata(host, track, writers);
+  const title = [metadata.tags.find(({ name }) => name === "TITLE")?.value,
+    metadata.tags.find(({ name }) => name === "ARTIST")?.value].filter(Boolean).join(" - ");
+  const name = recording.full ? title : `${title} [${formatTime(recording.startMs)}–${formatTime(recording.endMs)}]`;
+  await downloadRecording(recording.blob, name, format, metadata);
+}
 
 function spotifyUrl(uri: string | undefined, type: "track" | "album") {
   const [scheme, kind, id] = (uri ?? "").split(":");

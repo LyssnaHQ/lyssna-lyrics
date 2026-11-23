@@ -2,7 +2,7 @@ import type { Host } from "../host";
 import { VISUALISER_BARS } from "../lyssna/visualiser-frame";
 import { spectrumFrequency } from "./audio";
 import { spotifyWindowMarker } from "./spotify-window";
-import { createCapturedReplay, recordedCoverage, type ReplayPacket } from "./captured-replay";
+import { createCapturedReplay, isRecordingComplete, recordedCoverage, savedAudioCleared, type ReplayPacket } from "./captured-replay";
 import { trackCapture } from "./capture-sessions";
 import processorSource from "./live-spectrum-processor.js?raw";
 import {
@@ -52,9 +52,11 @@ export function createSpotifyCapture(host: Host, view: Window & typeof globalThi
   const listeners = new Set<() => void>();
   let state: CaptureState = { status: "idle", message: "" };
   let session: { stop(message?: string): Promise<void> } | undefined;
+  let stoppingSession: Promise<void> | undefined;
   let transportRevision = 0;
   let usingLocalAudio = false;
   let syncProcessing: (() => void) | undefined;
+  let flushSpectrum: (() => Promise<void>) | undefined;
   const spectrum = new Uint8Array(VISUALISER_BARS);
   let spectrumTrack = "";
   let spectrumAt = 0;
@@ -70,11 +72,12 @@ export function createSpotifyCapture(host: Host, view: Window & typeof globalThi
   const recordings = createCapturedReplay(
     (summary) => view.dispatchEvent(new CustomEvent(recordedAudioSaved, { detail: summary })),
     () => setMessage("Couldn’t save all recorded audio. Check Spotify’s local storage space."),
+    () => flushSpectrum?.(),
   );
   const { append: appendReplay, flush: flushReplay } = recordings;
 
   async function start(scope: string) {
-    if (session) return;
+    if (session || stoppingSession) return;
     const devices: CaptureDevices | undefined = view.navigator.mediaDevices;
     const origin = view.location.origin;
     if (!devices?.getDisplayMedia || (!desktop && (!devices.setCaptureHandleConfig || origin === "null"))) {
@@ -83,6 +86,8 @@ export function createSpotifyCapture(host: Host, view: Window & typeof globalThi
     }
 
     const dirty = new Map<string, Map<number, LiveTile>>();
+    const durations = new Map<string, number>();
+    const sealed = new Set<string>();
     const verification = new AbortController();
     let marker: ReturnType<typeof spotifyWindowMarker> | undefined;
     let stream: MediaStream | undefined;
@@ -92,17 +97,28 @@ export function createSpotifyCapture(host: Host, view: Window & typeof globalThi
     let worklet: AudioWorkletNode | undefined;
     let stopWatching: (() => void) | undefined;
     let configured = false;
-    const writes = new Set<Promise<void>>();
+    let spectrumWrites = Promise.resolve();
     let stopping: Promise<void> | undefined;
     let untrack: (() => void) | undefined;
     const flush = () => {
-      if (!dirty.size) return;
-      const changed = [...dirty.values()].flatMap((tiles) => [...tiles.values()]);
+      if (!dirty.size) return spectrumWrites;
+      const changed = [...dirty.entries()];
       dirty.clear();
-      const write = saveLiveTiles(changed).catch(() => {
+      spectrumWrites = spectrumWrites.then(async () => {
+        for (const [uri, tiles] of changed) {
+          if (sealed.has(uri)) continue;
+          const saved = await saveLiveTiles(uri, durations.get(uri) ?? 0, [...tiles.values()]);
+          if (!saved) sealed.add(uri);
+        }
+      }).catch(() => {
         if (session === active) setMessage("Couldn’t save the spectrogram to Spotify’s local storage.");
-      }).finally(() => writes.delete(write));
-      writes.add(write);
+      });
+      return spectrumWrites;
+    };
+    const clearSeals = (event: Event) => {
+      const uri = (event as CustomEvent<string | undefined>).detail;
+      if (uri) sealed.delete(uri);
+      else sealed.clear();
     };
     const stop = (notice = "") => {
       if (stopping) return stopping;
@@ -111,6 +127,7 @@ export function createSpotifyCapture(host: Host, view: Window & typeof globalThi
       spectrumAt = 0;
       view.clearInterval(timer);
       view.clearInterval(saveTimer);
+      view.removeEventListener(savedAudioCleared, clearSeals);
       stopWatching?.();
       syncProcessing = undefined;
       if (worklet) {
@@ -125,13 +142,20 @@ export function createSpotifyCapture(host: Host, view: Window & typeof globalThi
         catch { /* The document may already be unloading. */ }
       }
       if (context) void context.close().catch(() => {});
-      flush();
-      stopping = Promise.allSettled([...writes, flushReplay()]).then(() => { untrack?.(); });
+      const spectrumSaved = flush();
+      const audioSaved = flushReplay();
+      if (flushSpectrum === flush) flushSpectrum = undefined;
+      stopping = stoppingSession = Promise.allSettled([spectrumSaved, audioSaved]).then(() => {
+        untrack?.();
+        stoppingSession = undefined;
+      });
       publish({ status: "idle", message: notice, scope });
       return stopping;
     };
     const active = { stop };
     session = active;
+    flushSpectrum = flush;
+    view.addEventListener(savedAudioCleared, clearSeals);
     untrack = trackCapture(stop);
     publish({ status: "selecting", message: sharePrompt, scope });
     try {
@@ -258,6 +282,12 @@ export function createSpotifyCapture(host: Host, view: Window & typeof globalThi
           noSignalSince = 0;
           return;
         }
+        if (!durations.has(uri)) {
+          durations.set(uri, duration);
+          void isRecordingComplete(uri, duration).then((full) => {
+            if (session === active && full) sealed.add(uri);
+          }).catch(() => {});
+        }
         const playback = { uri, ms, transportRevision, volume: host.volume() };
         const switched = !!lastUri && lastUri !== uri;
         lastUri = uri;
@@ -318,6 +348,7 @@ export function createSpotifyCapture(host: Host, view: Window & typeof globalThi
           spectrumTrack = uri;
           spectrumAt = view.performance.now();
         }
+        if (sealed.has(uri)) return;
         const index = Math.floor(frame / LIVE_COLUMNS);
         const column = frame % LIVE_COLUMNS;
         let tiles = dirty.get(uri);
@@ -393,6 +424,7 @@ export function createSpotifyCapture(host: Host, view: Window & typeof globalThi
           if (!clock) return;
           if (audio.muted) { acceptSignal(false, clock.now); return; }
           if ("samples" in data) {
+            if (sealed.has(clock.uri)) return;
             const sampleRate = audioContext.sampleRate;
             if (clock.volume !== 0 && data.firstFrame * 1000 / sampleRate >= replayFrom) {
               replayOrigin ??= Math.round((clock.ms - clock.audioMs) * sampleRate / 1000);
@@ -400,7 +432,7 @@ export function createSpotifyCapture(host: Host, view: Window & typeof globalThi
               const remaining = Math.round(clock.duration * sampleRate / 1000) - startFrame;
               if (remaining <= 0) return;
               const samples = data.samples.subarray(0, remaining * 2);
-              const packet = { uri: clock.uri, startFrame, sampleRate, samples, bitrate: host.captureBitrate() };
+              const packet = { uri: clock.uri, duration: clock.duration, startFrame, sampleRate, samples, bitrate: host.captureBitrate() };
               replayHeard ||= samples.some((sample) => Math.abs(sample) >= 512);
               boostCapture(samples, clock.volume);
               if (!replayHeard) {
@@ -466,8 +498,7 @@ export function createSpotifyCapture(host: Host, view: Window & typeof globalThi
 
   return {
     start,
-    stop: () => session?.stop(),
-    stopManual: (uri: string) => { if (state.scope === uri) void session?.stop(); },
+    stop: () => session?.stop() ?? stoppingSession,
     stopAuto: () => { if (state.scope === "auto") void session?.stop(); },
     transportChanged: () => { transportRevision++; },
     setLocalAudio(active: boolean) {

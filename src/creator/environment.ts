@@ -6,6 +6,9 @@ export type RecordingStatus = {
   percent: number;
   sharing: boolean;
   deleting: boolean;
+  message?: string;
+  start?(): void;
+  stop?(): void;
   returnToSpotify?(): void;
   remove(): Promise<void>;
   exportAudio(format: RecordingFormat): Promise<void>;

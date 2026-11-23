@@ -1,7 +1,9 @@
 import { useId, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { AudioLines } from "lucide-react";
+import { AudioLines, ChevronDown, ChevronRight, Download, HardDrive, RotateCcw, Square, Trash2 } from "lucide-react";
 import { useAnchoredPopover } from "../anchored-popover";
 import { findPlaybarCover } from "../now-playing";
+import type { RecordingStatus } from "./environment";
+import { recordingExportEnabled, recordingFormats, type RecordingFormat } from "./recording-export";
 
 export function RecordingMeter({ view, percent, label, children }: {
   view: Window; percent: number; label: string;
@@ -55,4 +57,61 @@ export function RecordingProgress({ id, percent }: { id: string; percent: number
     <span aria-hidden="true">{percent}%</span>
     <progress value={percent} max={100} aria-labelledby={id} />
   </div>;
+}
+
+export function RecordingDetails({ view, track, percent, sharing, deleting, returnToSpotify, remove, exportAudio,
+  manageStoredData, message, start, stop }: RecordingStatus & {
+  view: Window; track?: { name: string; artists: string; cover?: string; uri: string };
+  manageStoredData(trigger: HTMLElement | null): void;
+}) {
+  const [format, setFormat] = useState<RecordingFormat>("flac");
+  const [exporting, setExporting] = useState(false);
+  const [error, setError] = useState("");
+  const complete = percent === 100;
+  async function exportRecording() {
+    setExporting(true);
+    setError("");
+    try { await exportAudio(format); }
+    catch (why) { setError(why instanceof Error ? why.message : "Couldn’t export the recording."); }
+    finally { setExporting(false); }
+  }
+
+  return <RecordingMeter view={view} percent={percent} label="Saved audio">
+    {({ id, close, trigger }) => <>
+      {track && <>
+        <RecordingTrack key={track.uri} {...track} page={view.document} />
+        <RecordingProgress id={`${id}-progress`} percent={percent} />
+      </>}
+      {message && <p role="status">{message}</p>}
+      <div className="ttml-recording-actions">
+        {start && <button type="button" onClick={start}><AudioLines size={15} aria-hidden="true" />Share Spotify audio</button>}
+        {stop && <button type="button" onClick={stop}><Square size={14} aria-hidden="true" />Stop sharing Spotify audio</button>}
+        {returnToSpotify && <button type="button" className="ttml-recording-return" onClick={() => {
+          returnToSpotify(); trigger?.focus(); close();
+        }}><RotateCcw size={15} aria-hidden="true" />Return to Spotify playback</button>}
+        {percent > 0 && recordingExportEnabled() && <div className="ttml-recording-export">
+          <label>
+            <select aria-label="Audio export format" value={format} disabled={exporting || deleting}
+              onChange={(event) => setFormat(event.currentTarget.value as RecordingFormat)}>
+              {Object.entries(recordingFormats).map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+            </select>
+            <ChevronDown size={14} aria-hidden="true" />
+          </label>
+          <button type="button" disabled={exporting || deleting} onClick={() => void exportRecording()}>
+            <Download size={15} aria-hidden="true" />{exporting ? "Exporting…" : complete ? "Export audio" : "Export section"}
+          </button>
+        </div>}
+        {error && <p className="ttml-recording-error" role="alert">{error}</p>}
+      </div>
+      <div className="ttml-recording-manage">
+        {percent > 0 && <button type="button" className="ttml-recording-delete" disabled={sharing || deleting || exporting} onClick={() => void remove()}>
+          <Trash2 size={15} aria-hidden="true" />{deleting ? "Deleting…" : "Delete recording"}
+        </button>}
+        {sharing && percent > 0 && <p>Stop sharing Spotify audio to delete this recording.</p>}
+        <button type="button" onClick={() => { close(); manageStoredData(trigger); }}>
+          <HardDrive size={15} aria-hidden="true" />Manage Stored Data<ChevronRight size={15} aria-hidden="true" />
+        </button>
+      </div>
+    </>}
+  </RecordingMeter>;
 }

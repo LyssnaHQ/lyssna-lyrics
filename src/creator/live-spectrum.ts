@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useCreatorEnvironment } from "./environment";
 import { hasLiveSpectrum, liveSpectrumCleared, liveSpectrumSaved, mergeLiveTile, readLiveTiles, type LiveTile } from "./spectrum-storage";
 
@@ -13,11 +13,6 @@ export function useLiveSpectrum(uri: string, canCapture: boolean) {
   const tiles = useRef(new Map<number, BufferedTile>());
   const visible = useRef({ first: 0, last: -1 });
   const revision = useRef(0);
-
-  useLayoutEffect(() => {
-    if (!canCapture) capture.stopManual(uri);
-    return () => capture.stopManual(uri);
-  }, [capture, uri, canCapture]);
 
   const mergeTiles = useCallback((loaded: LiveTile[], overwrite: boolean) => {
     for (const tile of loaded) {

@@ -1,3 +1,5 @@
+import { isRecordingComplete, withRecordingWrite } from "./captured-replay";
+
 export const LIVE_TILE_MS = 5_000;
 export const LIVE_SAMPLE_MS = 20;
 export const LIVE_COLUMNS = LIVE_TILE_MS / LIVE_SAMPLE_MS;
@@ -91,21 +93,25 @@ export function mergeLiveTile(target: LiveTile, update: LiveTile, overwrite: boo
   }
 }
 
-export async function saveLiveTiles(tiles: LiveTile[]) {
-  const db = await openSpectrum();
-  await new Promise<void>((resolve, reject) => {
-    const transaction = db.transaction("tiles", "readwrite");
-    transaction.oncomplete = () => resolve();
-    transaction.onabort = () => reject(transaction.error);
-    const store = transaction.objectStore("tiles");
-    for (const tile of tiles) {
-      const lookup = store.get([tile.uri, tile.index]);
-      lookup.onsuccess = () => {
-        const previous = lookup.result as LiveTile | undefined;
-        if (previous) mergeLiveTile(previous, tile, true);
-        store.put(previous ?? tile);
-      };
-    }
+export function saveLiveTiles(uri: string, duration: number, tiles: LiveTile[]) {
+  return withRecordingWrite(uri, async () => {
+    if (await isRecordingComplete(uri, duration)) return false;
+    const db = await openSpectrum();
+    await new Promise<void>((resolve, reject) => {
+      const transaction = db.transaction("tiles", "readwrite");
+      transaction.oncomplete = () => resolve();
+      transaction.onabort = () => reject(transaction.error);
+      const store = transaction.objectStore("tiles");
+      for (const tile of tiles) {
+        const lookup = store.get([uri, tile.index]);
+        lookup.onsuccess = () => {
+          const previous = lookup.result as LiveTile | undefined;
+          if (previous) mergeLiveTile(previous, tile, true);
+          store.put(previous ?? tile);
+        };
+      }
+    });
+    window.dispatchEvent(new CustomEvent(liveSpectrumSaved, { detail: tiles }));
+    return true;
   });
-  window.dispatchEvent(new CustomEvent(liveSpectrumSaved, { detail: tiles }));
 }

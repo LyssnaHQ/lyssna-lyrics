@@ -16,8 +16,8 @@ import { lyssnaInstallReady } from "../lyssna-api";
 import { CreatorEnvironment } from "./environment";
 import { couldBeComplete, recordedCoverage, recordingPercent, savedAudioCleared, type RecordingCoverage, type SavedRecording } from "./captured-replay";
 import { recordedAudioSaved, type SpotifyCapture } from "./spotify-capture";
-import { downloadRecording, recordingExportEnabled, type RecordingFormat } from "./recording-export";
-import { readRecordingMetadata } from "./recording-metadata";
+import { recordingExportEnabled, type RecordingFormat } from "./recording-export";
+import { exportSavedAudio } from "./recording-metadata";
 import { useCreatorPlaybar, usePreviewTransport } from "./playbar";
 import { useCreatorRepeat } from "./repeat";
 import { creatorPitchSpectrum, creatorSpectrum, creatorWaveform } from "./audio";
@@ -26,7 +26,6 @@ import { TtmlCreator } from "./ttml-creator";
 import { currentCreatorLyrics, within } from "./current-lyrics";
 import { dismissDraft } from "./ttml-working";
 import type { CreatorState, PlayerRequest, Track } from "./types";
-import { formatTime } from "./ttml-creator-model";
 import css from "./ttml-creator.css?inline";
 import meterCss from "./recording-meter.css?inline";
 
@@ -44,6 +43,7 @@ export type CreatorPlayback = {
   read(): number;
   seek(ms: number): void;
   toggle(): void;
+  returnToSpotify?(): void;
 };
 
 function creatorTrack(track: SpotifyTrack, duration: number): Track {
@@ -253,22 +253,12 @@ export function CreatorSurface({ host, view: owner, settings, close, reviewSelec
     player({ command: (element ? !element.paused : host.playing()) ? "pause" : "play" });
   }, [audioForSong, host, player]);
 
-  const playback = useMemo<CreatorPlayback | undefined>(() => audioForSong && current ? {
-    trackId: current.id, playing: isPlaying, read, toggle,
-    seek: (positionMs) => player({ command: "seek", positionMs }),
-  } : undefined, [audioForSong, current?.id, isPlaying, player, read, toggle]);
-  useLayoutEffect(() => {
-    if (!playback) return;
-    onLocalPlayback(playback);
-    return () => onLocalPlayback(undefined);
-  }, [playback, onLocalPlayback]);
   const stopLocalForSpotify = useCallback(() => {
     audioLoad.current++;
     audioElement.current?.pause();
     setSpotifyOnly(current?.uri);
     setAudio(undefined);
   }, [current?.uri]);
-  usePreviewTransport(view, host, previewing ? playback : undefined, stopLocalForSpotify);
 
   useLayoutEffect(() => {
     if (previewing && !audioForSong) return;
@@ -341,6 +331,21 @@ export function CreatorSurface({ host, view: owner, settings, close, reviewSelec
     clip.current = undefined;
   }, [host]);
   useLayoutEffect(() => returnToSpotify, [returnToSpotify]);
+  const releaseAudio = useCallback(() => {
+    setSpotifyOnly(current?.uri);
+    returnToSpotify();
+    setAudio(undefined);
+  }, [current?.uri, returnToSpotify]);
+  const playback = useMemo<CreatorPlayback | undefined>(() => audioForSong && current ? {
+    trackId: current.id, playing: isPlaying, read, toggle, returnToSpotify: audioForSong.replay ? releaseAudio : undefined,
+    seek: (positionMs) => player({ command: "seek", positionMs }),
+  } : undefined, [audioForSong, current?.id, isPlaying, player, read, toggle, releaseAudio]);
+  useLayoutEffect(() => {
+    if (!playback) return;
+    onLocalPlayback(playback);
+    return () => onLocalPlayback(undefined);
+  }, [playback, onLocalPlayback]);
+  usePreviewTransport(view, host, previewing ? playback : undefined, stopLocalForSpotify);
 
   const setSpeed = useCallback(async (speed: number) => {
     if (!audioElement.current || !audioForSong) return;
@@ -406,11 +411,7 @@ export function CreatorSurface({ host, view: owner, settings, close, reviewSelec
     const recording = fullRecording ?? await captured.read(current.uri, read(), duration);
     if (!recording) throw new Error("There’s no saved section to export.");
     const writers = seed?.uri === current.uri ? seed.lyrics?.songwriters : undefined;
-    const metadata = await readRecordingMetadata(host, track, writers);
-    const title = [metadata.tags.find(({ name }) => name === "TITLE")?.value,
-      metadata.tags.find(({ name }) => name === "ARTIST")?.value].filter(Boolean).join(" - ");
-    const name = recording.full ? title : `${title} [${formatTime(recording.startMs)}–${formatTime(recording.endMs)}]`;
-    await downloadRecording(recording.blob, name, format, metadata);
+    await exportSavedAudio(host, track, recording, format, writers);
   }
 
   const waveform = useCallback((uri: string, buckets: number) => creatorWaveform(host, uri, buckets,
@@ -433,12 +434,6 @@ export function CreatorSurface({ host, view: owner, settings, close, reviewSelec
     } catch {
       if (generation === audioLoad.current) notify("Couldn’t decode this audio file.", true);
     }
-  }
-
-  function releaseAudio() {
-    setSpotifyOnly(current?.uri);
-    returnToSpotify();
-    setAudio(undefined);
   }
 
   useLayoutEffect(() => {
@@ -493,8 +488,11 @@ export function CreatorSurface({ host, view: owner, settings, close, reviewSelec
       }} />}
     <div className="lyssna-creator-body">
       {root && portal && <CreatorEnvironment.Provider value={{ root, portal, view, read, capture, waveform, spectrogram,
-        recording: recordingAudio || recordedPercent !== undefined ? {
+        recording: current ? {
           percent: recordedPercent ?? 0, sharing: recordingAudio, deleting: deletingRecording, remove: removeRecording, exportAudio,
+          message: captureState.message || undefined,
+          start: !recordingAudio && !audioForSong && recordedPercent !== 100 ? () => void capture.start(current.uri) : undefined,
+          stop: recordingAudio ? () => void capture.stop() : undefined,
           returnToSpotify: audioForSong?.replay ? releaseAudio : undefined,
         } : undefined,
         playingFullRecording: !!audioForSong?.replay?.full,

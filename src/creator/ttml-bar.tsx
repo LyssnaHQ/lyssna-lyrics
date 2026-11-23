@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, ChevronRight, ChevronUp, Download, Gauge, HardDrive, Headphones, Pause, Play, RotateCcw, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronUp, Gauge, Headphones, Pause, Play } from "lucide-react";
 import { useCreatorEnvironment, type RecordingStatus } from "./environment";
-import { RecordingMeter, RecordingProgress, RecordingTrack } from "./recording-meter";
-import { recordingExportEnabled, recordingFormats, type RecordingFormat } from "./recording-export";
+import { RecordingDetails } from "./recording-meter";
 import { formatTime } from "./ttml-creator-model";
 import type { Track } from "./types";
 
@@ -47,63 +46,12 @@ export interface BarSpan {
   current: boolean;
 }
 
-function RecordingDetails({ track, percent, sharing, deleting, returnToSpotify, remove, exportAudio }: RecordingStatus & { track: Track }) {
-  const { view, manageStoredData } = useCreatorEnvironment();
-  const [format, setFormat] = useState<RecordingFormat>("flac");
-  const [exporting, setExporting] = useState(false);
-  const [error, setError] = useState("");
-  const cover = track.album.images.find(({ url }) => url)?.url;
-  const artists = track.artists.map(({ name }) => name).join(", ");
-  const complete = percent === 100;
-  async function exportRecording() {
-    setExporting(true);
-    setError("");
-    try { await exportAudio(format); }
-    catch (why) { setError(why instanceof Error ? why.message : "Couldn’t export the recording."); }
-    finally { setExporting(false); }
-  }
-
-  return <RecordingMeter view={view} percent={percent} label="Saved audio">
-    {({ id, close, trigger }) => <>
-      <RecordingTrack key={track.uri} name={track.name} artists={artists} cover={cover} page={view.document} />
-      <RecordingProgress id={`${id}-progress`} percent={percent} />
-      <div className="ttml-recording-actions">
-        {returnToSpotify && <button type="button" className="ttml-recording-return" onClick={() => {
-          returnToSpotify(); trigger?.focus(); close();
-        }}><RotateCcw size={15} aria-hidden="true" />Return to Spotify playback</button>}
-        {percent > 0 && recordingExportEnabled() && <div className="ttml-recording-export">
-          <label>
-            <select aria-label="Audio export format" value={format} disabled={exporting || deleting}
-              onChange={(event) => setFormat(event.currentTarget.value as RecordingFormat)}>
-              {Object.entries(recordingFormats).map(([id, label]) => <option key={id} value={id}>{label}</option>)}
-            </select>
-            <ChevronDown size={14} aria-hidden="true" />
-          </label>
-          <button type="button" disabled={exporting || deleting} onClick={() => void exportRecording()}>
-            <Download size={15} aria-hidden="true" />{exporting ? "Exporting…" : complete ? "Export audio" : "Export section"}
-          </button>
-        </div>}
-        {error && <p className="ttml-recording-error" role="alert">{error}</p>}
-      </div>
-      <div className="ttml-recording-manage">
-        {percent > 0 && <button type="button" className="ttml-recording-delete" disabled={sharing || deleting || exporting} onClick={() => void remove()}>
-          <Trash2 size={15} aria-hidden="true" />{deleting ? "Deleting…" : "Delete recording"}
-        </button>}
-        {sharing && percent > 0 && <p>Stop sharing Spotify audio to delete this recording.</p>}
-        <button type="button" onClick={() => { close(); manageStoredData(trigger); }}>
-          <HardDrive size={15} aria-hidden="true" />Manage Stored Data<ChevronRight size={15} aria-hidden="true" />
-        </button>
-      </div>
-    </>}
-  </RecordingMeter>;
-}
-
 export function TtmlBar({ position, duration, peaks, spans, onSeek, recording, track }: {
   position: number; duration: number; peaks: Uint8Array | null; spans: BarSpan[]; onSeek(ms: number): void;
   recording?: RecordingStatus;
   track: Track;
 }) {
-  const { view: window } = useCreatorEnvironment();
+  const { view: window, manageStoredData } = useCreatorEnvironment();
   const canvas = useRef<HTMLCanvasElement>(null);
   const [width, setWidth] = useState(0);
   const [dragging, setDragging] = useState<number | null>(null);
@@ -249,7 +197,9 @@ export function TtmlBar({ position, duration, peaks, spans, onSeek, recording, t
         }}
       />
       <span className="ttml-bar-time">{formatTime(duration)}</span>
-      {recording && <RecordingDetails track={track} {...recording} />}
+      {recording && <RecordingDetails view={window} track={{ uri: track.uri, name: track.name,
+        artists: track.artists.map(({ name }) => name).join(", "), cover: track.album.images.find(({ url }) => url)?.url }}
+        manageStoredData={manageStoredData} {...recording} />}
     </div>
   );
 }
