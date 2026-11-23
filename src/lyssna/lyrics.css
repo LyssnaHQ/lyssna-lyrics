@@ -1765,10 +1765,8 @@
 .gravity-links stop {
   stop-color: var(--highlighter-ink);
 }
-/* In Space Gravity the connecting lines carry the pen on from each word,
-   so lead words drop the pen tip; backing vocals, which have no lines,
-   keep it, as do all words with the lines turned off. */
-.gravity-lyrics.linked .gravity-word:not(.background) .highlighter-tip {
+/* Lead words and backing words with an outgoing trail use the line as their pen tip. */
+.gravity-lyrics.linked .gravity-word:is(:not(.background), [data-backing-trail]) .highlighter-tip {
   display: none;
 }
 /* Lyrics popout window, after Spicy Lyrics' popup lyrics: lyrics over the

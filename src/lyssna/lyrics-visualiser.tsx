@@ -41,19 +41,27 @@ export function LyricsVisualiser({
     let checked = 0;
     let lit = false;
     let drawnAt = 0;
+    let cssWidth = 0;
+    let cssHeight = 0;
+    // Reading clientWidth during animation forces pending lyric styles to flush.
+    const observer = new ResizeObserver(([entry]) => {
+      cssWidth = entry.contentRect.width;
+      cssHeight = entry.contentRect.height;
+    });
+    observer.observe(element);
     let frame = view.requestAnimationFrame(function draw(time) {
       frame = view.requestAnimationFrame(draw);
       if (time - sampled >= 32) { sampled = time; poll(); }
       if (!lit && !targets.some((target) => target > 0)) return;
       const ratio = Math.min(2, view.devicePixelRatio || 1);
-      const width = Math.round(element.clientWidth * ratio);
-      const height = Math.round(element.clientHeight * ratio);
+      const width = Math.round(cssWidth * ratio);
+      const height = Math.round(cssHeight * ratio);
+      if (!width || !height) return;
       const resized = element.width !== width || element.height !== height;
       if (resized) {
         element.width = width;
         element.height = height;
       }
-      if (!width || !height) return;
       if (!colour || time - checked > 500) {
         colour = view.getComputedStyle(element).color;
         checked = time;
@@ -88,6 +96,7 @@ export function LyricsVisualiser({
       context.fill();
     });
     return () => {
+      observer.disconnect();
       view.cancelAnimationFrame(frame);
       if (motion.current === surface) motion.current = null;
       context.clearRect(0, 0, element.width, element.height);

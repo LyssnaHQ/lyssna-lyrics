@@ -442,8 +442,11 @@ export function step(
         const a = bodies[index],
           b = bodies[other];
         let dx = a.x - b.x,
-          dy = a.y - b.y,
-          distance = Math.hypot(dx, dy);
+          dy = a.y - b.y;
+        const reach = a.radius + b.radius + GRAVITY.separationGap;
+        const squaredDistance = dx * dx + dy * dy;
+        if (squaredDistance >= reach * reach) continue;
+        let distance = Math.sqrt(squaredDistance);
         if (distance < 0.001) {
           const angle =
             random(
@@ -457,8 +460,6 @@ export function step(
           dy = Math.sin(angle) * 0.001;
           distance = 0.001;
         }
-        const reach = a.radius + b.radius + GRAVITY.separationGap;
-        if (distance >= reach) continue;
         const nudge =
           ((reach - distance) / reach) * GRAVITY.separationAcceleration * delta;
         a.vx += (dx / distance) * nudge;
