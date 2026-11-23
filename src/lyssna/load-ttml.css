@@ -562,12 +562,12 @@
 }
 
 .lyssna-first-upload::backdrop {
-  background: light-dark(#fafafac4, #050505c4);
+  background: #050505c4;
   backdrop-filter: blur(12px);
 }
 
 .lyssna-first-upload.liquid-glass::backdrop {
-  background: light-dark(#ffffff4d, #0000004d);
+  background: #0000004d;
   backdrop-filter: none;
 }
 
