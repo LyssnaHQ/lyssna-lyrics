@@ -2164,13 +2164,6 @@
 .ttml-creator.with-playbar .review-panel {
   bottom: 34px;
 }
-.lyssna-lyrics-view.lyssna-review-queue-host {
-  position: fixed;
-  inset: 64px 8px 96px auto;
-  width: min(380px, calc(100vw - 16px));
-  overflow: visible;
-  background: transparent;
-}
 .review-panel.review-queue-standalone {
   box-sizing: border-box;
   inset: 0;

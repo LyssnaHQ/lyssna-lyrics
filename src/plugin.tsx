@@ -61,6 +61,7 @@ import desktopCss from "./lyssna/lyrics.css?inline";
 import settingsCss from "./lyssna/settings.css?inline";
 import ttmlCss from "./lyssna/load-ttml.css?inline";
 import viewCss from "./view.css?inline";
+import creatorCss from "./creator/ttml-creator.css?inline";
 import meterCss from "./creator/recording-meter.css?inline";
 
 function useLiveSettings() {
@@ -1290,8 +1291,13 @@ export default function start(options: BuildOptions) {
     }
     const container = document.createElement("div");
     container.className = "lyssna-lyrics-view lyssna-review-queue-host";
+    const shadow = container.attachShadow({ mode: "open" });
+    const style = document.createElement("style");
+    style.textContent = creatorCss;
+    const panel = document.createElement("div");
+    shadow.append(style, panel);
     document.body.append(container);
-    const root = host.mount(container);
+    const root = host.mount(panel);
     dismissReviewQueue = () => {
       dismissReviewQueue = undefined;
       root.unmount();

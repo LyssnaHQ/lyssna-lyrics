@@ -152,6 +152,15 @@ html.lyssna-optimize-volume .main-nowPlayingBar-volumeBar .playback-progressbar-
 .lyssna-review-topbar[aria-pressed="true"] {
   color: var(--text-bright-accent, #1ed760);
 }
+
+.lyssna-lyrics-view.lyssna-review-queue-host {
+  position: fixed;
+  inset: 64px 8px 96px auto;
+  width: min(380px, calc(100vw - 16px));
+  overflow: visible;
+  background: transparent;
+}
+
 .lyssna-playbar-button[aria-pressed="true"] {
   position: relative;
   color: var(--spice-button, #1ed760);
