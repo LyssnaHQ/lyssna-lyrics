@@ -610,6 +610,7 @@ export function TtmlCreator({
   const isSpace = (at: Cursor) =>
     spaces.some((each) => each.line === at.line && each.unit === at.unit);
   const pickSpace = (event: ReactMouseEvent, at: Cursor) => {
+    setPicked(new Set());
     if (event.shiftKey || event.ctrlKey || event.metaKey)
       return setSpaces(
         isSpace(at)
@@ -622,6 +623,7 @@ export function TtmlCreator({
     setGroup([]);
   };
   const pickWord = (at: Cursor, range: boolean) => {
+    setPicked(new Set());
     const start = at;
     const base = group.length ? group : [cursor];
     if (range) {
@@ -769,6 +771,8 @@ export function TtmlCreator({
   const pickedFrom = useRef(0);
   useEffect(() => setPicked(new Set()), [lines.length, track]);
   const pick = (index: number, range: boolean) => {
+    setGroup([]);
+    setSpaces([]);
     const anchor = picked.size ? pickedFrom.current : cursor.line;
     const [from, to] = [anchor, index].sort((a, b) => a - b);
     pickedFrom.current = index;
@@ -779,8 +783,7 @@ export function TtmlCreator({
       return next;
     });
   };
-  // Like AMLL: Ctrl-click adds or removes a line, Shift-click adds a range,
-  // and a plain click on a line's empty space drops the selection.
+  // Ctrl-click adds or removes a line and Shift-click adds a range.
   const pickProps = (index: number) => ({
     onMouseDown: (event: ReactMouseEvent) => {
       if (event.shiftKey || event.ctrlKey || event.metaKey)
@@ -796,11 +799,7 @@ export function TtmlCreator({
         event.preventDefault();
         event.stopPropagation();
         pick(index, event.shiftKey);
-      } else if (
-        picked.size &&
-        !(event.target as Element).closest("button, input, textarea")
-      )
-        setPicked(new Set());
+      }
     },
   });
   const flagLine = (index: number, key: "background" | "opposite") =>
@@ -1318,6 +1317,12 @@ export function TtmlCreator({
       const ctrl = IS_MAC ? event.metaKey : event.ctrlKey;
       const key = event.key.toLowerCase();
       const erase = event.key === "Delete" || event.key === "Backspace";
+      // Holding Delete after removing a line must not erase the next word.
+      if (!ctrl && event.key === "Delete" && event.repeat) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
       const words = groupRef.current,
         gaps = spacesRef.current;
       const linesPicked = pickedRef.current.size > 0 && !words.length;
@@ -2571,24 +2576,17 @@ export function TtmlCreator({
                   className={`ttml-card ttml-line${VOICE_CLASS[lineVoice(lines, lineIndex)] ?? ""}${line.background ? " background" : ""}${line.opposite ? " opposite" : ""}${cursor.line === lineIndex ? " current" : ""}${line.units.length ? "" : " empty"}${playingLine === lineIndex || liveWords.singing.has(lineIndex) ? " playing" : ""}${picked.has(lineIndex) ? " picked" : ""}${drag?.kind === "line" && drag.line === lineIndex ? " dragging" : ""}${dropClass(`line:${lineIndex}`)}`}
                   onClick={(event) => {
                     const target = event.target as Element;
-                    if (
-                      cursor.line !== lineIndex &&
-                      !target.closest("button, input")
-                    ) {
+                    if (target.closest("button, input, textarea")) return;
+                    if (cursor.line !== lineIndex) {
                       clickedLine.current = true;
                       setCursor(
                         clampCursor(lines, { line: lineIndex, unit: 0 }),
                       );
                     }
-                    if (
-                      target.closest(".ttml-card-number") &&
-                      !event.shiftKey &&
-                      !event.ctrlKey &&
-                      !event.metaKey
-                    ) {
-                      pickedFrom.current = lineIndex;
-                      setPicked(new Set([lineIndex]));
-                    }
+                    setGroup([]);
+                    setSpaces([]);
+                    pickedFrom.current = lineIndex;
+                    setPicked(new Set([lineIndex]));
                   }}
                   onPointerDown={(event) => {
                     event.currentTarget.draggable = !(
