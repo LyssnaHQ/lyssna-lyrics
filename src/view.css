@@ -1,3 +1,40 @@
+html.lyssna-optimize-volume .main-nowPlayingBar-volumeBar .playback-progressbar-isInteractive [data-testid="progress-bar"] {
+  touch-action: none;
+}
+
+.main-nowPlayingBar-volumeBar [data-lyssna-volume-preview] .x-progressBar-fillColor {
+  transform: translateX(calc(var(--lyssna-volume-preview) - 100%));
+  transition: none;
+}
+
+.main-nowPlayingBar-volumeBar [data-lyssna-volume-dragging] .x-progressBar-fillColor {
+  background-color: var(--is-active-fg-color, #1db954);
+}
+
+.main-nowPlayingBar-volumeBar [data-lyssna-volume-preview] [data-testid="progress-bar-handle"] {
+  left: 0;
+  transform: translate3d(var(--lyssna-volume-thumb), -50%, 0);
+  transition: none;
+}
+
+.main-nowPlayingBar-volumeBar [data-lyssna-volume-dragging] [data-testid="progress-bar-handle"] {
+  display: flex;
+}
+
+.main-nowPlayingBar-volumeBar [data-lyssna-volume-dragging] .x-progressBar-progressFillColor {
+  visibility: hidden;
+}
+
+.main-nowPlayingBar-volumeBar [data-lyssna-volume-dragging][data-testid="progress-bar"] {
+  cursor: grabbing;
+}
+
+.main-nowPlayingBar-volumeBar > :has([data-lyssna-volume-dragging]) {
+  opacity: 1;
+  pointer-events: auto;
+  transition: none;
+}
+
 .lyssna-lyrics-view {
   position: absolute;
   inset: 0;

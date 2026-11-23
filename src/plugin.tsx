@@ -32,6 +32,8 @@ import { useDefaultLyricsFont } from "./lyrics-font-fallback";
 import { clock, usePlayback, usePlaybackControls, usePosition } from "./playback";
 import { LyricsPopout, pictureInPicture } from "./popout";
 import { startEnhancements } from "./enhancements";
+import { getSetting, subscribeSettings } from "./enhancements/config";
+import { startVolumeDragController } from "./enhancements/features/volumeDrag";
 import { startPreferenceSync } from "./preference-sync";
 import { playbarViewButtons } from "./playbar-fullscreen";
 import { findPlaybarControls } from "./playbar-controls";
@@ -1155,6 +1157,7 @@ export default function start(options: BuildOptions) {
   const stopProfileSettings = host.profileSettings(openProfileSettings);
   reviewButton = reviewTopbar(host, () => void open("review"), closeReview);
   const stopEnhancementStartup = startEnhancements(host);
+  const stopVolumeDrag = startVolumeDragController(host);
   keepTemporaryLyricsFor(host.track()?.id);
   const stopTemporaryTrack = host.watch(() => keepTemporaryLyricsFor(host.track()?.id));
   const stopLyssnaListens = trackLyssnaListens(host);
@@ -1259,7 +1262,25 @@ export default function start(options: BuildOptions) {
     sidebarArtwork.sync(panel, sidebarCover);
     syncSpotifyMotion?.(panel);
   }
-  const observer = new MutationObserver(syncHost);
+  let groupHostUpdates = getSetting("enhanceSpotifyPerformance");
+  let hostSyncFrame = 0;
+  const stopHostUpdateSettings = subscribeSettings(() => {
+    groupHostUpdates = getSetting("enhanceSpotifyPerformance");
+    if (!groupHostUpdates && hostSyncFrame) {
+      window.cancelAnimationFrame(hostSyncFrame);
+      hostSyncFrame = 0;
+      syncHost();
+    }
+  });
+  const observer = new MutationObserver((records) => {
+    if (!groupHostUpdates) return syncHost();
+    if (hostSyncFrame || records.every(({ target }) =>
+      target instanceof Element && target.closest(".lyssna-lyrics-view"))) return;
+    hostSyncFrame = window.requestAnimationFrame(() => {
+      hostSyncFrame = 0;
+      syncHost();
+    });
+  });
   observer.observe(document.body, { childList: true, subtree: true });
   const stopCreatorRepeatRecovery = startCreatorRepeatRecovery(host);
   syncHost();
@@ -1270,6 +1291,9 @@ export default function start(options: BuildOptions) {
       stopCreatorRepeatRecovery();
       stopReleaseNotices();
       observer.disconnect();
+      window.cancelAnimationFrame(hostSyncFrame);
+      stopHostUpdateSettings();
+      stopVolumeDrag();
       stopViewSwitch();
       removeCard?.();
       backdrop?.dispose();

@@ -4,16 +4,18 @@
  * Lyssna is the fork's Lyssna preset: these defaults on the tuned curves.
  * Legacy is Lyssna's earlier animation. Custom applies edited values. */
 
-export type AnimatorPreset = "Lyssna" | "Legacy" | "Custom";
+export type AnimatorPreset = "Lyssna" | "Legacy" | "Bouncy" | "Custom";
 export type AnimatorDetail = "Basic" | "Advanced" | "Full" | "Full + Extras";
 export const ANIMATOR_PRESETS: AnimatorPreset[] = [
   "Lyssna",
   "Legacy",
+  "Bouncy",
   "Custom",
 ];
 export const ANIMATOR_PRESET_LABELS: Record<AnimatorPreset, string> = {
   Lyssna: "Lyssna (Default)",
   Legacy: "Lyssna (Legacy)",
+  Bouncy: "Bouncy Lyrics",
   Custom: "Custom",
 };
 export const ANIMATOR_DETAILS: AnimatorDetail[] = [
@@ -234,6 +236,16 @@ export const LEGACY_ANIMATOR_VALUES: Readonly<AnimatorValues> = Object.freeze({
   glowFrequency: 1.18,
   glowDamping: 0.56,
 });
+const BOUNCY_ANIMATOR_VALUES: Readonly<AnimatorValues> = Object.freeze({
+  ...ANIMATOR_DEFAULTS,
+  wordPeakScale: 1.2,
+  letterPeakScale: 1.5,
+  verticalStrength: 15,
+  scaleFrequency: 4,
+  scaleDamping: 0.28,
+  verticalFrequency: 4,
+  verticalDamping: 0.28,
+});
 const parameter = (id: AnimatorParameterId) =>
   ANIMATOR_PARAMETERS.find((entry) => entry.id === id)!;
 /** Clamps a typed value to its bounds at four decimals. */
@@ -286,12 +298,12 @@ export function animatorValues(
   settings: AnimatorSettings = {},
 ): AnimatorValues {
   const preset = presetOf(settings);
-  return preset === "Legacy"
-    ? { ...LEGACY_ANIMATOR_VALUES }
-    : {
-        ...ANIMATOR_DEFAULTS,
-        ...(preset === "Custom" ? cleanAnimatorValues(settings.custom) : {}),
-      };
+  if (preset === "Legacy") return { ...LEGACY_ANIMATOR_VALUES };
+  if (preset === "Bouncy") return { ...BOUNCY_ANIMATOR_VALUES };
+  return {
+    ...ANIMATOR_DEFAULTS,
+    ...(preset === "Custom" ? cleanAnimatorValues(settings.custom) : {}),
+  };
 }
 /** Unsung text rests at full size under every preset, as the fork's Lyssna
  *  preset. Upstream rests it at 0.95, but words shrunk toward their own centres open wide

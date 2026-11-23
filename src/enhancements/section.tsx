@@ -6,6 +6,9 @@ import { externalEnhancementOwner } from "./index";
 
 type ToggleDefinition = { key: EnhancementKey; label: string; description?: string };
 const groups: { title: string; settings: ToggleDefinition[] }[] = [
+  { title: "Performance", settings: [
+    { key: "enhanceSpotifyPerformance", label: "Enhance Spotify Performance", description: "Keep volume drags responsive and group playbar and sidebar updates." },
+  ] },
   { title: "Profile menu", settings: [
     { key: "hideYourUpdatesSection", label: 'Hide “Your Updates”' },
     { key: "hideHomeConfigMenuItem", label: "Hide Home Config" },

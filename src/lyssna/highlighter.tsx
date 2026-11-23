@@ -538,7 +538,8 @@ const queued = new Map<object, () => () => void>();
 let flushing = 0;
 function batched(key: object, read: () => () => void) {
   queued.set(key, read);
-  flushing ||= requestAnimationFrame(() => {
+  if (flushing) return;
+  flushing = requestAnimationFrame(() => {
     flushing = 0;
     const jobs = [...queued.values()];
     queued.clear();
@@ -548,7 +549,7 @@ function batched(key: object, read: () => () => void) {
 
 function cancelBatched(key: object) {
   queued.delete(key);
-  if (!queued.size) {
+  if (flushing && !queued.size) {
     cancelAnimationFrame(flushing);
     flushing = 0;
   }
@@ -583,6 +584,7 @@ export const HighlighterWords = memo(function HighlighterWords({
     // The pen glides after the song's position instead of snapping to it.
     pen = useRef({ path: 0, at: 0, drawn: false }),
     redraw = useRef<() => void>(() => {}),
+    resetInk = useRef<() => void>(() => {}),
     latest = useRef(time);
   latest.current = time;
   const seed = line.start_ms % 997;
@@ -625,34 +627,23 @@ export const HighlighterWords = memo(function HighlighterWords({
     };
     const step = () => batched(element, read);
     redraw.current = step;
-    // Upcoming floating words need an anchor before the pen arrives.
-    if (time === -Infinity) {
+    resetInk.current = () => {
+      cancelBatched(element);
       if (floating) highlighterAnchors.delete(floating);
-      sheet.replaceChildren();
+      if (sheet.hasChildNodes()) sheet.replaceChildren();
       state.path = 0;
       state.at = 0;
       state.drawn = false;
       if (floating) step();
-    } else {
-      // The animator writes transforms before this batch paints.
-      step();
-    }
-    return () => {
-      cancelBatched(element);
     };
-  }, [pieces, time, seed]);
-  // Rows move when the window or text size changes.
-  useLayoutEffect(() => {
-    const element = root.current;
-    if (!element) return;
-    const floating = element.closest<HTMLElement>(".gravity-word");
+    // Rows move when the window or text size changes.
     const observer = new ResizeObserver(() => {
       layout.current = undefined;
-      if (floating || latest.current !== -Infinity) redraw.current();
+      if (floating || latest.current !== -Infinity) step();
     });
     observer.observe(element);
     const moving = new MutationObserver(() => {
-      if (latest.current !== -Infinity) redraw.current();
+      if (latest.current !== -Infinity) step();
     });
     for (const piece of element.querySelectorAll(".highlighter-piece")) {
       moving.observe(piece, { attributes: true, attributeFilter: ["style"] });
@@ -665,6 +656,11 @@ export const HighlighterWords = memo(function HighlighterWords({
       layout.current = undefined;
     };
   }, [pieces, seed]);
+  useLayoutEffect(() => {
+    // Upcoming floating words need an anchor before the pen arrives.
+    if (time === -Infinity) resetInk.current();
+    else redraw.current();
+  }, [pieces, time, seed]);
   return (
     <span className="highlighter-words" ref={root}>
       <span className="highlighter-ink" aria-hidden="true" ref={ink} />

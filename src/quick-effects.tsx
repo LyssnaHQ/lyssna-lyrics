@@ -1,5 +1,5 @@
 import { useId, useLayoutEffect, useRef, useState } from "react";
-import { Ban, CaseLower, CaseSensitive, CaseUpper, ChartNoAxesColumn, ChevronDown, History, Shuffle, SlidersHorizontal, Sparkles, Type } from "lucide-react";
+import { ArrowUpDown, Ban, CaseLower, CaseSensitive, CaseUpper, ChartNoAxesColumn, ChevronDown, History, Shuffle, SlidersHorizontal, Sparkles, Type } from "lucide-react";
 import { useAnchoredPopover } from "./anchored-popover";
 import { FontControl } from "./font-settings";
 import { ANIMATOR_PRESETS, ANIMATOR_PRESET_LABELS, choosePreset, presetOf } from "./lyssna/animator-tuning";
@@ -49,7 +49,7 @@ export const quickEffects = [
 export type QuickEffectChoice = Extract<(typeof quickEffects)[number], { kind: "picker" }>;
 
 const choiceIcons = {
-  Lyssna: Sparkles, Legacy: History, Custom: SlidersHorizontal,
+  Lyssna: Sparkles, Legacy: History, Bouncy: ArrowUpDown, Custom: SlidersHorizontal,
   off: Ban, gibberish: Shuffle, lower: CaseLower, upper: CaseUpper,
 };
 

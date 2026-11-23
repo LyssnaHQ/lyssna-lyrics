@@ -5,6 +5,7 @@ const storageKey = "lyssna-lyrics.rewrite-enhancements.v1";
 const folderKey = "lyssna-lyrics.rewrite-playlist-folders.v1";
 
 const defaults = {
+  enhanceSpotifyPerformance: true,
   hideYourUpdatesSection: true,
   hideHomeConfigMenuItem: true,
   hideAccountMenuItem: true,
