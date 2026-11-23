@@ -9,12 +9,12 @@
   background: light-dark(#fafafac4, #050505c4);
   backdrop-filter: blur(12px);
   color: light-dark(#000, #fff);
-  --glass-shadow: 0 25px 120px #0007;
-  --glass-fill-strong: light-dark(#e1e1dcef, #1e1e23ef);
 }
 
 
 .dialog.load-ttml {
+  --glass-shadow: 0 25px 120px #0007;
+  --glass-fill-strong: light-dark(#e1e1dcef, #1e1e23ef);
   width: min(100% - 48px, 720px);
   box-sizing: border-box;
   min-width: 0;
@@ -24,7 +24,7 @@
   border-radius: 16px;
   border: 1px solid light-dark(#00000015, #ffffff15);
   background: light-dark(#e3ebebf2, #1c1414f2);
-  box-shadow: 0 25px 120px #0007;
+  box-shadow: var(--glass-shadow);
 }
 .load-ttml button { border: 0; cursor: pointer; }
 .load-ttml button:disabled { opacity: 0.45; cursor: default; }
@@ -69,7 +69,7 @@
   gap: 8px;
   flex-shrink: 0;
 }
-.load-ttml-actions button {
+.load-ttml-actions :is(button, a) {
   display: inline-flex;
   align-items: center;
   gap: 7px;
@@ -79,10 +79,11 @@
   font-size: 12.5px;
   font-weight: 500;
   color: light-dark(#000, #fff);
+  text-decoration: none;
   background: light-dark(#0000000f, #ffffff0f);
   box-shadow: inset 0 0 0 1px #ffffff1f;
 }
-.load-ttml-actions button:hover,
+.load-ttml-actions :is(button, a):hover,
 .load-ttml-mode:hover {
   background: light-dark(#0000001a, #ffffff1a);
   box-shadow: inset 0 0 0 1px #ffffff33;
@@ -521,18 +522,20 @@
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
-.load-ttml-backdrop.liquid-glass .dialog.load-ttml {
+.load-ttml-backdrop.liquid-glass .dialog.load-ttml,
+.dialog.load-ttml.lyssna-first-upload.liquid-glass {
   background: light-dark(#e1e1dc80, #1e1e2380);
   -webkit-backdrop-filter: blur(40px) saturate(180%);
   backdrop-filter: blur(40px) saturate(180%);
   box-shadow: var(--glass-shadow);
   border: 1px solid light-dark(#0000001f, #ffffff1f);
 }
-.load-ttml-backdrop.liquid-glass .load-ttml-head {
+:is(.load-ttml-backdrop, .lyssna-first-upload).liquid-glass .load-ttml-head {
   border-bottom-color: light-dark(#0000001f, #ffffff1f);
 }
 @media (prefers-reduced-transparency: reduce) {
-  .load-ttml-backdrop.liquid-glass .dialog.load-ttml {
+  .load-ttml-backdrop.liquid-glass .dialog.load-ttml,
+  .dialog.load-ttml.lyssna-first-upload.liquid-glass {
     background: var(--glass-fill-strong);
   }
 }
@@ -548,4 +551,42 @@
 @container (max-width: 440px) {
   .dialog.load-ttml { width: 100%; }
   .load-ttml-body { padding-inline: 14px; }
+}
+
+.dialog.load-ttml.lyssna-first-upload {
+  inset: 0;
+  width: min(500px, calc(100% - 32px));
+  max-height: min(85vh, calc(100% - 32px));
+  margin: auto;
+  color: inherit;
+}
+
+.lyssna-first-upload::backdrop {
+  background: light-dark(#fafafac4, #050505c4);
+  backdrop-filter: blur(12px);
+}
+
+.lyssna-first-upload.liquid-glass::backdrop {
+  background: light-dark(#ffffff4d, #0000004d);
+  backdrop-filter: none;
+}
+
+.lyssna-first-upload .first-upload-copy {
+  display: block;
+  margin: 0 0 14px;
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.lyssna-first-upload .first-upload-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.first-upload-actions > a {
+  margin-inline-end: auto;
+}
+
+.first-upload-actions button[value="upload"] svg {
+  color: #1ed760;
 }

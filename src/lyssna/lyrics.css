@@ -1185,17 +1185,11 @@
 .lyrics-toolbar .icon-button.active {
   color: light-dark(#000, #fff);
 }
-/* Wide lyrics: the toolbar sits over the cover-art side and follows the
-   artwork when it is flipped, as it does with Canvas. */
+/* Keep the toolbar at the same edge when the artwork and lyrics swap. */
 .lyrics-page:not(.narrow):not(.no-artwork):not(.canvas-lyrics)
   > .lyrics-toolbar {
   left: 16px;
   right: auto;
-}
-.lyrics-page.artwork-right:not(.narrow):not(.no-artwork):not(.canvas-lyrics)
-  > .lyrics-toolbar {
-  left: auto;
-  right: 16px;
 }
 .toolbar-divider {
   align-self: center;
@@ -1358,18 +1352,12 @@
   }
 }
 /* View controls at the bottom: outside full screen the toolbar moves to the
-   bottom corner of the lyrics side, clear of the song details. */
+   bottom corner. */
 .application:not(.immersive) .lyrics-page.toolbar-bottom > .lyrics-toolbar {
   top: auto;
   bottom: 14px;
   left: auto;
   right: 16px;
-}
-.application:not(.immersive)
-  .lyrics-page.toolbar-bottom.artwork-right:not(.narrow):not(.no-artwork)
-  > .lyrics-toolbar {
-  left: 16px;
-  right: auto;
 }
 .application:not(.immersive) .lyrics-page.narrow.toolbar-bottom > .lyrics-toolbar {
   bottom: 12px;

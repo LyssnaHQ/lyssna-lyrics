@@ -620,7 +620,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
   }, [showCreator]);
   const fonts = appFontStyles(settings);
   const artwork = narrating ? DJ_COVER : track?.cover;
-  const { confirmFirstUpload, firstUploadNotice } = useFirstUploadNotice(fonts);
+  const { confirmFirstUpload, firstUploadNotice } = useFirstUploadNotice(fonts, settings.liquid_glass);
   const coverColour = useArtworkColor(artwork);
   const hideArtwork = settings.lyrics_hide_artwork && !coverOnly;
   const canvasEnabled = settings.canvas_lyrics && !hideArtwork && !coverOnly;
@@ -813,7 +813,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
     const page = lyricsPage.current;
     if (!page || compact || hideArtwork || coverOnly || settings.reduce_motion || view.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     const artwork = canvas ? ".lyrics-canvas-cover, .lyrics-details" : ".lyrics-album";
-    const elements = page.querySelectorAll<HTMLElement>(`${artwork}, .lyrics-body, .lyrics-toolbar, :scope > .lyrics-fullscreen-controls`);
+    const elements = page.querySelectorAll<HTMLElement>(`${artwork}, .lyrics-body, :scope > .lyrics-fullscreen-controls`);
     swapStart.current = new Map(Array.from(elements, (element) => [element, element.getBoundingClientRect()]));
   }
   return <>
