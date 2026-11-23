@@ -2,7 +2,7 @@ import type { CSSProperties } from "react";
 import { AnimatorPresetRow } from "./animator-settings";
 import { DEFAULT_MARKER, MARKER_COLOURS } from "./highlighter";
 import { SettingRow, Toggle } from "./setting-row";
-import type { Settings } from "../settings";
+import { defaults, gravityDensityRange, type Settings } from "../settings";
 type KeysOf<T> = { [K in keyof Settings]: Settings[K] extends T ? K : never }[keyof Settings];
 type Flag = KeysOf<boolean>;
 type Amount = KeysOf<number>;
@@ -319,6 +319,16 @@ return { flag, range, Look: [
           "Space Gravity",
           "Words float in zero gravity, drift as they're sung and react when you move the window.",
           "gravity float",
+        ),
+        range(
+          "gravity_word_density",
+          "Word density",
+          "Adjust how many words float around the current line.",
+          "space gravity float words density fewer more",
+          gravityDensityRange,
+          defaults.gravity_word_density,
+          "%",
+          !settings.space_gravity,
         ),
         flag(
           "lyrics_highlighter",

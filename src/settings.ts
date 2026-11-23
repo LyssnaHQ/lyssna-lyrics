@@ -3,6 +3,7 @@ import type { WordFilter } from "./lyssna/word-filter";
 
 export const spotifyMix = "Spotify Mix";
 export const maxBackgroundBrightness = 150;
+export const gravityDensityRange: [number, number, number] = [50, 150, 5];
 export const defaults = {
   theme: "dark" as "dark" | "light" | "system",
   liquid_glass: false,
@@ -53,6 +54,7 @@ export const defaults = {
   lyrics_discord_usernames: false,
   lyrics_word_filter: "off" as WordFilter,
   space_gravity: false,
+  gravity_word_density: 100,
   lyrics_highlighter: false,
   pinned_lyric_effects: [] as string[],
   lyrics_highlighter_color: "#d4b80f",
@@ -115,6 +117,10 @@ export function readSettings(): Settings {
     const brightness = settings.lyrics_background_brightness;
     settings.lyrics_background_brightness = Number.isFinite(brightness)
       ? Math.max(0, Math.min(maxBackgroundBrightness, Math.round(brightness))) : defaults.lyrics_background_brightness;
+    const density = settings.gravity_word_density;
+    const [min, max, step] = gravityDensityRange;
+    settings.gravity_word_density = Number.isFinite(density)
+      ? Math.max(min, Math.min(max, Math.round(density / step) * step)) : defaults.gravity_word_density;
     const animator = settings.lyrics_animator;
     settings.lyrics_animator = animator ? {
       ...animator,

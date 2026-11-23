@@ -645,12 +645,14 @@ export function SpaceGravityLyrics({
   onSeek,
   credits,
   highlighter,
+  wordDensity,
   linkWidth = 1,
   visualiser,
 }: {
   lyrics: Lyrics;
   time: number;
   reduceMotion: boolean;
+  wordDensity: number;
   /** The Highlighter's ink colour: each word gets its pen instead of the
    *  usual sweep. */
   highlighter?: string;
@@ -674,7 +676,8 @@ export function SpaceGravityLyrics({
   const waitKey = gap ? `wait:${gap.start}:${gap.end}` : "";
   const stage = useRef<HTMLDivElement>(null);
   // Lead words that fit the free play area; measured by the frame loop.
-  const [count, setCount] = useState<number>(GRAVITY.minVisibleWords);
+  const [baselineCount, setBaselineCount] = useState<number>(GRAVITY.minVisibleWords);
+  const count = Math.round(baselineCount * wordDensity / 100);
   const visible = visibleGravity(prepared, time, count);
   const visibleKeys = visible.map((entity) => entity.key).join("|");
   // Each departing batch keeps its own fade, even when more words leave.
@@ -822,7 +825,7 @@ export function SpaceGravityLyrics({
         lastCanvas = canvas;
         field = measureField(element, canvas);
         const next = visibleWordCount(field);
-        setCount((current) => (current === next ? current : next));
+        setBaselineCount(next);
       }
       if (field.bounds.width < 1 || field.bounds.height < 1) return;
       const { visible, prepared, reduceMotion, waitKey } = live.current;

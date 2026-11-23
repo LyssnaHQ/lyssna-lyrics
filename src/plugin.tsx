@@ -189,6 +189,7 @@ function TrackLyrics({ track, host, playing, settings, compact = false, view = w
   if (gravity && rendered?.synced && rendered.lines.some((line) => line.words.length)) {
     return <div className={fontClass} style={{ display: "contents" }}><span ref={playMarker} hidden /><SpaceGravityLyrics lyrics={rendered} time={time} reduceMotion={settings.reduce_motion}
       tuning={settings.lyrics_animator} visualiser={visualiser} onSeek={(ms) => seek(ms - (playing && settings.lyrics_seek_compensation ? 300 : 0))}
+      wordDensity={settings.gravity_word_density}
       highlighter={settings.lyrics_highlighter ? markerColour(settings.lyrics_highlighter_color) : undefined}
       linkWidth={settings.gravity_links ? settings.gravity_link_width / 100 : 0}
       credits={<div className={upNext ? "lyric-credits-row" : undefined}>
