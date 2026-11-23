@@ -411,6 +411,12 @@ function trailCurve(link: TrailLink, a: TrailPose, b: TrailPose, fraction: numbe
 }
 
 const TRAIL_DELAY_MS = 2280;
+const MAX_TRAIL_WORDS = 10;
+
+function linkReveal(link: TrailLink, time: number) {
+  const progress = Math.min(1, Math.max(0, (time - link.begin) / (link.finish - link.begin)));
+  return progress * progress * (3 - 2 * progress);
+}
 
 function tailTrim(link: TrailLink, time: number) {
   const begin = Math.max(link.finish, link.from.start + TRAIL_DELAY_MS);
@@ -485,26 +491,32 @@ function drawLinks(
   const connected = new Set<string>();
   for (const [head, first] of next) {
     if (incoming.has(head)) continue;
-    let a = pose(head)!;
+    const run: { link: TrailLink; reveal: number }[] = [];
     for (let link: TrailLink | undefined = first; link; link = next.get(link.to.key)) {
+      const reveal = linkReveal(link, time);
+      run.push({ link, reveal });
+      if (reveal < 1) break;
+    }
+    for (const [index, { link, reveal }] of run.entries()) {
+      // Retract the oldest link as the tip approaches the eleventh word.
+      const replacement = run[index + MAX_TRAIL_WORDS - 1];
+      const countTrim = replacement ? Math.min(1, replacement.reveal / replacement.link.wordAt) : 0;
+      const trim = Math.max(tailTrim(link, time), countTrim);
+      if (trim >= 1) continue;
+      const a = pose(link.from.key)!;
       const b = pose(link.to.key)!;
-      const progress = Math.min(1, Math.max(0, (time - link.begin) / (link.finish - link.begin)));
-      const reveal = progress * progress * (3 - 2 * progress);
       const midpoint = interpolatePoint(a.entry, a.exit, 0.5);
       let geometry = `M${coordinates(midpoint)}L${coordinates(a.exit)}`;
       geometry += trailCurve(link, a, b, Math.min(1, reveal / link.wordAt), dt);
       if (reveal >= link.wordAt) {
         const throughWord = (reveal - link.wordAt) / (1 - link.wordAt);
-        const joinsNext = progress === 1 && next.has(link.to.key);
+        const joinsNext = index + 1 < run.length;
         const tip = interpolatePoint(b.entry, b.exit, joinsNext ? 0.5 : throughWord);
         geometry += `L${coordinates(tip)}`;
         connected.add(link.to.key);
       }
-      paintPass(sheet, link, geometry, Math.min(a.band, b.band) * width, tailTrim(link, time));
+      paintPass(sheet, link, geometry, Math.min(a.band, b.band) * width, trim);
       drawn.set(link.from.key, link);
-      // Only the tip advances. Later passes stay hidden until it reaches them.
-      if (progress < 1) break;
-      a = b;
     }
   }
 
