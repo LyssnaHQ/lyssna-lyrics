@@ -813,7 +813,8 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
     const page = lyricsPage.current;
     if (!page || compact || hideArtwork || coverOnly || settings.reduce_motion || view.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     const artwork = canvas ? ".lyrics-canvas-cover, .lyrics-details" : ".lyrics-album";
-    const elements = page.querySelectorAll<HTMLElement>(`${artwork}, .lyrics-body, :scope > .lyrics-fullscreen-controls`);
+    const lyricsColumn = page.querySelector(".gravity-stage") ? ".gravity-credits" : ".lyrics-body";
+    const elements = page.querySelectorAll<HTMLElement>(`${artwork}, ${lyricsColumn}, :scope > .lyrics-fullscreen-controls`);
     swapStart.current = new Map(Array.from(elements, (element) => [element, element.getBoundingClientRect()]));
   }
   return <>

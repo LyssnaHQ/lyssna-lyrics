@@ -1163,7 +1163,7 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   padding-top: 0.3em;
 }
 
-.lyssna-lyrics-view :is(.gravity-credits, .lyric-pinned-footer) {
+.lyssna-lyrics-view .lyric-pinned-footer {
   max-height: none;
   overflow: visible;
 }

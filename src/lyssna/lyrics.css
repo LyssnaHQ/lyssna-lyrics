@@ -1024,7 +1024,12 @@
   position: static;
 }
 .gravity-lyrics {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: end;
   height: 100%;
+  box-sizing: border-box;
+  padding-bottom: clamp(32px, 4.5vh, 64px);
 }
 .gravity-stage {
   position: absolute;
@@ -1128,19 +1133,11 @@
   will-change: transform;
   pointer-events: none;
 }
-/* Sized and placed exactly like the end credits beside normal lyrics:
-   the script lines the box up with the lyrics column, and the padding
-   matches that column's text inset. */
+/* The footer stays in the lyrics column while the floating stage spans the page. */
 .gravity-credits {
-  position: absolute;
-  right: 5%;
-  bottom: clamp(32px, 4.5vh, 64px);
+  position: relative;
   z-index: 3;
-  width: 42%;
-  box-sizing: border-box;
   padding-inline: calc(var(--lyric-size, 58px) * 0.35 + 2px);
-  max-height: 160px;
-  overflow: auto;
   color: light-dark(#0000008c, #ffffff8c);
   font-size: clamp(
     15px,
