@@ -69,7 +69,7 @@ function writePlace(place: Place) {
   try { localStorage.setItem(placeKey, JSON.stringify(place)); } catch { /* Navigation still works. */ }
 }
 
-const sourceSearch = ["Prioritize Apple Music quality", ...Object.values(lyricSources).flatMap(({ name, help }) => [name, help])].join(" ");
+const sourceSearch = Object.values(lyricSources).flatMap(({ name, help }) => [name, help]).join(" ");
 const appearanceRows = ["background", "lyrics_background_blur", "pinned-footer", "npv_ambience", "glass_seek", "canvas_lyrics", "animated_covers", "cover_animation"];
 
 function visualRowKey(row: ReactNode) {
@@ -282,7 +282,7 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
     ]],
     ["Effects", "Lyric effects", visuals.Effects.filter((row) => !appearanceRows.includes(visualRowKey(row)))],
     ["Sources", "Sources", [
-      <SettingRow key="source-order" label="Manage Sources" help="Set lyric source priority, availability, and provider options."
+      <SettingRow key="source-order" label="Manage Sources" help="Set lyric source priority and availability."
         keywords={`sources order ${sourceSearch}`}>
         {submenuButton("sources", "Manage")}
       </SettingRow>,

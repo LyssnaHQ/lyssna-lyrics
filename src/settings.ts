@@ -76,9 +76,8 @@ export const defaults = {
   npv_ambience: true,
   lyrics_cache_button: true,
   lyrics_cache_action: "song" as "song" | "reload" | "all",
-  lyrics_source_order: ["local", "lyssna", "spicy", "apple", "lrcred", "lrclib", "netease"] as string[],
+  lyrics_source_order: ["local", "lyssna", "apple", "spicy", "lrcred", "lrclib", "netease"] as string[],
   lyrics_sources_disabled: ["lrcred", "lrclib", "netease"] as string[],
-  lyrics_prefer_apple: true,
   sync_other_plugin_preferences: false,
   settings_remember_place: true,
   settings_allow_hiding: false,
@@ -94,6 +93,7 @@ type StoredSettings = Partial<Settings> & {
   legacy_preferences_migrated?: boolean;
   desktop_animator_default_applied?: boolean;
   lyrics_credit_lyssna?: boolean;
+  lyrics_prefer_apple?: boolean;
 };
 
 function readRecord() {
@@ -109,7 +109,7 @@ export function legacyPreferencesMigrated() {
 export function readSettings(): Settings {
   try {
     const { legacy_preferences_migrated: _migrated, desktop_animator_default_applied: _animator,
-      lyrics_credit_lyssna: _legacyCredit, theme: _legacyTheme, ...saved } = readRecord();
+      lyrics_credit_lyssna: _legacyCredit, lyrics_prefer_apple: _legacyApplePriority, theme: _legacyTheme, ...saved } = readRecord();
     const settings = { ...defaults, ...saved };
     settings.lyrics_font_enabled = saved.lyrics_font_enabled ?? settings.custom_fonts_enabled;
     const yearPosition = saved.lyrics_year_position;

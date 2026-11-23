@@ -9,8 +9,8 @@ import { clearLyssnaCache, readLyssnaLyrics, revalidateLyssnaSong } from "./lyss
 export const lyricSources = {
   local: { name: "Imported TTML", help: "Lyrics you loaded for the playing song." },
   lyssna: { name: "Lyssna Lyrics", help: "Approved community lyrics from Lyssna. Receives the Spotify track ID and may check its ISRC." },
+  apple: { name: "Apple Music", help: "Uses the recording’s ISRC to find lyrics through Lyssna." },
   spicy: { name: "Spicy Lyrics", help: "Community syncs, Apple Music, and Spotify fallback. Sends the track ID to the Spicy Lyrics API." },
-  apple: { name: "Apple Music (via Lyssna)", help: "Uses the recording’s ISRC to find lyrics through Lyssna." },
   lrcred: { name: "lrc.red", help: "Word-timed lyrics. Receives the song's ISRC." },
   lrclib: { name: "LRCLIB", help: "Open lyrics database. Receives the song title, artist, album and length." },
   netease: { name: "Netease", help: "Community lyrics through a third-party proxy. Receives the song title and artist." },
@@ -24,13 +24,7 @@ export function orderedSources(order: string[]) {
 }
 
 export function enabledSources(settings: Settings) {
-  const order = orderedSources(settings.lyrics_source_order).filter((id) => !settings.lyrics_sources_disabled.includes(id));
-  if (settings.lyrics_prefer_apple && order.includes("apple")) {
-    const prioritized: LyricSource[] = order.filter((id) => id !== "apple");
-    prioritized.splice(prioritized.filter((id) => id === "local" || id === "lyssna").length, 0, "apple");
-    return prioritized;
-  }
-  return order;
+  return orderedSources(settings.lyrics_source_order).filter((id) => !settings.lyrics_sources_disabled.includes(id));
 }
 
 const remoteReaders = { lrcred: readLrcRed, lrclib: readLrcLib, netease: readNetease };

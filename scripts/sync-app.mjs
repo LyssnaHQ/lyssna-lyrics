@@ -291,6 +291,7 @@ for (const [file, content] of snapshot) {
     .replace("      reduceMotion,\n    );\n    animator.current = instance;", "      reduceMotion,\n      false,\n      stage.current?.ownerDocument.defaultView ?? window,\n      1.45,\n    );\n    animator.current = instance;")
     .replace('      className={`gravity-lyrics ', '      data-animator={presetOf(tuning)}\n      className={`gravity-lyrics space-gravity ');
   if (file === "setting-row.tsx") source = source.replace("inert={!!unavailable}", "ref={(element) => { if (element) element.inert = !!unavailable; }}");
+  if (file === "transfer-format.ts") source = source.replace('["prioritizeAppleMusicQuality", "lyrics_prefer_apple"], ', "");
   write(file, source);
 }
 write("types.ts", `${types}\n`);

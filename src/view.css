@@ -2321,23 +2321,6 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   background: light-dark(#0002, #fff2);
 }
 
-.lyssna-lyrics-view .settings-source-expander[aria-expanded="true"] svg {
-  rotate: 180deg;
-}
-
-.lyssna-lyrics-view .settings-source-entry[data-disclosed] > .settings-source-card {
-  border-end-start-radius: 8px;
-  border-end-end-radius: 8px;
-}
-
-.lyssna-lyrics-view .settings-source-options {
-  margin: 0 8px;
-  border: 1px solid light-dark(#0001, #fff1);
-  border-block-start: 0;
-  border-radius: 0 0 10px 10px;
-  background: light-dark(#00000008, #ffffff08);
-}
-
 .lyssna-lyrics-view .settings-source-footer {
   margin-top: 8px;
 }
