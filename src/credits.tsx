@@ -37,13 +37,14 @@ export function LyricCredits({ lyrics, expanded = false, discord = false }: {
 }) {
   const { maker, uploader } = lyrics.attribution ?? {};
   const source = lyrics.source;
+  const credit = lyrics.credit?.replace(/^Lyrics provided by\b:?\s*/i, "") || source;
   const timing = lyrics.estimated_words ? (lyrics.estimated_lines ? "(+ estimated line and word timing)" : "(+ estimated word timing)")
     : lyrics.split_words ? "(+ extra splits)" : "";
-  if (lyrics.lyssna) return <LyssnaCredits attribution={lyrics.lyssna} timing={timing} expanded={expanded} credit={lyrics.credit} />;
+  if (lyrics.lyssna) return <LyssnaCredits attribution={lyrics.lyssna} timing={timing} expanded={expanded} credit={credit} />;
   return (
     <div className={`lyric-source lyssna-provider-credits${expanded ? " expanded" : ""}`}>
-      <div>{lyrics.credit || <>Lyrics provided by: {source === "lrc.red"
-        ? <a href="https://lrc.red/" target="_blank" rel="noopener noreferrer">{source}</a> : source}</>}
+      <div>Lyrics provided by: {source === "lrc.red"
+        ? <a href="https://lrc.red/" target="_blank" rel="noopener noreferrer">{credit}</a> : credit}
         {timing && <> <span className="lyssna-credit-timing">{timing}</span></>}
       </div>
       {(maker || uploader) && <div className="lyssna-community-credits">
@@ -54,7 +55,7 @@ export function LyricCredits({ lyrics, expanded = false, discord = false }: {
   );
 }
 
-function LyssnaCredits({ attribution, timing, expanded, credit }: { attribution: NonNullable<Lyrics["lyssna"]>; timing: string; expanded: boolean; credit?: string }) {
+function LyssnaCredits({ attribution, timing, expanded, credit }: { attribution: NonNullable<Lyrics["lyssna"]>; timing: string; expanded: boolean; credit: string }) {
   const songUrl = lyssnaSongUrl(attribution.songId);
   const open = useContext(SongSheetContext);
   const openSong = (event: MouseEvent<HTMLAnchorElement>) => {
@@ -65,7 +66,7 @@ function LyssnaCredits({ attribution, timing, expanded, credit }: { attribution:
   const contributors = attribution.contributors.slice(0, 5);
   const named = contributors.slice(0, (contributors[1]?.share ?? 0) >= 30 ? 2 : 1);
   return <div className={`lyric-source lyssna-provider-credits${expanded ? " expanded" : ""}`}>
-    <div>{credit || "Lyrics provided by: Lyssna"}
+    <div>Lyrics provided by: {credit}
       {timing && <> <span className="lyssna-credit-timing">{timing}</span></>}
     </div>
     {contributors.length > 0 && <div className="lyssna-community-credits lyssna-contributors">
