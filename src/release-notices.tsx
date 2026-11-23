@@ -4,7 +4,7 @@ import type { Host, Root } from "./host";
 import type { BuildOptions } from "./settings-panel";
 import noticeCss from "./release-notices.css?inline";
 
-const discord = "https://discord.gg/qfYAsFQawp";
+export const discordInvite = "https://discord.gg/qfYAsFQawp";
 const github = "https://github.com/LyssnaHQ/lyssna-lyrics";
 const guide = "https://lyssna.org/guides";
 const canaryNotesUrl = "https://ipixelgalaxy.com/lyssna-plugin/rewrite/v1.0/patch-notes.md";
@@ -159,7 +159,7 @@ function ReleaseDialog({ title, content, primary, secondary, origin, dismiss, cl
     {content.map((node, index) => <div className="release-content" key={index} style={stagger(index + 1)}>{node}</div>)}
     <footer className="release-actions" style={stagger(content.length + 1)}>
       <div className="release-actions-links">
-        <a className="release-discord" href={discord} aria-label="Join the Lyssna Discord" target="_blank" rel="noopener noreferrer">
+        <a className="release-discord" href={discordInvite} aria-label="Join the Lyssna Discord" target="_blank" rel="noopener noreferrer">
           <span>Discord</span>
         </a>
         <a className="release-github" href={github} target="_blank" rel="noopener noreferrer">

@@ -25,7 +25,7 @@
   margin: 0;
   color: #fff;
 }
-.ttml-creator button:not(:where(.ttml-preview *, .ttml-spectrum *)) {
+:is(.ttml-creator, .review-queue-standalone) button:not(:where(.ttml-preview *, .ttml-spectrum *)) {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -42,10 +42,10 @@
     background 0.15s,
     box-shadow 0.15s;
 }
-.ttml-creator button:hover:not(:disabled, :where(.ttml-preview *, .ttml-spectrum *)) {
+:is(.ttml-creator, .review-queue-standalone) button:hover:not(:disabled, :where(.ttml-preview *, .ttml-spectrum *)) {
   background: #ffffff21;
 }
-.ttml-creator button:disabled:not(:where(.ttml-preview *, .ttml-spectrum *)) {
+:is(.ttml-creator, .review-queue-standalone) button:disabled:not(:where(.ttml-preview *, .ttml-spectrum *)) {
   opacity: 0.4;
   cursor: default;
 }
@@ -2164,6 +2164,20 @@
 .ttml-creator.with-playbar .review-panel {
   bottom: 34px;
 }
+.lyssna-lyrics-view.lyssna-review-queue-host {
+  position: fixed;
+  inset: 64px 8px 96px auto;
+  width: min(380px, calc(100vw - 16px));
+  overflow: visible;
+  background: transparent;
+}
+.review-panel.review-queue-standalone {
+  box-sizing: border-box;
+  inset: 0;
+  width: 100%;
+  outline: none;
+  --muted: #a9a9a9;
+}
 .review-head {
   display: flex;
   align-items: center;
@@ -2185,7 +2199,7 @@
   flex-wrap: wrap;
   gap: 6px;
 }
-.ttml-creator .review-lanes button.active,
+:is(.ttml-creator, .review-queue-standalone) .review-lanes button.active,
 .ttml-creator .review-choice button.active {
   color: #000;
   background: #f3f3f3;
@@ -2358,7 +2372,7 @@
   display: none;
 }
 
-.ttml-creator .review-list button {
+:is(.ttml-creator, .review-queue-standalone) .review-list button {
   display: flex;
   width: 100%;
   padding: 8px 10px;

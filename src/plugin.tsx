@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from "react";
-import { ChevronUp, Disc3, FoldVertical, MicVocal, Music2, PanelLeftOpen, Settings as GearIcon, UnfoldVertical, X } from "lucide-react";
+import { ArrowRight, ArrowUpRight, ChevronUp, Disc3, FilePenLine, FoldVertical, MessageCircle, MicVocal, Music2, PanelLeftOpen, Settings as GearIcon, UnfoldVertical, X } from "lucide-react";
 import { getHost, type CanvasInfo, type Host, type Track } from "./host";
 import { useArtworkColor } from "./lyssna/artwork-color";
 import { Ambience } from "./lyssna/ambience";
@@ -45,13 +45,14 @@ import { revalidateLyssnaSong, resumeLyssnaRequests } from "./lyssna-provider";
 import { submitLyssnaTtml } from "./lyssna-submission";
 import { CreatorSurface, type CreatorPlayback } from "./creator/surface";
 import { reviewTopbar } from "./creator/review-topbar";
+import { ReviewQueuePanel, type ReviewSelection } from "./creator/review-panel";
 import { startCreatorRepeatRecovery } from "./creator/repeat";
 import { createSpotifyCapture, type SpotifyCapture } from "./creator/spotify-capture";
 import { AutoRecordPrompt } from "./creator/auto-record";
 import { dismissDraft, draftPreview, liveDraftChanged } from "./creator/ttml-working";
 import { trackLyssnaListens, useLyssnaPlay } from "./lyssna-plays";
 import { MotionArtwork, useAlbumMotionArtwork } from "./motion-artwork";
-import { startReleaseNotices } from "./release-notices";
+import { discordInvite, startReleaseNotices } from "./release-notices";
 import fontCss from "./fonts/fonts.css?inline";
 import desktopCss from "./lyssna/lyrics.css?inline";
 import settingsCss from "./lyssna/settings.css?inline";
@@ -70,11 +71,15 @@ function useLiveSettings() {
   return settings;
 }
 
-function useTrackLyrics(track: Track, duration: number, view: Window, settings: Settings, host: Host) {
-  const [lyrics, setLyrics] = useState<Lyrics>();
-  const [waiting, setWaiting] = useState(true);
+function useTrackLyrics(track: Track | null, duration: number, view: Window, settings: Settings, host: Host) {
+  const [result, setResult] = useState<{ track: Track; sourceKey: string; lyrics?: Lyrics; waiting: boolean }>();
   const sourceKey = enabledSources(settings).join(",");
   useEffect(() => {
+    if (!track) {
+      setResult(undefined);
+      return;
+    }
+    const currentTrack = track;
     const enabled = sourceKey.split(",").filter((id): id is (typeof sourceIds)[number] => sourceIds.some((source) => source === id));
     const revalidate = enabled.includes("lyssna");
     let generation = 0;
@@ -84,20 +89,23 @@ function useTrackLyrics(track: Track, duration: number, view: Window, settings: 
       view.clearTimeout(timer);
       const current = ++generation;
       if (enabled.length === 0) return;
-      const lyrics = await readLyrics(track, duration, enabled, host);
+      const lyrics = await readLyrics(currentTrack, duration, enabled, host);
       if (generation !== current) return;
-      setLyrics(lyrics);
       const pendingSpicy = enabled.includes("spicy") || enabled.includes("apple");
       const pending = !lyrics && pendingSpicy && Date.now() < deadline;
-      setWaiting(pending);
+      setResult((previous) => previous?.track === currentTrack && previous.sourceKey === sourceKey &&
+        previous.lyrics === lyrics && previous.waiting === pending
+        ? previous : { track: currentTrack, sourceKey, lyrics, waiting: pending });
       if (!view.document.hidden && navigator.onLine && (revalidate || (!lyrics && pendingSpicy))) {
         timer = view.setTimeout(read, lyrics ? 60_000 : pending ? 500 : pendingSpicy ? 3_000 : 60_000);
       }
     }
     function restart(event?: Event) {
-      if (event instanceof CustomEvent && Array.isArray(event.detail) && !event.detail.includes(track.id)) return;
-      if (!event || !enabled.length) setLyrics(undefined);
-      setWaiting(enabled.length > 0);
+      if (event instanceof CustomEvent && Array.isArray(event.detail) && !event.detail.includes(currentTrack.id)) return;
+      setResult((previous) => ({
+        track: currentTrack, sourceKey, waiting: enabled.length > 0,
+        lyrics: event && enabled.length && previous?.track === currentTrack ? previous.lyrics : undefined,
+      }));
       deadline = Date.now() + 15_000;
       void read();
     }
@@ -120,30 +128,29 @@ function useTrackLyrics(track: Track, duration: number, view: Window, settings: 
       view.document.removeEventListener("visibilitychange", resume);
     };
   }, [track, duration, view, sourceKey]);
-  return { lyrics, waiting };
+  return result && result.track === track && result.sourceKey === sourceKey
+    ? { lyrics: result.lyrics, waiting: result.waiting } : { lyrics: undefined, waiting: !!track && !!sourceKey };
 }
 
-function LyricsForTrack({ track, host, playing, settings, view = window, fullView = false, openCreator, draft, showOriginal, draftReviewer, toggleReviewer, localPlayback, visualiser }: {
-  track: Track; host: Host; playing: boolean; settings: Settings; view?: Window; fullView?: boolean;
-  openCreator?(): void;
-  draft?: Lyrics | null; showOriginal?(): void; localPlayback?: CreatorPlayback;
-  draftReviewer?: boolean; toggleReviewer?(): void;
-  visualiser?: RefObject<VisualiserFrame | null>;
-}) {
-  const duration = host.duration();
-  const data = useTrackLyrics(track, duration, view, settings, host);
-  const lyrics = <TrackLyrics track={track} host={host} playing={playing} settings={settings} view={view} fullView={fullView}
-    duration={duration} localPlayback={localPlayback} visualiser={visualiser} {...(draft ? { lyrics: draft, waiting: false } : data)} />;
-  if (!fullView) return lyrics;
-  return <>
-    <div className="lyrics-body">{lyrics}</div>
-    {draft && <div className="ttml-draft-banner">
-      <span role="status">Showing your TTML draft</span>
-      {openCreator && <button type="button" onClick={openCreator}>Back to Creator</button>}
-      <button type="button" onClick={showOriginal}>Original lyrics</button>
-      <button type="button" aria-pressed={draftReviewer} onClick={toggleReviewer}>Reviewer mode</button>
-    </div>}
-  </>;
+function MissingLyrics({ creatorEnabled, openCreator }: { creatorEnabled: boolean; openCreator?: () => void }) {
+  return <div className="lyssna-missing-lyrics">
+    <div className="lyssna-missing-content">
+      <h2 role="status">No lyrics for this song yet</h2>
+      {openCreator && <button className="lyssna-missing-action" type="button" onClick={openCreator}>
+        <FilePenLine aria-hidden="true" />
+        <span>
+          <strong>{creatorEnabled ? "Open TTML Creator" : "Enable TTML Creator"}</strong>
+          <small>Write and time lyrics for this song.</small>
+        </span>
+        <ArrowRight aria-hidden="true" />
+      </button>}
+      <a className="lyssna-missing-action" href={discordInvite} target="_blank" rel="noopener noreferrer">
+        <MessageCircle aria-hidden="true" />
+        <span><strong>Join the Lyssna Discord</strong><small>Ask about missing lyrics or get help with a sync.</small></span>
+        <ArrowUpRight aria-hidden="true" />
+      </a>
+    </div>
+  </div>;
 }
 
 function TrackLyrics({ track, host, playing, settings, compact = false, view = window, fullView = !compact, duration, lyrics, waiting, localPlayback, visualiser }: {
@@ -315,8 +322,11 @@ function spotifyMotionCover(host: Host) {
 function PopoutView({ host, view, close }: { host: Host; view: Window; close: () => void }) {
   const { track, playing, narrating } = usePlayback(host, true);
   const settings = useReviewerSettings(useLiveSettings(), track?.id);
+  const duration = host.duration();
+  const data = useTrackLyrics(track, duration, view, settings, host);
   return <LyricsPopout host={host} view={view} close={close} track={track} playing={playing} settings={settings} narrating={narrating}>
-    {track && <LyricsForTrack key={track.id} track={track} host={host} playing={playing} settings={settings} view={view} />}
+    {track && <TrackLyrics key={track.id} track={track} host={host} playing={playing} settings={settings} view={view}
+      fullView={false} duration={duration} {...data} />}
   </LyricsPopout>;
 }
 
@@ -404,13 +414,15 @@ function requestDisplayFullscreen(parent: HTMLElement) {
   void parent.requestFullscreen().then(() => parent.focus({ preventScroll: true })).catch(() => {});
 }
 
-function LyricsView({ host, options, close, parent, view = window, fullscreenRequest = 0, settingsRequest = 0, openCreator, closeCreator, closeReview, onSidebarCover, capture }: {
+function LyricsView({ host, options, close, parent, view = window, fullscreenRequest = 0, settingsRequest = 0,
+  openCreator, closeCreator, reviewSelection, closeReview, onSidebarCover, capture }: {
   host: Host; options: BuildOptions; close: () => void; parent: HTMLElement; view?: Window;
   capture: SpotifyCapture;
   fullscreenRequest?: number;
   settingsRequest?: number;
   openCreator?(): void;
   closeCreator?(): void;
+  reviewSelection?: ReviewSelection;
   closeReview?(): void;
   onSidebarCover?(cover?: string): void;
 }) {
@@ -449,6 +461,13 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
     else if (!keepCreator) setCreatorTrackId(undefined);
   }, [keepCreator, showCreator, trackId]);
   const [fullscreen, setFullscreen] = useState(fullscreenRequest > 0);
+  const immersive = fullscreen || externalCinema;
+  const duration = host.duration();
+  const foundLyrics = useTrackLyrics(showCreator ? null : track, duration, view, settings, host);
+  const lyrics = draft ?? foundLyrics.lyrics;
+  const waiting = !draft && foundLyrics.waiting;
+  const missing = !lyrics && !waiting;
+  const coverOnly = immersive && !!track && missing;
   const [leaving, setLeaving] = useState(false);
   const [narrow, setNarrow] = useState(false);
   const [notice, setNotice] = useState("");
@@ -511,7 +530,8 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
   const fonts = appFontStyles(settings);
   const artwork = narrating ? DJ_COVER : track?.cover;
   const coverColour = useArtworkColor(artwork);
-  const canvasEnabled = settings.canvas_lyrics && !settings.lyrics_hide_artwork;
+  const hideArtwork = settings.lyrics_hide_artwork && !coverOnly;
+  const canvasEnabled = settings.canvas_lyrics && !hideArtwork && !coverOnly;
   const canvasInfo = useCanvas(host, track?.id, canvasEnabled);
   const [unavailableCanvas, setUnavailableCanvas] = useState<CanvasInfo>();
   const canvas = canvasInfo === unavailableCanvas ? undefined : canvasInfo;
@@ -525,7 +545,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
   const artistUri = track?.artistUri;
   const albumUri = track?.albumUri;
   const motion = useAlbumMotionArtwork(albumUri, track?.albumUpc,
-    !showCreator && settings.animated_covers && !settings.reduce_motion && !settings.lyrics_hide_artwork && !canvas, view);
+    !showCreator && settings.animated_covers && !settings.reduce_motion && !hideArtwork && !canvas, view);
   const year = track?.year ?? (albumYear?.uri === albumUri ? albumYear?.year : undefined);
   useEffect(() => {
     if (settings.lyrics_year_position === "off" || track?.year || !albumUri || !/^spotify:album:[A-Za-z0-9]{22}$/.test(albumUri)) return;
@@ -644,9 +664,9 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
     return () => observer.disconnect();
   }, [parent]);
   useEffect(() => {
-    parent.classList.toggle("immersive", fullscreen || externalCinema);
+    parent.classList.toggle("immersive", immersive);
     parent.classList.toggle("lyssna-slide-away", leaving);
-  }, [parent, fullscreen, externalCinema, leaving]);
+  }, [parent, immersive, leaving]);
   useEffect(() => {
     if (externalCinema) return;
     const update = () => setWindowPosition(window.screenX, window.screenY);
@@ -674,15 +694,15 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
   const hasAmbience = artwork && (background === "animated" || background === "static");
   const banner = background === "artist" && artistHeader?.uri === artistUri ? artistHeader?.url : undefined;
   const backgroundImage = background === "cover" || background === "artist" ? banner || artwork : undefined;
-  const compact = narrow || settings.lyrics_compact;
+  const compact = !coverOnly && (narrow || settings.lyrics_compact);
   const className = `lyrics-page ${narrating ? "dj-narration" : ""} ${canvas ? "canvas-lyrics" : ""} ${compact ? "narrow" : ""}
-    ${settings.lyrics_hide_artwork ? "no-artwork" : ""} ${settings.lyrics_artwork_right ? "artwork-right" : ""}
+    ${hideArtwork ? "no-artwork" : ""} ${settings.lyrics_artwork_right && !coverOnly ? "artwork-right" : ""} ${coverOnly ? "no-lyrics" : ""}
     ${background === "color" ? "colour-background" : ""} ${settings.lyrics_toolbar_bottom ? "toolbar-bottom" : ""}
     ${settings.reduce_motion ? "reduce-motion" : ""} ${settings.glass_seek ? "" : "flat-seek"}`;
   const pageStyle = { ...fonts, "--lyric-size": `${Math.round(settings.lyric_size * 1.6)}px`,
     "--lyrics-cover-color": coverColour, "--hero": coverColour } as CSSProperties;
-  const artworkDock = !!track && !canvas && !compact && !settings.lyrics_hide_artwork;
-  const playback = (fullscreen || externalCinema) && <FullscreenControls host={host} playing={playing} settings={settings}
+  const artworkDock = !!track && !canvas && !compact && !hideArtwork;
+  const playback = immersive && <FullscreenControls host={host} playing={playing} settings={settings}
     view={view} trackId={trackId} narrating={narrating} localPlayback={localPlayback} />;
   return <>
     {!showCreator && hasAmbience && <Ambience image={artwork} animate={playing && background === "animated"}
@@ -691,7 +711,8 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
       style={{ "--artwork-blur": `${settings.lyrics_background_blur}px` } as CSSProperties}
       onError={banner ? () => setArtistHeader((current) => current?.url === banner && current.uri === artistUri ? undefined : current) : undefined} alt="" />}
     {(showCreator || keepCreator) && <div className="lyssna-creator-container" ref={creatorPage} style={pageStyle} data-draft-preview={keepCreator || undefined}>
-      <CreatorSurface host={host} view={view} settings={preferences} close={closeCreator ?? close} closeReview={closeReview} previewing={keepCreator} capture={capture}
+      <CreatorSurface host={host} view={view} settings={preferences} close={closeCreator ?? close} reviewSelection={reviewSelection}
+        closeReview={closeReview} previewing={keepCreator} capture={capture}
         onLocalPlayback={setCreatorPlayback} manageStoredData={(trigger) => {
         settingsTrigger.current = trigger ?? undefined;
         setNotice("");
@@ -714,19 +735,30 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
             reduceMotion={settings.reduce_motion} orderByWidth={!!canvas} />
           {artworkDock && playback}
         </div>
-        <LyricsForTrack key={track.id} track={track} host={host} playing={playing} settings={settings} view={view} fullView
-          visualiser={showVisualiser ? visualiser : undefined}
-          draft={draft} localPlayback={localPlayback} draftReviewer={draftReviewer} toggleReviewer={() => setReviewerOverride(!draftReviewer)}
-          showOriginal={() => {
-            if (draftUri) dismissDraft(draftUri);
-            refreshDraft((revision) => revision + 1);
-          }}
-          openCreator={preferences.ttml_creator && openCreator ? () => {
+        {!coverOnly && <div className="lyrics-body">
+          {missing ? settings.lyrics_no_lyrics_notice && <MissingLyrics creatorEnabled={preferences.ttml_creator}
+            openCreator={openCreator && (() => {
+              if (!preferences.ttml_creator) change({ ttml_creator: true });
+              openCreator();
+            })} />
+            : <TrackLyrics key={track.id} track={track} host={host} playing={playing} settings={settings} view={view}
+              duration={duration} lyrics={lyrics} waiting={waiting} localPlayback={localPlayback}
+              visualiser={showVisualiser ? visualiser : undefined} />}
+        </div>}
+        {draft && <div className="ttml-draft-banner">
+          <span role="status">Showing your TTML draft</span>
+          {preferences.ttml_creator && openCreator && <button type="button" onClick={() => {
             if (fullscreen && !externalCinema) toggleFullscreen();
             openCreator();
-          } : undefined} />
+          }}>Back to Creator</button>}
+          <button type="button" onClick={() => {
+            if (draftUri) dismissDraft(draftUri);
+            refreshDraft((revision) => revision + 1);
+          }}>Original lyrics</button>
+          <button type="button" aria-pressed={draftReviewer} onClick={() => setReviewerOverride(!draftReviewer)}>Reviewer mode</button>
+        </div>}
       </> : <div className="lyrics-message"><Music2 /><h2>Play something you love</h2><p>Your lyrics will appear here.</p></div>)}
-      {track && showVisualiser && <SpotifyVisualiser key={track.id} host={host} trackId={track.id}
+      {track && showVisualiser && !coverOnly && <SpotifyVisualiser key={track.id} host={host} trackId={track.id}
         opacity={settings.lyrics_visualiser_opacity} playing={playing} capture={capture} motion={visualiser} read={localPlayback?.read} />}
       <div className="lyrics-toolbar" ref={quickToolbar} data-effect-picker={shownQuickPicker?.id}
         data-vertical={compact && !narrow || undefined} role="toolbar" aria-label="View controls">
@@ -842,6 +874,9 @@ export default function start(options: BuildOptions) {
   let creatorEnabled = false;
   let creatorOpen = false;
   let reviewOpen = false;
+  let reviewSelection: ReviewSelection | undefined;
+  let reviewReusesCreator = false;
+  let dismissReviewQueue: (() => void) | undefined;
   let removeAutoRecord: (() => void) | undefined;
   let renderMainView: (() => void) | undefined;
   function syncPlaybar() {
@@ -854,12 +889,14 @@ export default function start(options: BuildOptions) {
     if (creatorOpen === open && reviewOpen === review) return;
     creatorOpen = open;
     reviewOpen = review;
+    if (!review) reviewSelection = undefined;
     renderMainView?.();
     syncPlaybar();
-    reviewButton?.sync(reviewOpen);
+    reviewButton?.sync(reviewOpen || !!dismissReviewQueue);
   }
   function closeReview() {
-    setCreator(creatorEnabled, false);
+    dismissReviewQueue?.();
+    if (reviewOpen) setCreator(creatorEnabled && reviewReusesCreator, false);
   }
   function applyRuntimeSettings() {
     const settings = readSettings();
@@ -1039,14 +1076,43 @@ export default function start(options: BuildOptions) {
     }
   }
 
-  async function open(mode?: FullscreenMode | "creator" | "review") {
+  function activateReview(selection: ReviewSelection) {
+    reviewSelection = selection;
+    reviewReusesCreator = creatorOpen;
+    setCreator(true, true);
+    dismissReviewQueue?.();
+  }
+
+  function toggleReviewQueue() {
+    if (disposed) return;
+    if (reviewOpen || dismissReviewQueue) {
+      closeReview();
+      return;
+    }
+    const container = document.createElement("div");
+    container.className = "lyssna-lyrics-view lyssna-review-queue-host";
+    document.body.append(container);
+    const root = host.mount(container);
+    dismissReviewQueue = () => {
+      dismissReviewQueue = undefined;
+      root.unmount();
+      container.remove();
+      reviewButton?.sync(reviewOpen);
+    };
+    reviewButton?.sync(true);
+    root.render(<ReviewQueuePanel onPick={open} onClose={() => {
+      closeReview();
+      reviewButton?.focus();
+    }} />);
+  }
+
+  async function open(mode?: FullscreenMode | "creator" | ReviewSelection) {
+    const queue = typeof mode === "object" ? dismissReviewQueue : undefined;
+    if (typeof mode === "object" && !queue) return;
     if (mode === "creator" && !creatorEnabled) return;
     pendingView = undefined;
     if (close) {
-      if (mode === "review") {
-        if (reviewOpen) closeReview();
-        else setCreator(true, true);
-      }
+      if (typeof mode === "object") activateReview(mode);
       else if (mode === "creator") setCreator(!creatorOpen);
       else if (mode) {
         setCreator(false);
@@ -1061,9 +1127,10 @@ export default function start(options: BuildOptions) {
     try { await host.leaveOtherLyricsView(); }
     catch (error) {
       console.warn("[Lyssna Lyrics] Could not leave the other lyrics view:", error);
+      if (queue) throw new Error("Couldn’t open the Creator. Try selecting the submission again.");
       return;
     } finally { switchingLyricsView = false; }
-    if (disposed) return;
+    if (disposed || (queue && dismissReviewQueue !== queue)) return;
     const parent = document.createElement("div");
     parent.className = "lyssna-lyrics-view";
     const main = host.mainView();
@@ -1108,7 +1175,8 @@ export default function start(options: BuildOptions) {
     };
     renderMainView = () => root.render(<LyricsView host={host} options={options} close={closeView} parent={parent} capture={capture}
       fullscreenRequest={fullscreenRequest} settingsRequest={settingsRequest} openCreator={() => setCreator(true)}
-      closeCreator={creatorOpen ? closeCreator : undefined} closeReview={reviewOpen ? dismissReview : undefined} onSidebarCover={setSidebarCover} />);
+      closeCreator={creatorOpen ? closeCreator : undefined} reviewSelection={reviewSelection}
+      closeReview={reviewOpen ? dismissReview : undefined} onSidebarCover={setSidebarCover} />);
     showMainSettings = () => {
       settingsRequest++;
       renderMainView?.();
@@ -1118,7 +1186,7 @@ export default function start(options: BuildOptions) {
       renderMainView?.();
       if (next === "display") requestDisplayFullscreen(parent);
     };
-    if (mode === "review") setCreator(true, true);
+    if (typeof mode === "object") activateReview(mode);
     else if (mode === "creator" && creatorEnabled) setCreator(true);
     else if (mode && mode !== "creator") enterFullscreen(mode);
     else renderMainView();
@@ -1155,7 +1223,7 @@ export default function start(options: BuildOptions) {
     () => void open("creator"),
   );
   const stopProfileSettings = host.profileSettings(openProfileSettings);
-  reviewButton = reviewTopbar(host, () => void open("review"), closeReview);
+  reviewButton = reviewTopbar(host, toggleReviewQueue, closeReview);
   const stopEnhancementStartup = startEnhancements(host);
   const stopVolumeDrag = startVolumeDragController(host);
   keepTemporaryLyricsFor(host.track()?.id);
@@ -1248,7 +1316,7 @@ export default function start(options: BuildOptions) {
   function syncHost() {
     if (unloading) return;
     syncPlaybar();
-    reviewButton?.sync(reviewOpen);
+    reviewButton?.sync(reviewOpen || !!dismissReviewQueue);
     if (pendingView) restoreView();
     else if (!rememberedView && !switchingLyricsView && host.viewLocation()) rememberView(false);
     const main = mainContainer && host.mainView();
@@ -1301,6 +1369,7 @@ export default function start(options: BuildOptions) {
       detached?.dismiss();
       close?.(false);
       closeProfileSettings?.();
+      dismissReviewQueue?.();
       stopProfileSettings();
       button?.remove();
       reviewButton?.dispose();

@@ -21,6 +21,7 @@ import { readRecordingMetadata } from "./recording-metadata";
 import { useCreatorPlaybar, usePreviewTransport } from "./playbar";
 import { useCreatorRepeat } from "./repeat";
 import { creatorPitchSpectrum, creatorSpectrum, creatorWaveform } from "./audio";
+import type { ReviewSelection } from "./review-panel";
 import { TtmlCreator } from "./ttml-creator";
 import { currentCreatorLyrics, within } from "./current-lyrics";
 import { dismissDraft } from "./ttml-working";
@@ -59,9 +60,10 @@ async function seedTimings(host: Host, lyrics: Lyrics, duration: number, trackId
   } : undefined) ?? lyrics;
 }
 
-export function CreatorSurface({ host, view: owner, settings, close, closeReview, previewing, onLocalPlayback, manageStoredData, capture }: {
+export function CreatorSurface({ host, view: owner, settings, close, reviewSelection, closeReview, previewing, onLocalPlayback, manageStoredData, capture }: {
   host: Host; view: Window; settings: Settings; close: () => void; previewing: boolean;
   capture: SpotifyCapture;
+  reviewSelection?: ReviewSelection;
   closeReview?: () => void;
   onLocalPlayback(playback: CreatorPlayback | undefined): void; manageStoredData(trigger: HTMLElement | null): void;
 }) {
@@ -502,6 +504,7 @@ export function CreatorSurface({ host, view: owner, settings, close, closeReview
         <TtmlCreator state={state} onPlayer={player} onToggle={toggle} draftPreview={previewing}
           onSpeed={setSpeed} notify={notify} barSlot={previewing ? undefined : playbar?.wave ?? bar} playbar={playbar}
           onClose={close}
+          reviewSelection={reviewSelection}
           onCloseReview={closeReview}
           onParse={async (filename, text, song) => {
             const ms = song?.duration_ms ?? 0;

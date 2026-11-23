@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   ArrowLeft,
   Maximize2,
@@ -39,6 +39,11 @@ export interface ReviewOpen {
   ttml: string;
 }
 
+export interface ReviewSelection {
+  lane: ReviewLane;
+  submission: ReviewSubmission;
+}
+
 const ago = (iso: string) => {
   const minutes = Math.max(0, (Date.now() - Date.parse(iso)) / 60000);
   if (minutes < 60) return `${Math.round(minutes)}m ago`;
@@ -57,12 +62,15 @@ function ReviewQueue({
 }: {
   lane: ReviewLane;
   onLane: (lane: ReviewLane) => void;
-  onPick: (submission: ReviewSubmission) => void;
+  onPick: (submission: ReviewSubmission) => void | Promise<void>;
   onClose?: () => void;
 }) {
   const [items, setItems] = useState<ReviewSubmission[] | null>(null);
   const [failed, setFailed] = useState<string>();
   const [refresh, setRefresh] = useState(0);
+  const [opening, setOpening] = useState<string>();
+  const [openError, setOpenError] = useState<string>();
+  const request = useRef(0);
   useEffect(() => {
     let live = true;
     setFailed(undefined);
@@ -71,13 +79,30 @@ function ReviewQueue({
       (list) => { if (live) setItems(list ?? []); },
       (error) => { if (live) setFailed(error.message); },
     );
-    return () => { live = false; };
+    return () => { live = false; request.current++; };
   }, [lane, refresh]);
+  async function pick(item: ReviewSubmission) {
+    if (opening) return;
+    const id = ++request.current;
+    setOpening(item.id);
+    setOpenError(undefined);
+    try {
+      const latest = await reviewSubmission(item.id);
+      if (request.current === id) await onPick(latest);
+    } catch (error) {
+      if (request.current === id) setOpenError(String(error));
+    } finally {
+      if (request.current === id) setOpening(undefined);
+    }
+  }
   return (
     <>
       <header className="review-head">
         <h3>Review</h3>
-        <button onClick={() => setRefresh((count) => count + 1)} title="Refresh" aria-label="Refresh queue">
+        <button disabled={!!opening} onClick={() => {
+          setOpenError(undefined);
+          setRefresh((count) => count + 1);
+        }} title="Refresh" aria-label="Refresh queue">
           <RefreshCw size={15} />
         </button>
         {onClose && (
@@ -97,13 +122,15 @@ function ReviewQueue({
             key={value}
             role="tab"
             aria-selected={lane === value}
+            disabled={!!opening}
             className={lane === value ? "active" : ""}
-            onClick={() => onLane(value)}
+            onClick={() => { setOpenError(undefined); onLane(value); }}
           >
             {label}
           </button>
         ))}
       </div>
+      {openError && <p className="review-empty" role="alert">{openError}</p>}
       {failed ? (
         <p className="review-empty">{failed}</p>
       ) : items === null ? (
@@ -114,7 +141,7 @@ function ReviewQueue({
         <ul className="review-list">
           {items.map((item) => (
             <li key={item.id}>
-              <button onClick={() => onPick(item)}>
+              <button disabled={!!opening} aria-busy={opening === item.id} onClick={() => void pick(item)}>
                 <ReviewSongRow submission={item} />
               </button>
             </li>
@@ -123,6 +150,24 @@ function ReviewQueue({
       )}
     </>
   );
+}
+
+export function ReviewQueuePanel({ onPick, onClose }: {
+  onPick: (selection: ReviewSelection) => Promise<void>;
+  onClose: () => void;
+}) {
+  const [lane, setLane] = useState<ReviewLane>("priority");
+  const panel = useRef<HTMLElement>(null);
+  useLayoutEffect(() => panel.current?.focus({ preventScroll: true }), []);
+  return <aside className="review-panel review-queue-standalone" aria-label="Review submissions" ref={panel} tabIndex={-1}
+    onKeyDown={(event) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      onClose();
+    }}>
+    <ReviewQueue lane={lane} onLane={setLane} onPick={(submission) => onPick({ lane, submission })} onClose={onClose} />
+  </aside>;
 }
 
 function ReviewSongRow({ submission }: { submission: ReviewSubmission }) {
@@ -147,6 +192,7 @@ function ReviewSongRow({ submission }: { submission: ReviewSubmission }) {
 /** The TTML Creator's review side panel: a submission's changes, comments
  *  and decision, or the queue to pick another. */
 export function ReviewPanel({
+  selection,
   playing,
   editing,
   opening,
@@ -160,6 +206,7 @@ export function ReviewPanel({
   notify,
   onClose,
 }: {
+  selection: ReviewSelection;
   playing?: Track;
   /** The submission loaded in the editor and the TTML it opened with. */
   editing?: { id: string; baseline: string };
@@ -174,25 +221,9 @@ export function ReviewPanel({
   notify: (message: string, error?: boolean) => void;
   onClose: () => void;
 }) {
-  const [picked, setPicked] = useState<ReviewSubmission>();
-  const [lane, setLane] = useState<ReviewLane>("priority");
+  const [picked, setPicked] = useState<ReviewSubmission | undefined>(selection.submission);
+  const [lane, setLane] = useState<ReviewLane>(selection.lane);
   const [minimised, setMinimised] = useState(false);
-  const loadId = useRef(0);
-  useEffect(() => () => { loadId.current++; }, []);
-  const pick = async (item: ReviewSubmission) => {
-    const load = ++loadId.current;
-    try {
-      const latest = await reviewSubmission(item.id);
-      if (load === loadId.current) setPicked(latest);
-    } catch (error) {
-      if (load === loadId.current) notify(String(error), true);
-    }
-  };
-  const changeLane = (value: ReviewLane) => {
-    if (value === lane) return;
-    loadId.current++;
-    setLane(value);
-  };
   return (
     <aside
       className={`review-panel${minimised ? " minimised" : ""}`}
@@ -238,7 +269,7 @@ export function ReviewPanel({
           }}
         />
       ) : (
-        <ReviewQueue lane={lane} onLane={changeLane} onPick={(item) => void pick(item)} onClose={onClose} />
+        <ReviewQueue lane={lane} onLane={setLane} onPick={setPicked} onClose={onClose} />
       )}
     </aside>
   );

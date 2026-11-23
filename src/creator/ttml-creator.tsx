@@ -41,7 +41,7 @@ import type { CreatorState } from "./types";
 import type { Lyrics, PlayerRequest, Track } from "./types";
 import { lyricsChanged, parseLocalTtml } from "../local-lyrics";
 import { revalidateLyssnaSong } from "../lyssna-provider";
-import { ReviewPanel, type ReviewOpen } from "./review-panel";
+import { ReviewPanel, type ReviewOpen, type ReviewSelection } from "./review-panel";
 import {
   forgetWorking,
   markWorking,
@@ -273,6 +273,7 @@ export function TtmlCreator({
   barSlot,
   playbar,
   onClose,
+  reviewSelection,
   onCloseReview,
   draftPreview = false,
 }: {
@@ -292,6 +293,7 @@ export function TtmlCreator({
   barSlot?: HTMLElement | null;
   playbar?: CreatorPlaybarSlots;
   onClose?: () => void;
+  reviewSelection?: ReviewSelection;
   onCloseReview?: () => void;
   draftPreview?: boolean;
 }) {
@@ -1662,7 +1664,7 @@ export function TtmlCreator({
     [metadata, track],
   );
   const ttml = () => (track ? toTtml(lines, meta(track), entries) : "");
-  const reviewing = !!onCloseReview && !draftPreview;
+  const reviewing = !!reviewSelection && !!onCloseReview && !draftPreview;
   const [pendingReview, setPendingReview] = useState<ReviewOpen>();
   const [reviewEdit, setReviewEdit] = useState<{ id: string; uri: string; baseline: string }>();
   useEffect(() => {
@@ -1716,8 +1718,9 @@ export function TtmlCreator({
     });
     return () => { live = false; };
   }, [pendingReview, playing, track, reviewing, setLines, notify, window]);
-  const reviewPanel = reviewing && onCloseReview && (
+  const reviewPanel = reviewing && reviewSelection && onCloseReview && (
     <ReviewPanel
+      selection={reviewSelection}
       playing={playing}
       editing={done && reviewEdit?.uri === track?.uri ? reviewEdit : undefined}
       opening={pendingReview?.submission.id}
