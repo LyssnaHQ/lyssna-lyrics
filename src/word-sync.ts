@@ -61,7 +61,7 @@ export function displayLyrics(lyrics: Lyrics | undefined, wordSync: boolean, rom
   duration: number, analysis?: AudioAnalysisData) {
   if (!lyrics) return;
   const estimate = wordSync && needsWordSync(lyrics, duration);
-  const apple = lyrics.source === "Apple Music";
+  const apple = lyrics.source === "Apple Music" || lyrics.external?.source === "apple_music";
   const brackets = lyrics.source === "lrc.red";
   if (estimate || (lyrics.synced && (apple || brackets))) {
     const wordTimed = lyrics.lines.some((line) => line.words.length);

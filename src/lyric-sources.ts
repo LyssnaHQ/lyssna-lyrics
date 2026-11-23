@@ -4,13 +4,13 @@ import type { Lyrics } from "./lyssna/types";
 import { readLrcLib, readLrcRed, readNetease } from "./remote-lyrics";
 import type { Settings } from "./settings";
 import { readSpicyLyrics } from "./spicy";
-import { clearLyssnaCache, readLyssnaLyrics, revalidateLyssnaSong } from "./lyssna-provider";
+import { clearLyssnaCache, readAppleLyrics, readLyssnaLyrics, revalidateLyssnaSong } from "./lyssna-provider";
 
 export const lyricSources = {
   local: { name: "Imported TTML", help: "Lyrics you loaded for the playing song." },
   lyssna: { name: "Lyssna Lyrics", help: "Approved community lyrics from Lyssna. Receives the Spotify track ID and may check its ISRC." },
   spicy: { name: "Spicy Lyrics", help: "Community lyrics supplied by the Spicy Lyrics plugin." },
-  apple: { name: "Apple Music", help: "Apple Music lyrics when supplied by Spicy Lyrics." },
+  apple: { name: "Apple Music", help: "Apple Music lyrics through Lyssna. Receives the Spotify track ID and the song's ISRC." },
   lrcred: { name: "lrc.red", help: "Word-timed lyrics. Receives the song's ISRC." },
   lrclib: { name: "LRCLIB", help: "Open lyrics database. Receives the song title, artist, album and length." },
   netease: { name: "Netease", help: "Community lyrics through a third-party proxy. Receives the song title and artist." },
@@ -80,9 +80,12 @@ export async function readLyrics(track: Track, duration: number, sources: LyricS
     } else if (id === "lyssna") {
       const lyrics = await readLyssnaLyrics(track, host.lookupIsrc).catch(() => undefined);
       if (lyrics) return lyrics;
-    } else if (id === "spicy" || id === "apple") {
+    } else if (id === "apple") {
+      const lyrics = await readAppleLyrics(track, host.lookupIsrc).catch(() => undefined);
+      if (lyrics) return lyrics;
+    } else if (id === "spicy") {
       const lyrics = await readCached(track.id, "spicy", () => readSpicyLyrics(track.id), 350);
-      if (lyrics && (lyrics.source === "Apple Music") === (id === "apple")) return lyrics;
+      if (lyrics && lyrics.source !== "Apple Music") return lyrics;
     } else {
       const lyrics = await readCached(track.id, id, () => remoteReaders[id](track, duration, AbortSignal.timeout(7_000)), 30_000);
       if (lyrics) return lyrics;

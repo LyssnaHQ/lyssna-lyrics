@@ -40,7 +40,10 @@ async function send(path: string, { body, etag, installation, accessToken, reval
     cache: revalidate ? "no-cache" : undefined,
     credentials: "omit", redirect: "error", referrerPolicy: "no-referrer", signal: AbortSignal.timeout(8_000),
   });
-  if (response.status === 429 || (response.status === 503 && response.headers.has("Retry-After"))) {
+  // Apple Music's lyrics come from a source that can be refused or capped on its own; that must not
+  // slow the community's lyrics down.
+  const apple = url.searchParams.get("source") === "apple_music";
+  if (!apple && (response.status === 429 || (response.status === 503 && response.headers.has("Retry-After")))) {
     const header = response.headers.get("Retry-After");
     const wait = header && /^\d+$/.test(header) ? Number(header) * 1_000 : Date.parse(header ?? "") - Date.now();
     retryAfter = Math.max(retryAfter, Date.now() + Math.max(Number.isFinite(wait) ? wait : 0, delay));
@@ -158,13 +161,23 @@ export async function lyssnaRequest(path: string, options: RequestOptions = {}) 
 export const lyssnaRetryAt = () => retryAfter;
 
 let playClient: string | undefined;
-export function sendLyssnaPlay(songId: string, accessToken?: string) {
-  if (!install && !saved(installKey)) return;
+function listener() {
   if (!playClient) {
     playClient = saved(clientKey) || crypto.randomUUID();
     save(clientKey, playClient);
   }
-  void lyssnaRequest(`/v1/songs/${songId}/play`, { body: { client_id: playClient }, accessToken }).catch(() => {});
+  return playClient;
+}
+
+/** Lyrics from a source outside Lyssna (Apple Music) have no song, so the play is counted for the install. */
+export function sendLyssnaExternalPlay(source: "apple_music", id: string) {
+  if (!install && !saved(installKey)) return;
+  void lyssnaRequest(`/v1/external/${source}/${id}/play`, { body: { client_id: listener() } }).catch(() => {});
+}
+
+export function sendLyssnaPlay(songId: string, accessToken?: string) {
+  if (!install && !saved(installKey)) return;
+  void lyssnaRequest(`/v1/songs/${songId}/play`, { body: { client_id: listener() }, accessToken }).catch(() => {});
   // Counted once per install per song a day, for the views on lyssna.org/stats.
   void lyssnaRequest(`/v1/songs/${songId}/views`, { body: { client: "plugin" } }).catch(() => {});
 }
