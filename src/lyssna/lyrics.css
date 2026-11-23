@@ -944,19 +944,11 @@
 .lyrics-toolbar .icon-button:active {
   transform: scale(0.92);
 }
-/* Each icon moves in its own way while hovered (see toolbar-icons.tsx). */
-.toolbar-icon g,
-.toolbar-icon path,
-.toolbar-icon rect {
+.toolbar-icon :is(g, path, rect) {
   transform-box: fill-box;
   transform-origin: center;
 }
-/* 文A: the A is in front until hovered or romanizing, then the symbol. */
-.toolbar-icon-translate g {
-  transition:
-    opacity 0.3s,
-    scale 0.3s ease;
-}
+/* The active translation symbol stays in front after hover ends. */
 .toolbar-icon-translate .part-symbol {
   opacity: 0.5;
   scale: 0.86;
@@ -964,150 +956,67 @@
 .toolbar-icon-translate .part-latin {
   scale: 1.08;
 }
-[data-icon="romanized"]:hover .part-symbol,
 [data-icon="romanized"].active .part-symbol {
   opacity: 1;
   scale: 1.12;
 }
-[data-icon="romanized"]:hover .part-latin,
 [data-icon="romanized"].active .part-latin {
   opacity: 0.5;
   scale: 0.86;
 }
-/* Word sync: a level meter. Every bar starts from rest, so hovering
-   never jumps them to mid-bounce. */
-[data-icon="experimental_word_sync"]:hover .part-bar {
-  animation: icon-bar 0.9s ease-in-out infinite;
-}
-[data-icon="experimental_word_sync"]:hover .part-bar-1 {
-  animation-delay: 0.15s;
-}
-[data-icon="experimental_word_sync"]:hover .part-bar-2 {
-  animation-delay: 0.3s;
-}
-[data-icon="experimental_word_sync"]:hover .part-bar-3 {
-  animation-delay: 0.1s;
-}
-[data-icon="experimental_word_sync"]:hover .part-bar-4 {
-  animation-delay: 0.25s;
-}
-@keyframes icon-bar {
-  50% {
-    scale: 1 0.55;
+
+@media (prefers-reduced-motion: no-preference) {
+  .lyrics-page:not(.reduce-motion) .lyrics-toolbar-actions > .icon-button :is(svg, g, path, rect, circle) {
+    transition: opacity 240ms ease, scale 240ms ease, translate 240ms ease,
+      rotate 280ms ease, stroke-dashoffset 240ms ease;
   }
-}
-/* Compact: the rows squeeze together. */
-.toolbar-icon-compact rect,
-.toolbar-icon-compact path {
-  transition:
-    scale 0.25s,
-    translate 0.25s;
-}
-[data-icon="lyrics_compact"]:hover .part-frame {
-  scale: 1 0.82;
-}
-[data-icon="lyrics_compact"]:hover .part-row-top {
-  translate: 0 1.5px;
-}
-[data-icon="lyrics_compact"]:hover .part-row-bottom {
-  translate: 0 -1.5px;
-}
-/* Hide artwork: the chevron pushes left, inside its panel. */
-[data-icon="lyrics_hide_artwork"]:hover .part-chevron {
-  animation: icon-push-left 0.9s ease-in-out infinite;
-}
-@keyframes icon-push-left {
-  50% {
+  .lyrics-page:not(.reduce-motion) [data-icon="romanized"]:is(:hover, :focus-visible) .part-symbol {
+    opacity: 1;
+    scale: 1.12;
+  }
+  .lyrics-page:not(.reduce-motion) [data-icon="romanized"]:is(:hover, :focus-visible) .part-latin {
+    opacity: 0.5;
+    scale: 0.86;
+  }
+  .lyrics-page:not(.reduce-motion) [data-icon="experimental_word_sync"]:is(:hover, :focus-visible) .part-bar {
+    scale: 1 0.62;
+  }
+  .lyrics-page:not(.reduce-motion) [data-icon="experimental_word_sync"]:is(:hover, :focus-visible) :is(.part-bar-1, .part-bar-4) {
+    scale: 1 1.14;
+  }
+  .lyrics-page:not(.reduce-motion) [data-icon="lyrics_compact"]:is(:hover, :focus-visible) .part-frame {
+    scale: 1 0.82;
+  }
+  .lyrics-page:not(.reduce-motion) [data-icon="lyrics_compact"]:is(:hover, :focus-visible) .part-row-top {
+    translate: 0 1.5px;
+  }
+  .lyrics-page:not(.reduce-motion) [data-icon="lyrics_compact"]:is(:hover, :focus-visible) .part-row-bottom {
+    translate: 0 -1.5px;
+  }
+  .lyrics-page:not(.reduce-motion) [data-icon="lyrics_hide_artwork"]:is(:hover, :focus-visible) .part-chevron {
     translate: -2px 0;
   }
-}
-/* Swap sides: the arrows pulse left and right in turn. */
-[data-icon="lyrics_artwork_right"]:hover .part-left {
-  animation: icon-pulse-left 0.9s ease-in-out infinite;
-}
-[data-icon="lyrics_artwork_right"]:hover .part-right {
-  animation: icon-pulse-right 0.9s ease-in-out infinite;
-}
-@keyframes icon-pulse-left {
-  25% {
+  .lyrics-page:not(.reduce-motion) [data-icon="lyrics_artwork_right"]:is(:hover, :focus-visible) .part-left {
     translate: -2px 0;
   }
-  50% {
-    translate: 0 0;
-  }
-}
-@keyframes icon-pulse-right {
-  50% {
-    translate: 0 0;
-  }
-  75% {
+  .lyrics-page:not(.reduce-motion) [data-icon="lyrics_artwork_right"]:is(:hover, :focus-visible) .part-right {
     translate: 2px 0;
   }
-}
-/* Upload: the arrow shoots up and a new one rises from the tray. */
-[data-icon="upload"]:hover .part-arrow {
-  animation: icon-shoot 1.1s ease-in-out infinite;
-}
-@keyframes icon-shoot {
-  35% {
-    translate: 0 -10px;
-    opacity: 0;
+  .lyrics-page:not(.reduce-motion) [data-icon="upload"]:is(:hover, :focus-visible) .part-arrow {
+    translate: 0 -2.5px;
   }
-  36% {
-    translate: 0 6px;
-    opacity: 0;
+  .lyrics-page:not(.reduce-motion) [data-icon="retry"]:is(:hover, :focus-visible) .part-spinner {
+    rotate: 135deg;
   }
-  75%,
-  100% {
-    translate: 0 0;
-    opacity: 1;
-  }
-}
-/* Retry: spins like a refresh. */
-[data-icon="retry"]:hover .part-spinner {
-  animation: icon-spin 0.9s linear infinite;
-}
-/* Full screen: the corners push out and draw back in. */
-[data-icon="fullscreen"]:hover .part-corner-out {
-  animation: icon-corner-out 0.9s ease-in-out infinite alternate;
-}
-[data-icon="fullscreen"]:hover .part-corner-in {
-  animation: icon-corner-in 0.9s ease-in-out infinite alternate;
-}
-@keyframes icon-corner-out {
-  from {
-    translate: -1px 1px;
-  }
-  to {
+  .lyrics-page:not(.reduce-motion) [data-icon="fullscreen"]:is(:hover, :focus-visible) .part-corner-out {
     translate: 1.5px -1.5px;
   }
-}
-@keyframes icon-corner-in {
-  from {
-    translate: 1px -1px;
-  }
-  to {
+  .lyrics-page:not(.reduce-motion) [data-icon="fullscreen"]:is(:hover, :focus-visible) .part-corner-in {
     translate: -1.5px 1.5px;
   }
-}
-/* Settings: the gear turns. */
-[data-icon="settings"]:hover svg {
-  animation: icon-spin 1.4s linear infinite;
-}
-@keyframes icon-spin {
-  to {
-    rotate: 360deg;
+  .lyrics-page:not(.reduce-motion) [data-icon="settings"]:is(:hover, :focus-visible) svg {
+    rotate: 55deg;
   }
-}
-@media (prefers-reduced-motion: reduce) {
-  .lyrics-toolbar .icon-button:hover *,
-  .lyrics-toolbar .icon-button:hover svg {
-    animation: none !important;
-  }
-}
-.reduce-motion .lyrics-toolbar .icon-button:hover *,
-.reduce-motion .lyrics-toolbar .icon-button:hover svg {
-  animation: none !important;
 }
 /* Space Gravity: words float over the whole lyrics page. The stage spans
    the page so words can drift around the artwork, which they avoid. */

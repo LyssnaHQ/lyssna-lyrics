@@ -721,7 +721,8 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
       </> : <div className="lyrics-message"><Music2 /><h2>Play something you love</h2><p>Your lyrics will appear here.</p></div>)}
       {track && showVisualiser && <SpotifyVisualiser key={track.id} host={host} trackId={track.id}
         opacity={settings.lyrics_visualiser_opacity} playing={playing} capture={capture} motion={visualiser} read={localPlayback?.read} />}
-      <div className="lyrics-toolbar" ref={quickToolbar} data-effect-picker={shownQuickPicker?.id} role="toolbar" aria-label="View controls">
+      <div className="lyrics-toolbar" ref={quickToolbar} data-effect-picker={shownQuickPicker?.id}
+        data-vertical={compact && !narrow || undefined} role="toolbar" aria-label="View controls">
         <div className="lyrics-toolbar-actions">
           {([
             ["romanized", "Romanization", TranslateIcon],
@@ -762,7 +763,8 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
             aria-label={returnToLyrics ? "Leave full screen" : "Close lyrics"} onClick={closeLyrics}><X size={18} /></button>
         </div>
         {shownQuickPicker && <div className="lyssna-quick-expansion">
-          <QuickEffectPicker effect={shownQuickPicker} settings={preferences} change={change} close={closeQuickPicker} view={view} />
+          <QuickEffectPicker effect={shownQuickPicker} settings={preferences} change={change} close={closeQuickPicker}
+            view={view} vertical={compact && !narrow} />
         </div>}
       </div>
       {!showSettings && notice && <div className="lyssna-popout-error" role="status">{notice}</div>}

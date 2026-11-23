@@ -1,5 +1,6 @@
-import { useLayoutEffect, useRef } from "react";
-import { CaseSensitive, ChartNoAxesColumn, ChevronLeft, Type } from "lucide-react";
+import { useId, useLayoutEffect, useRef, useState } from "react";
+import { Ban, CaseLower, CaseSensitive, CaseUpper, ChartNoAxesColumn, ChevronLeft, History, Shuffle, SlidersHorizontal, Sparkles, Type } from "lucide-react";
+import { useAnchoredPopover } from "./anchored-popover";
 import { FontControl } from "./font-settings";
 import { ANIMATOR_PRESETS, ANIMATOR_PRESET_LABELS, choosePreset, presetOf } from "./lyssna/animator-tuning";
 import { WORD_FILTER_OPTIONS } from "./lyssna/word-filter";
@@ -47,12 +48,38 @@ export const quickEffects = [
 
 export type QuickEffectChoice = Extract<(typeof quickEffects)[number], { kind: "picker" }>;
 
-export function QuickEffectPicker({ effect, settings, change, close, view }: {
+const choiceIcons = {
+  Lyssna: Sparkles, Legacy: History, Custom: SlidersHorizontal,
+  off: Ban, gibberish: Shuffle, lower: CaseLower, upper: CaseUpper,
+};
+
+function VerticalFontPicker({ settings, change, view }: {
+  settings: Settings; change: (patch: Partial<Settings>) => void; view: Window;
+}) {
+  const id = useId();
+  const trigger = useRef<HTMLButtonElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  useAnchoredPopover(view, open, trigger, panel);
+  return <>
+    <button className="lyssna-quick-choice" type="button" ref={trigger} title="Choose lyrics font"
+      aria-label="Choose lyrics font" aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)}>
+      <Type size={16} aria-hidden="true" />
+    </button>
+    <div className="lyssna-quick-font-popover" id={id} ref={panel} popover="auto"
+      onToggle={(event) => { if (event.newState === "closed" && !panel.current?.matches(":popover-open")) setOpen(false); }}>
+      <FontControl field="lyric_font" settings={settings} change={change} view={view} />
+    </div>
+  </>;
+}
+
+export function QuickEffectPicker({ effect, settings, change, close, view, vertical }: {
   effect: QuickEffectChoice;
   settings: Settings;
   change: (patch: Partial<Settings>) => void;
   close: () => void;
   view: Window;
+  vertical: boolean;
 }) {
   const options = useRef<HTMLDivElement>(null);
   const choices = effect.id === "animator"
@@ -72,29 +99,44 @@ export function QuickEffectPicker({ effect, settings, change, close, view }: {
   useLayoutEffect(() => {
     const active = options.current?.querySelector<HTMLButtonElement>('[aria-pressed="true"]');
     const first = options.current?.querySelector<HTMLElement>('input:not(:disabled), button:not(:disabled)');
-    (active ?? first)?.focus({ preventScroll: true });
-  }, [effect]);
+    const target = active ?? first;
+    if (!target) return;
+    target.focus({ preventScroll: true });
+    const expansion = target.closest(".lyssna-quick-expansion");
+    const reveal = () => {
+      if (target.matches(":focus")) target.scrollIntoView({ block: "nearest", inline: "nearest" });
+    };
+    const animation = expansion?.getAnimations()[0];
+    if (animation) void animation.finished.then(reveal, () => {});
+    else reveal();
+  }, [effect, vertical]);
 
   return <div className="lyssna-quick-picker">
     <button className="icon-button" type="button" title="Back to lyric controls" aria-label="Back to lyric controls" onClick={close}>
       <ChevronLeft size={18} aria-hidden="true" />
     </button>
     {effect.id === "lyric-font" ? <div className="lyssna-quick-font" ref={options}>
-      <FontControl field="lyric_font" settings={settings} change={change} view={view} />
+      {vertical ? <VerticalFontPicker settings={settings} change={change} view={view} />
+        : <FontControl field="lyric_font" settings={settings} change={change} view={view} />}
     </div> : <div className="lyssna-quick-choices" role="group" aria-label={effect.label} ref={options} onKeyDown={(event) => {
       const { key, currentTarget, target } = event;
-      if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(key)) return;
+      if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(key)) return;
       const buttons = Array.from(currentTarget.querySelectorAll("button"));
       const index = buttons.findIndex((button) => button === target);
       if (index < 0) return;
       event.preventDefault();
       event.stopPropagation();
       const next = key === "Home" ? 0 : key === "End" ? buttons.length - 1
-        : (index + (key === "ArrowLeft" ? -1 : 1) + buttons.length) % buttons.length;
+        : (index + (key === "ArrowLeft" || key === "ArrowUp" ? -1 : 1) + buttons.length) % buttons.length;
       buttons[next]?.focus({ preventScroll: true });
     }}>
-      {choices.map(({ value, label, selected, apply }) => <button className="lyssna-quick-choice" type="button" key={value}
-        aria-pressed={selected} onClick={() => { apply(); close(); }}>{label}</button>)}
+      {choices.map(({ value, label, selected, apply }) => {
+        const Icon = choiceIcons[value];
+        return <button className="lyssna-quick-choice" type="button" key={value} title={vertical ? label : undefined}
+          aria-label={label} aria-pressed={selected} onClick={() => { apply(); close(); }}>
+          {vertical ? <Icon size={16} aria-hidden="true" /> : label}
+        </button>;
+      })}
     </div>}
   </div>;
 }
