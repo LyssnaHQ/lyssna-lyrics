@@ -44,7 +44,7 @@ function contributor(value: unknown): Contributor | undefined {
 
 function normalize(data: Payload): Lyrics | undefined {
   const source = data.source === "spicy_lyrics" ? "Spicy Lyrics"
-    : data.source === "apple_music" ? "Apple Music"
+    : data.source === "apple_music" ? "Apple Music (via Spicy Lyrics)"
     : data.source === "spotify" ? "Spotify" : "Unknown source";
   const attribution = data.source === "spicy_lyrics" ? {
     maker: contributor(data.UploadAttribution?.Maker) ?? contributor(data.TTMLUploadMetadata?.Maker),

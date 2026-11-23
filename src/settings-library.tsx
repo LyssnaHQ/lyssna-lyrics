@@ -42,7 +42,7 @@ export function SourcesManager({ settings, change }: {
           </div>
         </div>
         {configurable && <div className="settings-source-options" id="lyssna-source-apple-options" hidden={!appleOptions}>
-          <SettingRow label="Prioritize Apple Music quality" help="Try Apple Music first among fallback sources when the API returns an Apple Music sync.">
+          <SettingRow label="Prioritize Apple Music quality" help="Try Apple Music before other fallback sources.">
             <Toggle label="Prioritize Apple Music quality" checked={settings.lyrics_prefer_apple}
               onChange={(lyrics_prefer_apple) => change({ lyrics_prefer_apple })} />
           </SettingRow>

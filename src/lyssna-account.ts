@@ -122,15 +122,16 @@ export async function lyssnaAccess(rejected?: string) {
   });
 }
 
-export async function lyssnaAccountRequest(path: string, body?: object) {
+export async function lyssnaAccountRequest(path: string, body?: object, method?: "PUT") {
   let accessToken = await lyssnaAccess();
   if (!accessToken) return;
-  const response = await lyssnaRequest(path, { accessToken, body, waitForInstall: !!body });
+  const options = { body, method, waitForInstall: !!body };
+  const response = await lyssnaRequest(path, { ...options, accessToken });
   if (response?.status !== 401) return response;
   const rejected = await response.clone().json().catch(() => null) as { error?: string } | null;
   if (rejected?.error !== "unauthorized") return response;
   accessToken = await lyssnaAccess(accessToken);
-  return accessToken ? lyssnaRequest(path, { accessToken, body, waitForInstall: !!body }) : response;
+  return accessToken ? lyssnaRequest(path, { ...options, accessToken }) : response;
 }
 
 export async function readLyssnaProfile(): Promise<LyssnaProfile | undefined> {

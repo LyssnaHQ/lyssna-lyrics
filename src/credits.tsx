@@ -39,11 +39,11 @@ export function LyricCredits({ lyrics, expanded = false, discord = false }: {
   const source = lyrics.source;
   const timing = lyrics.estimated_words ? (lyrics.estimated_lines ? "(+ estimated line and word timing)" : "(+ estimated word timing)")
     : lyrics.split_words ? "(+ extra splits)" : "";
-  if (lyrics.lyssna) return <LyssnaCredits attribution={lyrics.lyssna} timing={timing} expanded={expanded} />;
+  if (lyrics.lyssna) return <LyssnaCredits attribution={lyrics.lyssna} timing={timing} expanded={expanded} credit={lyrics.credit} />;
   return (
     <div className={`lyric-source lyssna-provider-credits${expanded ? " expanded" : ""}`}>
-      <div>Lyrics provided by: {source === "lrc.red"
-        ? <a href="https://lrc.red/" target="_blank" rel="noopener noreferrer">{source}</a> : source}
+      <div>{lyrics.credit || <>Lyrics provided by: {source === "lrc.red"
+        ? <a href="https://lrc.red/" target="_blank" rel="noopener noreferrer">{source}</a> : source}</>}
         {timing && <> <span className="lyssna-credit-timing">{timing}</span></>}
       </div>
       {(maker || uploader) && <div className="lyssna-community-credits">
@@ -54,7 +54,7 @@ export function LyricCredits({ lyrics, expanded = false, discord = false }: {
   );
 }
 
-function LyssnaCredits({ attribution, timing, expanded }: { attribution: NonNullable<Lyrics["lyssna"]>; timing: string; expanded: boolean }) {
+function LyssnaCredits({ attribution, timing, expanded, credit }: { attribution: NonNullable<Lyrics["lyssna"]>; timing: string; expanded: boolean; credit?: string }) {
   const songUrl = lyssnaSongUrl(attribution.songId);
   const open = useContext(SongSheetContext);
   const openSong = (event: MouseEvent<HTMLAnchorElement>) => {
@@ -65,7 +65,7 @@ function LyssnaCredits({ attribution, timing, expanded }: { attribution: NonNull
   const contributors = attribution.contributors.slice(0, 5);
   const named = contributors.slice(0, (contributors[1]?.share ?? 0) >= 30 ? 2 : 1);
   return <div className={`lyric-source lyssna-provider-credits${expanded ? " expanded" : ""}`}>
-    <div>Lyrics provided by: Lyssna
+    <div>{credit || "Lyrics provided by: Lyssna"}
       {timing && <> <span className="lyssna-credit-timing">{timing}</span></>}
     </div>
     {contributors.length > 0 && <div className="lyssna-community-credits lyssna-contributors">

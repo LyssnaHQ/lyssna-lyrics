@@ -42,8 +42,7 @@ function parseSpotifyLyrics(response: unknown, duration: number): Lyrics | undef
 }
 
 export async function currentCreatorLyrics(host: Host, track: Track, duration: number, sources: LyricSource[]) {
-  // Neither source may touch Spicy Lyrics when loading a Creator draft.
-  const allowed = sources.filter((source) => source !== "spicy" && source !== "apple");
+  const allowed = sources.filter((source) => source !== "spicy");
   const lyrics = await readLyrics(track, duration, allowed, host).catch(() => undefined);
   if (lyrics?.lines.length && canSeed(lyrics)) return lyrics;
   const response = await within(Promise.resolve().then(() => host.spotifyLyrics(track.id)), 7000);

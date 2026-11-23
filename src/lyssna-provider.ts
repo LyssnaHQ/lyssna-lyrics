@@ -1,16 +1,24 @@
 import type { Host, Track } from "./host";
-import { parseLocalTtml } from "./local-lyrics";
+import { lyricsChanged, parseLocalTtml } from "./local-lyrics";
+import { hasLyssnaSession, lyssnaAccountRequest } from "./lyssna-account";
 import { lyssnaRequest } from "./lyssna-api";
 import type { Line, Lyrics, LyssnaContributor } from "./lyssna/types";
 import { normalizeIsrc } from "./spotify-track-metadata";
 
+// What the lyrics route answers: Lyssna's lyrics (a song), Apple Music's through Lyssna (an apple_id), or a
+// recording marked instrumental (no song and no lyrics).
 type LyricsView = {
-  song: { id: string };
+  source?: "lyssna" | "apple_music";
+  song?: { id: string; instrumental?: boolean };
+  apple_id?: string;
+  isrc?: string;
+  instrumental?: boolean;
+  credit?: { text?: string };
   revision_id?: string;
   ttml: string;
   offset_ms: number;
   timing_kind?: "word" | "line" | "static";
-  contributors: LyssnaContributor[];
+  contributors?: LyssnaContributor[];
 };
 type CacheEntry = {
   value: LyricsView | null;
@@ -90,14 +98,20 @@ export function clearLyssnaCache() {
 }
 
 // One track is one lookup: the ISRC rides along and the server tries it when the Spotify id
-// matches nothing, so there is no second request.
-const lyricsPath = (trackId: string, isrc?: string) => `/v1/lyrics/spotify/${trackId}${isrc ? `?isrc=${isrc}` : ""}`;
+// matches nothing, so there is no second request. The source says which lyrics are wanted, so Lyssna's
+// own and Apple Music's through Lyssna stay two sources the reader can order.
+type Source = "lyssna" | "apple_music" | "lyssna,apple_music";
+const communitySources = ["lyssna", "lyssna,apple_music"] as const;
+const lyricsPath = (trackId: string, isrc: string | undefined, source: Source) =>
+  `/v1/lyrics/spotify/${trackId}?${isrc ? `isrc=${isrc}&` : ""}source=${source}`;
 
 export function revalidateLyssnaSong(trackId: string, isrc?: string, approved?: ApprovedUpload) {
   const normalizedIsrc = normalizeIsrc(isrc) ?? trackIsrc.get(trackId);
   // The address a lookup used depends on whether the ISRC was known then, so both are refreshed.
-  const paths = [lyricsPath(trackId, normalizedIsrc)];
-  if (normalizedIsrc) paths.push(lyricsPath(trackId));
+  const paths = communitySources.flatMap((source) => normalizedIsrc
+    ? [lyricsPath(trackId, normalizedIsrc, source), lyricsPath(trackId, undefined, source)]
+    : [lyricsPath(trackId, undefined, source)]);
+  if (normalizedIsrc) paths.push(lyricsPath(trackId, normalizedIsrc, "apple_music"));
   for (const path of paths) {
     pending.delete(path);
     cooling.delete(path);
@@ -106,8 +120,12 @@ export function revalidateLyssnaSong(trackId: string, isrc?: string, approved?: 
   }
   while (refreshes.size > cacheLimit) refreshes.delete(refreshes.keys().next().value!);
   if (approved && uuid.test(approved.songId) && uuid.test(approved.revision)) {
-    approvals.set(paths[0], { ...approved, expires: Date.now() + 300_000 });
-    if (approvals.size > cacheLimit) approvals.delete(approvals.keys().next().value!);
+    for (const source of communitySources) {
+      for (const code of new Set([normalizedIsrc, undefined])) {
+        approvals.set(lyricsPath(trackId, code, source), { ...approved, expires: Date.now() + 300_000 });
+      }
+    }
+    while (approvals.size > cacheLimit) approvals.delete(approvals.keys().next().value!);
   }
 }
 
@@ -117,6 +135,14 @@ function coolDown(path: string) {
 }
 
 export function resumeLyssnaRequests() { cooling.clear(); }
+
+function validAnswer(value: LyricsView) {
+  if (typeof value.ttml !== "string" || !Number.isFinite(value.offset_ms)) return false;
+  if (value.source === "apple_music") return /^\d{1,15}$/.test(value.apple_id ?? "");
+  // a recording a reviewer marked instrumental counts as synced and has no song
+  if (value.instrumental === true && !value.song) return value.source === "lyssna" && !!normalizeIsrc(value.isrc);
+  return uuid.test(value.song?.id ?? "");
+}
 
 async function lookup(path: string, current: () => boolean, revalidate: boolean): Promise<LyricsView | null | undefined> {
   const cached = await readCache(path, current);
@@ -140,7 +166,7 @@ async function lookup(path: string, current: () => boolean, revalidate: boolean)
     const value = same ? cached!.value
       : response.status === 404 ? null : await response.json() as LyricsView;
     if (!current()) return;
-    if (value && (!uuid.test(value.song?.id) || typeof value.ttml !== "string" || !Number.isFinite(value.offset_ms))) return;
+    if (value && !validAnswer(value)) return;
     const policy = response.headers.get("Cache-Control") ?? "";
     const maxAge = Number(/\bmax-age=(\d+)/i.exec(policy)?.[1] ??
       (response.status === 304 ? cached!.maxAge : 60));
@@ -195,8 +221,8 @@ async function lookupRefreshed(path: string, current: () => boolean, refresh: bo
   }
 }
 
-function read(trackId: string, isrc?: string) {
-  const path = lyricsPath(trackId, isrc);
+function read(trackId: string, isrc: string | undefined, source: Source) {
+  const path = lyricsPath(trackId, isrc, source);
   const existing = pending.get(path);
   if (existing) return existing;
   const generation = cacheGeneration;
@@ -209,18 +235,36 @@ function read(trackId: string, isrc?: string) {
   return request;
 }
 
-export async function readLyssnaLyrics(track: Track, lookupIsrc: Host["lookupIsrc"]): Promise<Lyrics | undefined> {
-  if (!/^[A-Za-z0-9]{22}$/.test(track.id)) return;
+async function trackCode(track: Track, lookupIsrc: Host["lookupIsrc"]) {
   const isrc = normalizeIsrc(track.isrc) ?? trackIsrc.get(track.id) ?? normalizeIsrc(await lookupIsrc(track.id).catch(() => undefined));
   if (isrc) {
     trackIsrc.set(track.id, isrc);
     if (trackIsrc.size > cacheLimit) trackIsrc.delete(trackIsrc.keys().next().value!);
   }
-  const value = await read(track.id, isrc);
-  if (!value) return;
+  return isrc;
+}
+
+export async function readLyssnaLyrics(track: Track, lookupIsrc: Host["lookupIsrc"], source: Source = "lyssna"): Promise<Lyrics | undefined> {
+  if (!/^[A-Za-z0-9]{22}$/.test(track.id)) return;
+  const isrc = await trackCode(track, lookupIsrc);
+  if (!isrc && source === "apple_music") return;
+  const value = await read(track.id, isrc, isrc ? source : "lyssna");
+  if (!value || (source === "apple_music" && value.source !== "apple_music") ||
+      (source === "lyssna" && value.source === "apple_music")) return;
   const previous = parsed.get(value);
   if (previous) return previous;
+  const apple = value.source === "apple_music";
+  const sourceName = apple ? "Apple Music (via Lyssna)" : "Lyssna";
+  const creditText = typeof value.credit?.text === "string" ? value.credit.text.trim() : undefined;
+  const credit = apple && creditText ? creditText.replace("Apple Music via Lyssna", sourceName) : creditText;
+  const attribution = value.song && { songId: value.song.id, contributors: Array.isArray(value.contributors) ? value.contributors : [] };
+  if (value.instrumental || value.song?.instrumental) {
+    const result: Lyrics = { source: "Lyssna", credit, lyssna: attribution, lines: [], synced: false, instrumental: true };
+    parsed.set(value, result);
+    return result;
+  }
   const lyrics = parseLocalTtml(value.ttml);
+  if (!lyrics.lines.length) return;
   const offset = value.offset_ms;
   function timed(line: Line): Line {
     return {
@@ -230,10 +274,37 @@ export async function readLyssnaLyrics(track: Track, lookupIsrc: Host["lookupIsr
     };
   }
   const result: Lyrics = {
-    ...lyrics, source: "Lyssna", synced: value.timing_kind !== "static" && lyrics.synced,
+    ...lyrics, source: sourceName, credit,
+    synced: value.timing_kind !== "static" && lyrics.synced,
     lines: offset ? lyrics.lines.map(timed) : lyrics.lines,
-    lyssna: { songId: value.song.id, contributors: Array.isArray(value.contributors) ? value.contributors : [] },
+    lyssna: attribution,
   };
   parsed.set(value, result);
   return result;
+}
+
+export async function markLyssnaInstrumental(track: Track, host: Host) {
+  if (!/^[A-Za-z0-9]{22}$/.test(track.id)) throw new Error("Only Spotify tracks can be marked instrumental.");
+  const isrc = await trackCode(track, host.lookupIsrc);
+  if (!isrc) throw new Error("Spotify doesn’t have an ISRC for this recording.");
+  const response = await lyssnaAccountRequest("/v1/instrumental", { isrcs: [isrc], instrumental: true }, "PUT");
+  if (!hasLyssnaSession() || response?.status === 401) throw new Error("Sign in to Lyssna in Settings.");
+  if (response?.status === 403) throw new Error("Your Lyssna account can’t mark recordings instrumental.");
+  if (!response?.ok) throw new Error("Couldn’t mark this recording instrumental. Try again later.");
+  const result = await response.json() as { isrcs?: { isrc: string; instrumental: boolean }[] };
+  if (!result.isrcs?.some((item) => item.isrc === isrc && item.instrumental === true)) {
+    throw new Error("Lyssna couldn’t confirm the instrumental mark.");
+  }
+
+  revalidateLyssnaSong(track.id, isrc);
+  // Some edge caches can serve the earlier miss for five minutes after the write.
+  const value: LyricsView = { source: "lyssna", isrc, instrumental: true, offset_ms: 0, ttml: "" };
+  const maxAge = 300;
+  for (const source of communitySources) {
+    const path = lyricsPath(track.id, isrc, source);
+    approvals.delete(path);
+    refreshes.delete(path);
+    saveCache(path, { value, maxAge, freshUntil: Date.now() + maxAge * 1000 });
+  }
+  window.dispatchEvent(new CustomEvent(lyricsChanged, { detail: [track.id] }));
 }

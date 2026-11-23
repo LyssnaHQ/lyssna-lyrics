@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactElement, type ReactNode, type RefObject } from "react";
-import { ArrowRight, ArrowUpRight, ChevronUp, Disc3, FilePenLine, FoldVertical, MessageCircle, MicVocal, Music2, PanelLeftOpen, Settings as GearIcon, UnfoldVertical, X } from "lucide-react";
+import { ArrowRight, ArrowUpRight, ChevronUp, Disc3, FilePenLine, FoldVertical, MessageCircle, MicOff, MicVocal, Music2, PanelLeftOpen, Settings as GearIcon, UnfoldVertical, X } from "lucide-react";
 import { getHost, type CanvasInfo, type Host, type Root, type Track } from "./host";
 import { useArtworkColor } from "./lyssna/artwork-color";
 import { Ambience } from "./lyssna/ambience";
@@ -41,11 +41,13 @@ import { quickEffects, QuickEffectPicker, type QuickEffectChoice } from "./quick
 import { DJ_COVER, DJInterlude } from "./dj-interlude";
 import { readViewSession, saveViewSession } from "./view-session";
 import { lyssnaApiNotice, lyssnaInstallReady } from "./lyssna-api";
-import { revalidateLyssnaSong, resumeLyssnaRequests } from "./lyssna-provider";
+import { accountChanged, hasLyssnaSession, readLyssnaProfile } from "./lyssna-account";
+import { markLyssnaInstrumental, revalidateLyssnaSong, resumeLyssnaRequests } from "./lyssna-provider";
 import { submitLyssnaTtml } from "./lyssna-submission";
 import { useFirstUploadNotice } from "./first-upload-notice";
 import { CreatorSurface, type CreatorPlayback } from "./creator/surface";
 import { reviewTopbar } from "./creator/review-topbar";
+import { canReview } from "./creator/review-api";
 import { ReviewQueuePanel, type ReviewSelection } from "./creator/review-panel";
 import { startCreatorRepeatRecovery } from "./creator/repeat";
 import { createSpotifyCapture, type SpotifyCapture } from "./creator/spotify-capture";
@@ -82,7 +84,7 @@ function useTrackLyrics(track: Track | null, duration: number, view: Window, set
     }
     const currentTrack = track;
     const enabled = sourceKey.split(",").filter((id): id is (typeof sourceIds)[number] => sourceIds.some((source) => source === id));
-    const revalidate = enabled.includes("lyssna");
+    const revalidate = enabled.includes("lyssna") || enabled.includes("apple");
     let generation = 0;
     let timer = 0;
     async function read() {
@@ -129,7 +131,46 @@ function useTrackLyrics(track: Track | null, duration: number, view: Window, set
     ? { lyrics: result.lyrics, waiting: result.waiting } : { lyrics: undefined, waiting: !!track && !!sourceKey };
 }
 
-function MissingLyrics({ creatorEnabled, openCreator }: { creatorEnabled: boolean; openCreator?: () => void }) {
+function MissingLyrics({ track, host, creatorEnabled, openCreator }: {
+  track: Track; host: Host; creatorEnabled: boolean; openCreator?: () => void;
+}) {
+  const [reviewer, setReviewer] = useState(false);
+  const [marking, setMarking] = useState(false);
+  const [markNotice, setMarkNotice] = useState<{ message: string; error?: true }>();
+  useEffect(() => {
+    let revision = 0;
+    function check() {
+      const current = ++revision;
+      if (!hasLyssnaSession()) {
+        setReviewer(false);
+        return;
+      }
+      void readLyssnaProfile().then((profile) => {
+        if (current === revision && profile) setReviewer(canReview(profile.role));
+      }).catch(() => {});
+    }
+    check();
+    window.addEventListener(accountChanged, check);
+    window.addEventListener(lyssnaInstallReady, check);
+    return () => {
+      revision++;
+      window.removeEventListener(accountChanged, check);
+      window.removeEventListener(lyssnaInstallReady, check);
+    };
+  }, []);
+  async function mark() {
+    setMarking(true);
+    setMarkNotice(undefined);
+    try {
+      await markLyssnaInstrumental(track, host);
+      setMarkNotice({ message: "Marked instrumental on Lyssna." });
+    } catch (error) {
+      setMarkNotice({ message: error instanceof Error ? error.message : "Couldn’t mark this recording instrumental.", error: true });
+    } finally {
+      setMarking(false);
+    }
+  }
+
   return <div className="lyssna-missing-lyrics">
     <div className="lyssna-missing-content">
       <h2 role="status">No lyrics for this song yet</h2>
@@ -141,6 +182,13 @@ function MissingLyrics({ creatorEnabled, openCreator }: { creatorEnabled: boolea
         </span>
         <ArrowRight aria-hidden="true" />
       </button>}
+      {reviewer && <button className="lyssna-missing-action" type="button" onClick={() => void mark()}
+        disabled={marking || !!markNotice && !markNotice.error}>
+        <MicOff aria-hidden="true" />
+        <span><strong>{marking ? "Marking instrumental…" : "Mark instrumental"}</strong><small>Mark this recording as having no lyrics on Lyssna.</small></span>
+        <ArrowRight aria-hidden="true" />
+      </button>}
+      {markNotice && <small role={markNotice.error ? "alert" : "status"}>{markNotice.message}</small>}
       <a className="lyssna-missing-action" href={discordInvite} target="_blank" rel="noopener noreferrer">
         <MessageCircle aria-hidden="true" />
         <span><strong>Join the Lyssna Discord</strong><small>Ask about missing lyrics or get help with a sync.</small></span>
@@ -844,7 +892,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
           {details}</>}
         </div>
         {!coverOnly && <div className="lyrics-body">
-          {missing ? settings.lyrics_no_lyrics_notice && <MissingLyrics creatorEnabled={preferences.ttml_creator}
+          {missing ? settings.lyrics_no_lyrics_notice && <MissingLyrics key={track.id} track={track} host={host} creatorEnabled={preferences.ttml_creator}
             openCreator={openCreator && (() => {
               if (!preferences.ttml_creator) change({ ttml_creator: true });
               openCreator();

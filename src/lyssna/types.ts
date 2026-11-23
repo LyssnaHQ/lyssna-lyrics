@@ -34,6 +34,8 @@ export interface Lyrics {
   attribution?: { uploader?: Contributor; maker?: Contributor };
   lines: Line[];
   source: string;
+  /** Attribution text supplied by the lyrics provider. */
+  credit?: string;
   instrumental: boolean;
   synced: boolean;
   /** Word timing was estimated (experimental word sync). */

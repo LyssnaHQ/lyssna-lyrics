@@ -23,9 +23,9 @@ function save(key: string, value: string) {
   catch { /* Keep using the in-memory install if storage is unavailable. */ }
 }
 
-type RequestOptions = { body?: object; etag?: string; accessToken?: string; waitForInstall?: boolean; revalidate?: boolean };
+type RequestOptions = { body?: object; method?: "PUT"; etag?: string; accessToken?: string; waitForInstall?: boolean; revalidate?: boolean };
 
-async function send(path: string, { body, etag, installation, accessToken, revalidate }: RequestOptions & {
+async function send(path: string, { body, method, etag, installation, accessToken, revalidate }: RequestOptions & {
   installation?: string;
 }) {
   const url = new URL(path, origin);
@@ -36,11 +36,17 @@ async function send(path: string, { body, etag, installation, accessToken, reval
   if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
   if (body) headers.set("Content-Type", "application/json");
   const response = await fetch(url, {
-    headers, method: body ? "POST" : "GET", body: body ? JSON.stringify(body) : undefined,
+    headers, method: method ?? (body ? "POST" : "GET"), body: body ? JSON.stringify(body) : undefined,
     cache: revalidate ? "no-cache" : undefined,
     credentials: "omit", redirect: "error", referrerPolicy: "no-referrer", signal: AbortSignal.timeout(8_000),
   });
-  if (response.status === 429 || (response.status === 503 && response.headers.has("Retry-After"))) {
+  const source = url.searchParams.get("source");
+  const limited = response.status === 429 || (response.status === 503 && response.headers.has("Retry-After"));
+  if (limited && source !== "apple_music") {
+    if (response.status === 429 && source === "lyssna,apple_music") {
+      const problem = await response.clone().json().catch(() => null) as { error?: string; message?: string } | null;
+      if (problem?.error === "daily_cap" && problem.message?.includes("Apple Music lookups")) return { response };
+    }
     const header = response.headers.get("Retry-After");
     const wait = header && /^\d+$/.test(header) ? Number(header) * 1_000 : Date.parse(header ?? "") - Date.now();
     retryAfter = Math.max(retryAfter, Date.now() + Math.max(Number.isFinite(wait) ? wait : 0, delay));

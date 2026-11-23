@@ -455,10 +455,10 @@ export function keepTimings(
   });
 }
 
-/** Spicy Lyrics and Apple Music lyrics never seed a draft, so the creator
+/** Spicy Lyrics results never seed a draft, so the creator
  * is not a way to copy them out. */
 export function canSeed(lyrics: Lyrics) {
-  return ["Imported TTML", "Imported LRC", "Lyssna", "lrc.red", "LRCLIB", "Netease", "Spotify"].includes(lyrics.source);
+  return ["Imported TTML", "Imported LRC", "Lyssna", "Apple Music (via Lyssna)", "lrc.red", "LRCLIB", "Netease", "Spotify"].includes(lyrics.source);
 }
 
 const STYLE_INDEX = { first: 0, second: 1, third: 2 } as const;
