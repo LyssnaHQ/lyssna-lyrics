@@ -1321,7 +1321,7 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   text-underline-offset: 0.18em;
 }
 
-.lyssna-lyrics-view .lyssna-credit-timing {
+.lyssna-lyrics-view .lyssna-credit-suffix {
   display: inline-block;
   width: max-content;
   max-width: 100%;

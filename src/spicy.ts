@@ -4,6 +4,7 @@ import type { Contributor, Line, Lyrics, Word } from "./lyssna/types";
 const clientKey = "sl_pk_yloyxlXK4J_GvDICrVYXYI4Ge1fJ_pia4ruzGLpoGQI";
 let retryAt = 0;
 export const spicyAppleSource = "Apple Music (via Spicy Lyrics)";
+export const spicyCommunitySource = "Spicy Lyrics";
 
 type Vocal = {
   Text?: string;
@@ -44,7 +45,7 @@ function contributor(value: unknown): Contributor | undefined {
 }
 
 function normalize(data: Payload): Lyrics | undefined {
-  const source = data.source === "spicy_lyrics" ? "Spicy Lyrics"
+  const source = data.source === "spicy_lyrics" ? spicyCommunitySource
     : data.source === "apple_music" ? spicyAppleSource
     : data.source === "spotify" ? "Spotify" : "Unknown source";
   const attribution = data.source === "spicy_lyrics" ? {
@@ -53,7 +54,8 @@ function normalize(data: Payload): Lyrics | undefined {
   } : undefined;
   if (data.Type === "Instrumental") return { source, attribution, lines: [], synced: false, instrumental: true };
   const lines: Line[] = [];
-  const timed = data.Type === "Syllable" || data.Type === "Line";
+  const timingKind = data.Type === "Syllable" ? "word" : data.Type === "Line" ? "line" : "static";
+  const timed = timingKind !== "static";
   const ms = (time = 0) => Number.isFinite(time) ? Math.max(0, Math.round(time * 1000)) : 0;
 
   function add(vocal: Vocal, entry: VocalEntry, background = false) {
@@ -86,7 +88,7 @@ function normalize(data: Payload): Lyrics | undefined {
     for (const vocal of entry.Background ?? []) add(vocal, entry, true);
   }
   if (lines.length) return {
-    source, lines, synced: timed, instrumental: false,
+    source, lines, synced: timed, timing_kind: timingKind, instrumental: false,
     songwriters: (data.SongWriters ?? data.Songwriters)?.flatMap((writer) => typeof writer === "string" ? [writer] : (writer?.name ? [writer.name] : [])),
     attribution,
   };

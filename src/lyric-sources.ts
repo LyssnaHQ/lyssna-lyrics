@@ -3,14 +3,14 @@ import { clearTemporaryLyrics, readLocalLyrics, lyricsChanged } from "./local-ly
 import type { Lyrics } from "./lyssna/types";
 import { readLrcLib, readLrcRed, readNetease } from "./remote-lyrics";
 import type { Settings } from "./settings";
-import { readSpicyLyrics, spicyAppleSource } from "./spicy";
-import { clearLyssnaCache, readLyssnaLyrics, revalidateLyssnaSong } from "./lyssna-provider";
+import { readSpicyLyrics, spicyAppleSource, spicyCommunitySource } from "./spicy";
+import { clearLyssnaCache, lyssnaAppleSource, readLyssnaLyrics, revalidateLyssnaSong } from "./lyssna-provider";
 
 export const lyricSources = {
   local: { name: "Imported TTML", help: "Lyrics you loaded for the playing song." },
   lyssna: { name: "Lyssna Lyrics", help: "Approved community lyrics from Lyssna. Receives the Spotify track ID and may check its ISRC." },
   apple: { name: "Apple Music", help: "Uses the recording’s ISRC to find lyrics through Lyssna." },
-  spicy: { name: "Spicy Lyrics", help: "Community syncs, Spotify fallback, and Apple Music when Lyssna’s Apple Music source is unavailable. Sends the track ID to Spicy Lyrics." },
+  spicy: { name: "Spicy Lyrics", help: "Word-synced community lyrics, Spotify fallback, and Apple Music when Lyssna’s Apple Music source is unavailable. Sends the track ID to Spicy Lyrics." },
   lrcred: { name: "lrc.red", help: "Word-timed lyrics. Receives the song's ISRC." },
   lrclib: { name: "LRCLIB", help: "Open lyrics database. Receives the song title, artist, album and length." },
   netease: { name: "Netease", help: "Community lyrics through a third-party proxy. Receives the song title and artist." },
@@ -66,9 +66,24 @@ function readCached(trackId: string, id: string, reader: () => Promise<Lyrics | 
   return entry.value;
 }
 
+function hasWordTiming(lyrics: Lyrics) {
+  return lyrics.synced && (lyrics.timing_kind === undefined || lyrics.timing_kind === "word") &&
+    lyrics.lines.some((line) => line.words.some((word) => word.end_ms > word.start_ms));
+}
+
 export async function readLyrics(track: Track, duration: number, sources: LyricSource[], host: Host) {
+  const appleEnabled = sources.includes("apple");
+  const spicyEnabled = sources.includes("spicy");
   let appleLookup: Promise<Lyrics | null | undefined> | undefined;
   const readApple = () => appleLookup ??= readLyssnaLyrics(track, host.lookupIsrc, "apple_music").catch(() => undefined);
+  const readSpicy = () => readCached(track.id, "spicy", () => readSpicyLyrics(track.id), 60_000, 5 * 60_000);
+
+  async function preferWordTiming(apple: Lyrics) {
+    if (!spicyEnabled || hasWordTiming(apple)) return apple;
+    const spicy = await readSpicy();
+    return spicy?.source === spicyCommunitySource && hasWordTiming(spicy) ? spicy : apple;
+  }
+
   for (let index = 0; index < sources.length; index++) {
     const id = sources[index];
     if (id === "local") {
@@ -77,16 +92,21 @@ export async function readLyrics(track: Track, duration: number, sources: LyricS
     } else if (id === "lyssna") {
       const combined = sources[index + 1] === "apple";
       const lyrics = await readLyssnaLyrics(track, host.lookupIsrc, combined ? "lyssna,apple_music" : "lyssna").catch(() => undefined);
-      if (lyrics) return lyrics;
+      if (lyrics) return lyrics.source === lyssnaAppleSource ? preferWordTiming(lyrics) : lyrics;
       if (combined) index++;
     } else if (id === "apple") {
       const lyrics = await readApple();
-      if (lyrics) return lyrics;
+      if (lyrics) return preferWordTiming(lyrics);
     } else if (id === "spicy") {
-      const lyrics = await readCached(track.id, "spicy", () => readSpicyLyrics(track.id), 60_000, 5 * 60_000);
+      const lyrics = await readSpicy();
       if (!lyrics) continue;
+      if (lyrics.source === spicyCommunitySource) {
+        if (!hasWordTiming(lyrics)) continue;
+        const apple = appleEnabled ? await readApple() : undefined;
+        return apple && hasWordTiming(apple) ? apple : lyrics;
+      }
       if (lyrics.source !== spicyAppleSource) return lyrics;
-      if (!sources.includes("apple")) continue;
+      if (!appleEnabled) continue;
       // The combined Lyssna response can report an Apple Music outage as a miss.
       const preferred = await readApple();
       if (preferred) return preferred;

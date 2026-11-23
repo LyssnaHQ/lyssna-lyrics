@@ -38,6 +38,8 @@ export interface Lyrics {
   credit?: string;
   instrumental: boolean;
   synced: boolean;
+  /** Timing advertised by the lyrics provider. */
+  timing_kind?: "word" | "line" | "static";
   /** Word timing was estimated (experimental word sync). */
   estimated_words?: boolean;
   /** Merged Apple Music words were split by experimental word sync. */

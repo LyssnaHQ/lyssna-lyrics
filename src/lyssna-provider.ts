@@ -17,7 +17,7 @@ type LyricsView = {
   revision_id?: string;
   ttml: string;
   offset_ms: number;
-  timing_kind?: "word" | "line" | "static";
+  timing_kind?: Lyrics["timing_kind"];
   contributors?: LyssnaContributor[];
 };
 type CacheEntry = {
@@ -101,6 +101,7 @@ export function clearLyssnaCache() {
 // matches nothing, so there is no second request. The source says which lyrics are wanted, so Lyssna's
 // own and Apple Music's through Lyssna stay two sources the reader can order.
 type Source = "lyssna" | "apple_music" | "lyssna,apple_music";
+export const lyssnaAppleSource = "Apple Music (via Lyssna)";
 const communitySources = ["lyssna", "lyssna,apple_music"] as const;
 const lyricsPath = (trackId: string, isrc: string | undefined, source: Source) =>
   `/v1/lyrics/spotify/${trackId}?${isrc ? `isrc=${isrc}&` : ""}source=${source}`;
@@ -256,7 +257,7 @@ export async function readLyssnaLyrics(track: Track, lookupIsrc: Host["lookupIsr
   const previous = parsed.get(value);
   if (previous) return previous;
   const apple = value.source === "apple_music";
-  const sourceName = apple ? "Apple Music (via Lyssna)" : "Lyssna";
+  const sourceName = apple ? lyssnaAppleSource : "Lyssna";
   const creditText = typeof value.credit?.text === "string" ? value.credit.text.trim() : undefined;
   const credit = apple && creditText ? creditText.replace("Apple Music via Lyssna", sourceName) : creditText;
   const attribution = value.song && { songId: value.song.id, contributors: Array.isArray(value.contributors) ? value.contributors : [] };
@@ -276,7 +277,7 @@ export async function readLyssnaLyrics(track: Track, lookupIsrc: Host["lookupIsr
     };
   }
   const result: Lyrics = {
-    ...lyrics, source: sourceName, credit,
+    ...lyrics, source: sourceName, credit, timing_kind: value.timing_kind,
     synced: value.timing_kind !== "static" && lyrics.synced,
     lines: offset ? lyrics.lines.map(timed) : lyrics.lines,
     lyssna: attribution,

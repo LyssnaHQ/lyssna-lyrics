@@ -36,6 +36,8 @@ const types = slice(read("frontend/types.ts"), "export interface Word {", "expor
   share: number;
 }
 export interface Lyrics {
+  /** Timing advertised by the lyrics provider. */
+  timing_kind?: "word" | "line" | "static";
   lyssna?: { songId: string; contributors: LyssnaContributor[] };`);
 const lyrics = [
   slice(styles, "\n.lyric-end-credits {", "\n.credit-avatar {"),
