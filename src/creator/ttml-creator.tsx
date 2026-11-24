@@ -37,6 +37,7 @@ import {
   X,
 } from "lucide-react";
 import { IS_MAC, MODIFIER, useCreatorClock, useCreatorEnvironment, useCreatorTick } from "./environment";
+import { useEnhancedPerformance } from "../enhancements/config";
 import type { CreatorState } from "./types";
 import type { Lyrics, PlayerRequest, Track } from "./types";
 import { lyricsChanged, parseLocalTtml } from "../local-lyrics";
@@ -332,9 +333,11 @@ export function TtmlCreator({
   const isPlaying = state.playback.is_playing;
   const here = !!track && playing?.uri === track.uri;
   const heard = state.settings.lyric_offset_ms;
+  const enhancePerformance = useEnhancedPerformance();
   // Only timing boundaries change editor rows. The playhead, elapsed time,
   // and inline preview use the full clock.
   const boundaries = useMemo(() => {
+    if (!enhancePerformance) return;
     const times = new Set<number>();
     for (const line of lines) {
       for (const unit of line.units) {
@@ -343,7 +346,7 @@ export function TtmlCreator({
       }
     }
     return [...times].sort((left, right) => left - right);
-  }, [lines]);
+  }, [lines, enhancePerformance]);
   const position = useCreatorClock(isPlaying, heard, !draftPreview, boundaries);
   const read = useCallback((at?: number) => readTime(at) + heard, [readTime, heard]);
   const rate = state.playback_rate;

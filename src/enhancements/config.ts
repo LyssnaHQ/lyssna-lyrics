@@ -1,3 +1,4 @@
+import { useSyncExternalStore } from "react";
 import { Spicetify, storage } from "./compat";
 
 export const SETTINGS_CHANGED_EVENT = "lyssna-rewrite:enhancements-changed";
@@ -107,6 +108,12 @@ export function saveEnhancementPreferences(patch: Partial<EnhancementSettings>) 
 export function subscribeSettings(update: () => void) {
   window.addEventListener(SETTINGS_CHANGED_EVENT, update);
   return () => window.removeEventListener(SETTINGS_CHANGED_EVENT, update);
+}
+
+const enhanceSpotifyPerformance = () => getSetting("enhanceSpotifyPerformance");
+
+export function useEnhancedPerformance() {
+  return useSyncExternalStore(subscribeSettings, enhanceSpotifyPerformance);
 }
 
 export function getCachedPlaylistFolders(): PlaylistFolderEntry[] {

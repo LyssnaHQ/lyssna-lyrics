@@ -1,6 +1,7 @@
 import { memo, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowRightToLine, AudioLines, Eye, EyeOff, Plus, Settings2, Square, Trash2 } from "lucide-react";
 import { useCreatorEnvironment, useCreatorTick } from "./environment";
+import { useEnhancedPerformance } from "../enhancements/config";
 import { pitchBands, spectrumFrequency, spectrumFrequencyPosition } from "./audio";
 import { useLiveSpectrum } from "./live-spectrum";
 import { useAnchoredPopover } from "../anchored-popover";
@@ -228,6 +229,7 @@ export function TtmlSpectrogram({
   canCapture: boolean;
 }) {
   const { view: window, read, spectrogram, spectrumKey: audioKey, spectrumAudioUri } = useCreatorEnvironment();
+  const enhancePerformance = useEnhancedPerformance();
   const localAudio = spectrumAudioUri === uri;
   const canShare = canCapture && !localAudio && duration > 0;
   const liveSpectrum = useLiveSpectrum(uri, canShare);
@@ -518,7 +520,7 @@ export function TtmlSpectrogram({
     if (element.height !== deviceHeight) element.height = deviceHeight;
     // Offscreen text avoids synchronously resolving the editor's document
     // styles every time the visible time range moves.
-    const backing = typeof window.OffscreenCanvas === "function"
+    const backing = enhancePerformance && typeof window.OffscreenCanvas === "function"
       ? rulerBacking.current ??= new window.OffscreenCanvas(deviceWidth, deviceHeight)
       : undefined;
     if (backing) {
@@ -548,7 +550,7 @@ export function TtmlSpectrogram({
       output.clearRect(0, 0, deviceWidth, deviceHeight);
       output.drawImage(backing, 0, 0);
     }
-  }, [zoom, scroll, width, duration, window]);
+  }, [zoom, scroll, width, duration, window, enhancePerformance]);
 
   useLayoutEffect(() => {
     if (playhead.current) playhead.current.style.transform = `translate3d(${(read() + offset) / 1000 * zoom}px, 0, 0)`;
