@@ -8,13 +8,7 @@ import { normalizeIsrc, spotifyTrackMetadata } from "./spotify-track-metadata";
 const matches = new Map<string, { until: number; result: Promise<string | undefined> }>();
 const comparable = (name?: string) => (name ?? "").normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase();
 const albumName = (name?: string) => comparable(name).replace(/\s+-\s+(single|ep)$/, "");
-const matchPrefix = "lyssna-lyrics.local-isrc:";
-const matchStorageKey = (trackId: string) => `${matchPrefix}${trackId}`;
-
-export function hasSavedLocalTrackMatches() {
-  try { return Object.keys(localStorage).some(key => key.startsWith(matchPrefix)); }
-  catch { return false; }
-}
+const matchStorageKey = (trackId: string) => `lyssna-lyrics.local-isrc:${trackId}`;
 
 function metadata(track: Track, duration: number) {
   const tags = localSongTags(track.id);
@@ -82,17 +76,6 @@ function saveLocalTrackMatch(track: Track, key: string, isrc: string) {
   window.dispatchEvent(new CustomEvent(lyricsChanged, { detail: [track.id] }));
 }
 
-export function savedLocalTrackIsrc(track: Track, duration: number) {
-  const tagged = normalizeIsrc(track.isrc);
-  if (tagged) return tagged;
-  const details = metadata(track, duration);
-  if (!details) return;
-  try {
-    const saved = JSON.parse(localStorage.getItem(matchStorageKey(track.id)) ?? "null") as { key?: string; isrc?: string } | null;
-    if (saved?.key === details.key) return normalizeIsrc(saved.isrc);
-  } catch { /* Search when a saved match cannot be read. */ }
-}
-
 export function confirmLocalTrackIsrc(track: Track, duration: number, code: string) {
   const details = metadata(track, duration);
   const isrc = normalizeIsrc(code);
@@ -145,15 +128,16 @@ async function albumTrackIsrc(uri: string, details: NonNullable<ReturnType<typeo
 
 export function localTrackIsrc(track: Track, duration: number, host: Host) {
   const tagged = normalizeIsrc(track.isrc);
+  if (tagged) return Promise.resolve(tagged);
   const details = metadata(track, duration);
-  if (tagged) {
-    if (details) rememberLocalTrackIsrc(track.id, details.key, tagged);
-    return Promise.resolve(tagged);
-  }
-  const saved = savedLocalTrackIsrc(track, duration);
-  if (saved) return Promise.resolve(saved);
   if (!details) return Promise.resolve(undefined);
   const { title, artist, album, key, fits } = details;
+  try {
+    const saved = JSON.parse(localStorage.getItem(matchStorageKey(track.id)) ?? "null") as { key?: string; isrc?: string } | null;
+    const isrc = saved?.key === key && normalizeIsrc(saved.isrc);
+    if (isrc) return Promise.resolve(isrc);
+  } catch { /* Search when a saved match cannot be read. */ }
+
   const cached = matches.get(key);
   if (cached && Date.now() < cached.until) return cached.result;
   function shortlist<T>(candidates: T[], albums: (candidate: T) => (string | undefined)[]) {
@@ -211,26 +195,13 @@ export function localTrackIsrc(track: Track, duration: number, host: Host) {
   const entry = {
     until: Date.now() + 60_000,
     result: find().then(isrc => {
-      if (isrc) {
-        entry.until = Date.now() + 30 * 60_000;
-        const chosen = savedLocalTrackIsrc(track, duration);
-        if (chosen) return chosen;
-        rememberLocalTrackIsrc(track.id, key, isrc);
-      }
+      if (isrc) entry.until = Date.now() + 30 * 60_000;
       return isrc;
     }).catch(() => undefined),
   };
   matches.set(key, entry);
   if (matches.size > 96) matches.delete(matches.keys().next().value!);
   return entry.result;
-}
-
-function rememberLocalTrackIsrc(id: string, key: string, isrc: string) {
-  try {
-    const value = JSON.stringify({ key, isrc });
-    const storageKey = matchStorageKey(id);
-    if (localStorage.getItem(storageKey) !== value) localStorage.setItem(storageKey, value);
-  } catch { /* The current match remains usable when storage is unavailable. */ }
 }
 
 export function useLocalTrackIsrc(track: Track | null, duration: number, host: Host, enabled: boolean) {

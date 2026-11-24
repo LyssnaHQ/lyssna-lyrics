@@ -2,53 +2,34 @@ import { getSetting } from "../config";
 import { isElementVisible, rootMenuSelector } from "../dom";
 
 type CopyAction = { label: string; copy(uri: string): void };
-type TrackRowProps = {
-  uri?: string; isPlayable?: boolean; item?: { uri?: string }; contextUri?: string; index?: number;
-  isArtistBanned?: boolean; isBannedInContext?: boolean; ageRestricted?: boolean;
-};
-type Fiber = { memoizedProps?: Record<string, unknown>; return?: Fiber };
-export const trackRowSelector = ".main-trackList-trackListRow, [data-testid='tracklist-row']";
+type TrackRowProps = { uri?: string; isPlayable?: boolean; item?: { uri?: string } };
+type Fiber = { memoizedProps?: TrackRowProps; return?: Fiber };
+const rowSelector = ".main-trackList-trackListRow, [data-testid='tracklist-row']";
 const unavailableSelector = "[aria-disabled='true'], [data-disabled], .main-trackList-trackListRow--disabled, .uWhqNrxEmH2qfzeRF1d2";
 const trackUri = /^spotify:track:[A-Za-z0-9]{22}$/;
 
-export function* spotifyProps(element: Element, limit = 8) {
-  const fields = element as unknown as Record<string, unknown>;
+function unavailableTrack(target: Element) {
+  const row = target.closest<HTMLElement>(rowSelector);
+  if (!row) return;
+  const fields = row as unknown as Record<string, unknown>;
   const fiberKey = Object.keys(fields).find(key => key.startsWith("__reactFiber$"));
   let fiber = fiberKey ? fields[fiberKey] as Fiber | undefined : undefined;
-  for (let depth = 0; fiber && depth < limit; depth++, fiber = fiber.return) {
-    if (fiber.memoizedProps) yield fiber.memoizedProps;
-  }
-}
-
-export function readTrackRow(target: Element) {
-  const row = target.closest<HTMLElement>(trackRowSelector);
-  if (!row) return;
   let unavailable = row.matches(unavailableSelector) || !!row.closest("[role='row'][aria-disabled='true']");
   let uri = row.dataset.uri;
-  let contextUri: string | undefined;
-  let index: number | undefined;
-  let restricted = false;
   // Unavailable tracks may render a plain title. Read the row component's
   // own track URI before relying on a link in the row.
-  for (const fields of spotifyProps(row)) {
-    const props = fields as TrackRowProps;
+  for (let depth = 0; fiber && depth < 8; depth++, fiber = fiber.return) {
+    const props = fiber.memoizedProps;
     const candidate = props?.uri ?? props?.item?.uri;
     if (typeof candidate !== "string" || !trackUri.test(candidate)) continue;
     if (uri && trackUri.test(uri) && uri !== candidate) break;
     uri = candidate;
     unavailable ||= props?.isPlayable === false;
-    contextUri ??= props?.contextUri;
-    index ??= props?.index;
-    restricted ||= !!(props?.isArtistBanned || props?.isBannedInContext || props?.ageRestricted);
+    if (unavailable) break;
   }
   const link = row.querySelector<HTMLAnchorElement>("a[href^='/track/']");
   uri ??= link?.pathname.match(/^\/track\/([A-Za-z0-9]{22})$/)?.[0].replace("/track/", "spotify:track:");
-  if (uri && trackUri.test(uri)) return { row, uri, contextUri, index, restricted, unavailable };
-}
-
-export function unavailableTrack(target: Element) {
-  const track = readTrackRow(target);
-  if (track?.unavailable) return track;
+  if (unavailable && uri && trackUri.test(uri)) return { row, uri };
 }
 
 const visibleMenus = () => Array.from(document.querySelectorAll<HTMLElement>(rootMenuSelector)).filter(isElementVisible);
