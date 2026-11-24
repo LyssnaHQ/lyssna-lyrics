@@ -1,14 +1,33 @@
-import type { Host } from "./host";
+import type { Host, Track } from "./host";
+import { isLocalArtwork } from "./lyssna/local-artwork";
 
 const panelContent = '[data-testid="NPV_Panel_OpenDiv"]';
 const nativePreview = '[data-testid="lyrics-npv-section"]';
 const trackVisual = '[data-testid="track-visual-enhancement"]';
 const canvasSurface = '[data-canvas-surface], .main-nowPlayingView-canvasVisualEnhancement, .canvasVideoContainerNPV';
+const nowPlayingWidget = '[data-testid="now-playing-widget"], [data-testid="now-playing-widget-v2"], .main-nowPlayingWidget-nowPlaying';
 
 export function findPlaybarCover(page: Document = document) {
   return page.querySelector<HTMLElement>(
-    ':is([data-testid="now-playing-widget"], [data-testid="now-playing-widget-v2"], .main-nowPlayingWidget-nowPlaying) .cover-art:has(> img)',
+    `:is(${nowPlayingWidget}) .cover-art:has(> img)`,
   );
+}
+
+export function findLocalPlaybarArtwork(track: Track) {
+  const cover = findPlaybarCover();
+  const widget = cover?.closest(nowPlayingWidget);
+  const image = cover?.querySelector<HTMLImageElement>(":scope > img");
+  if (!widget || !image?.complete || !image.naturalWidth) return;
+  const url = image.currentSrc || image.src;
+  if (!isLocalArtwork(url)) return;
+  const info = widget.querySelector(".main-nowPlayingWidget-trackInfo");
+  const title = widget.querySelector('[data-testid="context-item-link"], .main-trackInfo-name')?.textContent?.trim();
+  const artist = widget.querySelector('[data-testid="now-playing-widget-v2-byline"], .main-trackInfo-artists')?.textContent?.trim();
+  const labels = Array.from(info?.children ?? [], child => child.textContent.trim());
+  const matchesTitle = title ? title === track.title : labels.includes(track.title);
+  const matchesText = (text: string | undefined) => !!text && (text === track.artist || text === track.artists);
+  const matchesArtist = artist ? matchesText(artist) : labels.some(matchesText);
+  if (matchesTitle && matchesArtist) return url;
 }
 
 export function findNowPlayingCover(panel: HTMLElement | null) {

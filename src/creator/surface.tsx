@@ -4,6 +4,7 @@ import type { Host, Track as SpotifyTrack } from "../host";
 import { spotifySongUri } from "../spotify-song";
 import type { Settings } from "../settings";
 import { usePlayback } from "../playback";
+import { TrackArtwork } from "../spotify-artwork";
 import { enabledSources, type LyricSource } from "../lyric-sources";
 import { useLocalTrackIsrc } from "../local-track-isrc";
 import { lyricsChanged, parseLocalTtml, saveLocalLyrics } from "../local-lyrics";
@@ -572,14 +573,14 @@ export function CreatorSurface({ host, view: owner, settings, close, reviewSelec
             return result.message;
           }}
           renderPreview={(lyrics, position, song) => {
-            const cover = song.album.images[0]?.url;
-            const artwork = cover && !settings.lyrics_hide_artwork && !settings.lyrics_compact;
+            const cover = current?.uri === song.uri ? track?.cover : song.album.images[0]?.url;
+            const artwork = !settings.lyrics_hide_artwork && !settings.lyrics_compact;
             return <div className={`lyssna-creator-preview${settings.lyrics_artwork_right ? " artwork-right" : ""}`}>
               {cover && (settings.lyrics_background === "animated" || settings.lyrics_background === "static") &&
                 <Ambience image={cover} animate={isPlaying && settings.lyrics_background === "animated"}
                   reduceMotion={settings.reduce_motion} brightness={settings.lyrics_background_brightness} />}
               {artwork && <div className="lyssna-creator-preview-album">
-                <img src={cover} alt="" /><strong>{song.name}</strong><span>{song.artists.map(({ name }) => name).join(", ")}</span>
+                <TrackArtwork key={cover || song.id} src={cover} /><strong>{song.name}</strong><span>{song.artists.map(({ name }) => name).join(", ")}</span>
               </div>}
               <div className="lyssna-creator-preview-lines">
                 <LyricsDisplay lyrics={lyrics} positionMs={position} playing={isPlaying} settings={{ ...settings, reduce_motion: true }}

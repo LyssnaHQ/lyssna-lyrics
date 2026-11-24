@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { Music2 } from "lucide-react";
 import type { CanvasInfo, Host } from "./host";
 import { LyricsVisualiser } from "./lyssna/lyrics-visualiser";
 import { spectrumBars, VISUALISER_BARS, type VisualiserFrame } from "./lyssna/visualiser-frame";
@@ -6,6 +7,14 @@ import { playCanvasMedia } from "./canvas-media";
 import type { SpotifyCapture } from "./creator/spotify-capture";
 import { LIVE_TILE_MS, liveSpectrumCleared, readLiveTiles, type LiveTile } from "./creator/spectrum-storage";
 import { spotifySongUri } from "./spotify-song";
+
+export function TrackArtwork({ src, className = "cover" }: { src?: string; className?: string }) {
+  const [failed, setFailed] = useState<string>();
+  if (src && src !== failed) return <img className={className} src={src} alt="" onError={() => setFailed(src)} />;
+  return <div className={`${className} lyssna-cover-placeholder`} role="img" aria-label="No cover artwork">
+    <Music2 aria-hidden="true" />
+  </div>;
+}
 
 export function useCanvas(host: Host, trackId: string | undefined, enabled: boolean) {
   const [canvas, setCanvas] = useState<{ trackId: string; info: CanvasInfo }>();

@@ -1,11 +1,58 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Host } from "./host";
 import { frameDue } from "./lyssna/frame-cap";
+import { isLocalArtwork } from "./lyssna/local-artwork";
+import { findLocalPlaybarArtwork, findPlaybarCover } from "./now-playing";
+
+function useLocalCover(track: ReturnType<Host["track"]>) {
+  const [fallback, setFallback] = useState<{ track: NonNullable<typeof track>; url: string }>();
+  useEffect(() => {
+    if (!track?.local || (track.cover && !isLocalArtwork(track.cover))) return;
+    let active = true;
+    let observer: MutationObserver | undefined;
+    let playbar: Element | null = null;
+    let previousUrl: string | undefined;
+    const song = track;
+    function update() {
+      if (!active) return;
+      const url = findLocalPlaybarArtwork(song) ?? "";
+      if (url === previousUrl) return;
+      previousUrl = url;
+      setFallback({ track: song, url });
+    }
+    function watchPlaybar() {
+      if (!active) return;
+      update();
+      playbar = findPlaybarCover()?.closest(".main-nowPlayingBar-left") ??
+        document.querySelector(".main-nowPlayingBar-nowPlayingBar, [data-testid='now-playing-bar']");
+      if (!playbar) return;
+      observer = new MutationObserver(update);
+      observer.observe(playbar, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ["src", "srcset"] });
+      playbar.addEventListener("load", update, true);
+      playbar.addEventListener("error", update, true);
+    }
+    if (track.cover) {
+      const image = new Image();
+      image.src = track.cover;
+      void image.decode().catch(watchPlaybar);
+    } else {
+      watchPlaybar();
+    }
+    return () => {
+      active = false;
+      observer?.disconnect();
+      playbar?.removeEventListener("load", update, true);
+      playbar?.removeEventListener("error", update, true);
+    };
+  }, [track]);
+  return fallback && fallback.track === track ? fallback.url : track?.cover;
+}
 
 export function usePlayback(host: Host, watchNarration = false) {
   const [track, setTrack] = useState(host.track);
   const [playing, setPlaying] = useState(host.playing);
   const [narrating, setNarrating] = useState(() => watchNarration && host.djNarrating());
+  const cover = useLocalCover(track);
   useEffect(() => {
     const update = () => {
       const next = host.track();
@@ -19,7 +66,8 @@ export function usePlayback(host: Host, watchNarration = false) {
     update();
     return unwatch;
   }, [host, watchNarration]);
-  return { track: narrating ? null : track, playing, narrating };
+  const displayTrack = useMemo(() => track && cover !== undefined && cover !== track.cover ? { ...track, cover } : track, [track, cover]);
+  return { track: narrating ? null : displayTrack, playing, narrating };
 }
 
 export function usePosition(host: Host, playing: boolean, view: Window = window, read = host.position) {

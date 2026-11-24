@@ -27,7 +27,7 @@ import { attachBulkLyrics, importLyricFile, loadBulkLyrics } from "./ttml-import
 import { enabledSources, readLyrics, refreshLyrics, sourceIds } from "./lyric-sources";
 import { LyricCredits } from "./credits";
 import { SongSheetScope } from "./song-sheet";
-import { CanvasArtwork, SpotifyVisualiser, useCanvas } from "./spotify-artwork";
+import { CanvasArtwork, SpotifyVisualiser, TrackArtwork, useCanvas } from "./spotify-artwork";
 import { findNowPlaying, findNowPlayingCover, findPlaybarCover, nowPlayingArtistCard, nowPlayingArtwork, nowPlayingCanvas, placeNowPlayingPreview } from "./now-playing";
 import { TrackMetadata } from "./track-metadata";
 import { useDefaultLyricsFont } from "./lyrics-font-fallback";
@@ -925,8 +925,8 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
     </div>
   </div>;
   const renderCover = (controls?: ReactNode) => <div className="lyrics-media lyrics-motion-stage">
-    {track?.cover && <img className={`cover${settings.cover_animation && !settings.reduce_motion ? " crossfade" : ""}`}
-      key={track.cover} src={track.cover} alt="" />}
+    <TrackArtwork className={`cover${settings.cover_animation && !settings.reduce_motion ? " crossfade" : ""}`}
+      key={track?.cover || trackId} src={track?.cover} />
     <MotionArtwork cover={motion} playing={playing} />
     {controls}
     {toolbarOnCover && toolbar}
@@ -965,7 +965,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
         <div className="lyrics-album">
           {artworkDock ? playback : <>{canvas ? <CanvasArtwork key={`${track.id}:${canvas.fileId ?? canvas.url}`} info={canvas} cover={track.cover}
             playing={playing && !settings.reduce_motion} onUnavailable={setUnavailableCanvas} onVideo={setCanvasVideo} heldFrame={heldFrame} />
-            : (motion.state !== "idle" || track.cover) && renderCover()}
+            : renderCover()}
           {details}</>}
         </div>
         {!coverOnly && <div className="lyrics-body">

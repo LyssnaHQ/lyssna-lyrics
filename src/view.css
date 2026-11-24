@@ -562,6 +562,25 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   margin-inline: auto;
 }
 
+.lyssna-lyrics-view .cover.lyssna-cover-placeholder {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  border-radius: 8px;
+  color: #ffffffa6;
+  background:
+    radial-gradient(ellipse at 25% 15%, #354853, transparent 65%),
+    radial-gradient(ellipse at 90% 90%, #313748, transparent 70%),
+    #181d24;
+  box-shadow: inset 0 0 0 1px #ffffff16;
+}
+
+.lyssna-lyrics-view .lyssna-cover-placeholder svg {
+  width: 27%;
+  height: auto;
+  stroke-width: 1.3;
+}
+
 .lyssna-lyrics-view .lyrics-motion-stage {
   display: grid;
 }
@@ -2154,6 +2173,7 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   text-align: center;
 }
 .lyssna-lyrics-view .lyssna-creator-preview-album img { width: min(100%, 300px); max-height: 32vh; object-fit: contain; border-radius: 8px; }
+.lyssna-lyrics-view .lyssna-creator-preview-album .lyssna-cover-placeholder { width: min(100%, 300px, 32vh); }
 .lyssna-lyrics-view .lyssna-creator-preview-album strong { font-size: 1.5em; }
 .lyssna-lyrics-view .lyssna-creator-preview-lines { position: relative; flex: 1; min-width: 0; }
 @container (max-width: 600px) { .lyssna-lyrics-view .lyssna-creator-preview-album { display: none; } }
