@@ -107,6 +107,22 @@
 .load-ttml-reviewer :is(strong, small) { display: block; }
 .load-ttml-reviewer small { margin-top: 3px; color: light-dark(#4c4c4c, #b3b3b3); }
 .load-ttml-reviewer .settings-select { width: auto; max-width: 100%; }
+.load-ttml-isrc {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.load-ttml-isrc input {
+  flex: 1 1 210px;
+  min-width: 0;
+  color: inherit;
+  background: light-dark(#f4f4f4, #2b2b2b);
+  border: 1px solid light-dark(#0003, #fff3);
+  border-radius: 999px;
+  font: inherit;
+  padding: 8px 12px;
+}
 .load-ttml-submit {
   grid-column: 1 / -1;
 }

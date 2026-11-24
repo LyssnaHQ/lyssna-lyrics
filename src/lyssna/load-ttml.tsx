@@ -56,6 +56,7 @@ const MODES: { mode: LoadMode; title: string; detail: string }[] = [
 export function LoadTtml({
   song,
   unmatchedLocalSong,
+  onMatchLocalSong,
   reviewer,
   onReviewer,
   onLoad,
@@ -79,6 +80,7 @@ export function LoadTtml({
   onSubmit: (file: File) => Promise<void>;
   song?: string;
   unmatchedLocalSong?: boolean;
+  onMatchLocalSong?: (value: string) => Promise<void>;
   reviewer: Settings["ttml_reviewer"];
   onReviewer: (mode: Settings["ttml_reviewer"]) => void;
   onLoad: (file: File, mode: LoadMode) => Promise<void>;
@@ -97,6 +99,7 @@ export function LoadTtml({
   const [bulkResults, setBulkResults] = useState<BulkLyric[] | null>(null);
   const many = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
+  const [isrcInput, setIsrcInput] = useState("");
   const signInRequired = "Sign in to Lyssna in Settings to submit lyrics";
   const [submitBlock, setSubmitBlock] = useState<string | null>(() => hasLyssnaSession() ? "Checking your Lyssna account…" : signInRequired);
   const submitBlocked = unmatchedLocalSong ? "A local file needs an ISRC match before it can be submitted" :
@@ -217,6 +220,14 @@ export function LoadTtml({
                 <option value="always">Always Apply</option>
               </select>
             </label>
+            {unmatchedLocalSong && onMatchLocalSong && <form className="load-ttml-isrc" onSubmit={event => {
+              event.preventDefault();
+              if (!busy && isrcInput.trim()) act(() => onMatchLocalSong(isrcInput).then(() => setIsrcInput("")));
+            }}>
+              <input aria-label="ISRC or Spotify track link" placeholder="ISRC or Spotify track link" value={isrcInput}
+                maxLength={300} disabled={busy} onChange={event => setIsrcInput(event.currentTarget.value)} />
+              <button type="submit" disabled={busy || !isrcInput.trim()}>Match recording</button>
+            </form>}
             <input
               ref={input}
               type="file"
