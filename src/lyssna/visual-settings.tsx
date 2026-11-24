@@ -198,6 +198,13 @@ return { flag, range, Look: [
             : "Turn on Show romanized lyrics first",
         ),
         flag(
+          "romaji_as_written",
+          "Romaji as written",
+          "Spell Japanese the way romanized lyrics usually are, such as kyou, koohii, and wa.",
+          "japanese romanization romaji",
+          settings.romanized ? undefined : "Turn on Show romanized lyrics first",
+        ),
+        flag(
           "lyrics_translations",
           "Show translations",
           "Show translations that come with the lyrics under each line.",

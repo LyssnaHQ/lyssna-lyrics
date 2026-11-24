@@ -31,3 +31,9 @@ The Lucide icons are distributed under the ISC license. Some are derived from Fe
 Lyssna's gibberish dictionary and filter, and the full screen transport glyphs, come from [the pixels-spicy-lyrics fork](https://github.com/iPixelGalaxy/spicy-lyrics) under AGPL-3.0. The app snapshot records the source revision in `src/lyssna/UPSTREAM`.
 
 The desktop Lyssna fonts are [Inter](https://github.com/rsms/inter) by the Inter Project Authors under the SIL Open Font License and [Metropolis](https://github.com/chrismsimpson/Metropolis) by Chris Simpson under the Unlicense. Their license texts accompany the built plugin.
+
+## Lyric romanization
+
+The WebAssembly romanizer uses [Lyssna's lyric-romanize crate](https://github.com/LyssLabs/lyssna-app/tree/25c40c8ff1f9bf32123e6bf5d4b190b3135e5abe/crates/lyric-romanize) under AGPL-3.0. The plugin includes its source and a browser adapter in `crates/lyric-romanize`. Run `npm run build:romanization` with Rust's `wasm32-unknown-unknown` target to regenerate the downloadable engine.
+
+The [Lindera IPADIC dictionary](https://github.com/lindera/mecab-ipadic) is embedded in the engine. Its copyright and license are included in `crates/lyric-romanize/licenses` alongside the Rust libraries' notices.

@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { X } from "lucide-react";
 import type { Host, Track as SpotifyTrack } from "../host";
+import { spotifySongUri } from "../spotify-song";
 import type { Settings } from "../settings";
 import { usePlayback } from "../playback";
+import { TrackArtwork } from "../spotify-artwork";
 import { enabledSources, type LyricSource } from "../lyric-sources";
+import { useLocalTrackIsrc } from "../local-track-isrc";
 import { lyricsChanged, parseLocalTtml, saveLocalLyrics } from "../local-lyrics";
 import { displayLyrics, needsWordSync } from "../word-sync";
 import type { Lyrics } from "../lyssna/types";
@@ -20,6 +23,7 @@ import { recordingExportEnabled, type RecordingFormat } from "./recording-export
 import { exportSavedAudio } from "./recording-metadata";
 import { useCreatorPlaybar, usePreviewTransport } from "./playbar";
 import { useCreatorRepeat } from "./repeat";
+import { useCreatorPlaybackTransitions } from "./playback-transitions";
 import { creatorPitchSpectrum, creatorSpectrum, creatorWaveform } from "./audio";
 import type { ReviewSelection } from "./review-panel";
 import { TtmlCreator } from "./ttml-creator";
@@ -47,7 +51,7 @@ export type CreatorPlayback = {
 };
 
 function creatorTrack(track: SpotifyTrack, duration: number): Track {
-  return { id: track.id, uri: `spotify:track:${track.id}`, name: track.title,
+  return { id: track.id, uri: spotifySongUri(track.id), name: track.title, is_local: track.local,
     artists: track.artistLinks?.length ? track.artistLinks : track.artists ? [{ name: track.artists }] : [],
     album: { name: track.album, images: track.cover ? [{ url: track.cover }] : [] }, duration_ms: duration, spotify: track };
 }
@@ -55,7 +59,7 @@ function creatorTrack(track: SpotifyTrack, duration: number): Track {
 async function seedTimings(host: Host, lyrics: Lyrics, duration: number, trackId?: string) {
   if (!lyrics.synced || !needsWordSync(lyrics, duration)) return lyrics;
   const analysis = trackId ? await within(Promise.resolve().then(() => host.analysis(trackId)), 1500) : undefined;
-  return displayLyrics(lyrics, true, false, duration, analysis ? {
+  return displayLyrics(lyrics, true, duration, analysis ? {
     track: analysis.track, segments: analysis.segments ?? [], beats: analysis.beats ?? [],
   } : undefined) ?? lyrics;
 }
@@ -71,6 +75,7 @@ export function CreatorSurface({ host, view: owner, settings, close, reviewSelec
   const view = owner as Window & typeof globalThis;
   const { track, playing } = usePlayback(host);
   const duration = host.duration();
+  const localIsrc = useLocalTrackIsrc(track, duration, host, !previewing);
   const current = useMemo(() => track ? creatorTrack(track, duration) : undefined, [track, duration]);
   const [root, setRoot] = useState<HTMLDivElement | null>(null);
   const [portal, setPortal] = useState<HTMLDivElement | null>(null);
@@ -95,6 +100,7 @@ export function CreatorSurface({ host, view: owner, settings, close, reviewSelec
   const audioLoad = useRef(0);
   const audioCacheGeneration = useRef(0);
   const clip = useRef<{ uri: string; end: number; from: number; expires: number; started: boolean }>(undefined);
+  const pausedAt = useRef<{ uri?: string; position: number; requested: number; settled?: number }>(undefined);
   const audioForSong = audio?.uri === current?.uri ? audio : undefined;
   useLayoutEffect(() => {
     if (!audioForSong) return;
@@ -145,7 +151,11 @@ export function CreatorSurface({ host, view: owner, settings, close, reviewSelec
   }, [captured, current?.uri, deletingRecording, duration, fullRecording, notify, saved?.frames, saved?.sampleRate]);
 
   useCreatorRepeat(host, notify, !previewing);
-  useLayoutEffect(() => { if (previewing) clip.current = undefined; }, [previewing]);
+  useCreatorPlaybackTransitions(host, !previewing);
+  useLayoutEffect(() => {
+    pausedAt.current = undefined;
+    if (previewing) clip.current = undefined;
+  }, [previewing, current?.uri, audioForSong]);
 
   const sourceKey = enabledSources(settings).join(",");
   useEffect(() => {
@@ -159,7 +169,7 @@ export function CreatorSurface({ host, view: owner, settings, close, reviewSelec
       if (request !== generation) return;
       const skeleton = lyrics && await seedTimings(host, lyrics, duration, track.id).catch(() => lyrics);
       if (request !== generation) return;
-      setSeed({ uri: `spotify:track:${track.id}`, lyrics: skeleton });
+      setSeed({ uri: spotifySongUri(track.id), lyrics: skeleton });
     }
     setSeed(undefined);
     const reload = (event: Event) => { void load(event); };
@@ -206,14 +216,26 @@ export function CreatorSurface({ host, view: owner, settings, close, reviewSelec
     const element = audioForSong && audioElement.current;
     const now = view.performance.now();
     const raw = element ? (audioForSong?.replay?.startMs ?? 0) + element.currentTime * 1000 : host.position();
+    const pause = pausedAt.current;
+    if (pause && pause.uri === current?.uri) {
+      const stillPlaying = element ? !element.paused : host.playing();
+      if (stillPlaying) {
+        if (pause.settled === undefined && now - pause.requested < 1500) return pause.position;
+        pausedAt.current = undefined;
+      } else if (pause.settled === undefined || Math.abs(raw - pause.settled) < 25) {
+        pause.settled ??= raw;
+        return pause.position;
+      } else pausedAt.current = undefined;
+    }
     const adjusted = raw + (isPlaying && at !== undefined ? (at - now) * (element ? element.playbackRate : 1) : 0);
     return Math.max(0, Math.min(adjusted, audioForSong?.replay?.endMs ?? Infinity));
-  }, [audioForSong, host, isPlaying, view]);
+  }, [audioForSong, current?.uri, host, isPlaying, view]);
 
   const player = useCallback((request: PlayerRequest) => {
     const element = audioForSong && audioElement.current;
     switch (request.command) {
       case "play":
+        pausedAt.current = undefined;
         if (request.uri && request.uri !== current?.uri) {
           element && element.pause();
           void host.playTrack(request.uri).catch((why) => notify(String(why), true));
@@ -225,6 +247,7 @@ export function CreatorSurface({ host, view: owner, settings, close, reviewSelec
         break;
       case "pause":
         clip.current = undefined;
+        if (!previewing) pausedAt.current = { uri: current?.uri, position: read(), requested: view.performance.now() };
         if (element) element.pause();
         else if (host.playing()) {
           capture.transportChanged();
@@ -233,6 +256,7 @@ export function CreatorSurface({ host, view: owner, settings, close, reviewSelec
         break;
       case "seek":
         clip.current = undefined;
+        pausedAt.current = undefined;
         if (element) {
           const replay = audioForSong?.replay;
           const position = Math.min(request.positionMs, replay?.endMs ?? Infinity) - (replay?.startMs ?? 0);
@@ -247,7 +271,7 @@ export function CreatorSurface({ host, view: owner, settings, close, reviewSelec
         host.setVolume(request.volume / 100);
         setVolume(request.volume / 100);
     }
-  }, [audioForSong, capture, current?.uri, host, notify]);
+  }, [audioForSong, capture, current?.uri, host, notify, previewing, read, view]);
 
   const toggle = useCallback(() => {
     const element = audioForSong && audioElement.current;
@@ -271,7 +295,7 @@ export function CreatorSurface({ host, view: owner, settings, close, reviewSelec
       if (previewing && target instanceof view.Element && target.closest("button, a[href], input, select, textarea, [contenteditable]")) return;
       event.stopImmediatePropagation();
       if (target instanceof view.Element && target.closest(
-        "textarea, input:is(:not([type]), [type='text'], [type='search'], [type='number'], [type='password'], [type='email'], [type='url'], [type='tel']), [contenteditable]:not([contenteditable='false'])",
+        ".ttml-spectrum-menu, textarea, input:is(:not([type]), [type='text'], [type='search'], [type='number'], [type='password'], [type='email'], [type='url'], [type='tel']), [contenteditable]:not([contenteditable='false'])",
       )) return;
 
       event.preventDefault();
@@ -317,7 +341,8 @@ export function CreatorSurface({ host, view: owner, settings, close, reviewSelec
   }, [current?.uri, player, previewing, read, view]);
   const returnToSpotify = useCallback(() => {
     const element = audioElement.current;
-    const uri = `spotify:track:${host.track()?.id}`;
+    const track = host.track();
+    const uri = track && spotifySongUri(track.id);
     if (element?.hasAttribute("data-captured-replay") && !element.hasAttribute("data-full-recording")) {
       element.pause();
     } else if (element?.dataset.trackUri === uri) {
@@ -366,7 +391,7 @@ export function CreatorSurface({ host, view: owner, settings, close, reviewSelec
   useEffect(() => {
     const uri = current?.uri;
     if (previewing || !uri || !fullRecording || spotifyOnly === uri || audioForSong || deletingRecording ||
-      activeUri.current !== uri || uri !== `spotify:track:${host.track()?.id}`) return;
+      activeUri.current !== uri || current.id !== host.track()?.id) return;
     const position = host.position();
     const resume = host.playing() && position < fullRecording.endMs - 100;
     activateRecording(uri, fullRecording, 1, resume, position);
@@ -456,7 +481,11 @@ export function CreatorSurface({ host, view: owner, settings, close, reviewSelec
   }, [audioForSong, returnToSpotify]);
 
   const state: CreatorState = {
-    settings: { lyric_offset_ms: settings.lyric_offset_ms + (track ? settings.lyric_song_offsets[track.id] ?? 0 : 0), reduce_motion: settings.reduce_motion },
+    settings: {
+      lyric_offset_ms: settings.lyric_offset_ms + (track ? settings.lyric_song_offsets[track.id] ?? 0 : 0),
+      reduce_motion: settings.reduce_motion,
+      romaji_as_written: settings.romaji_as_written,
+    },
     playback: { item: current, is_playing: isPlaying, volume: volume * 100 },
     playback_rate: audioForSong ? rate : 1, speedEnabled: !!audioForSong,
     lyrics: seed?.uri === current?.uri ? seed?.lyrics : undefined, lyrics_uri: seed?.uri,
@@ -505,6 +534,15 @@ export function CreatorSurface({ host, view: owner, settings, close, reviewSelec
           onClose={close}
           reviewSelection={reviewSelection}
           onCloseReview={closeReview}
+          localIsrc={localIsrc}
+          onResetToSource={async (song) => {
+            if (track?.id !== song.id || host.track()?.id !== song.id) return;
+            const sources = enabledSources(settings).filter(source => source !== "local");
+            const lyrics = await currentCreatorLyrics(host, track, duration, sources);
+            if (!lyrics) return;
+            const seeded = await seedTimings(host, lyrics, duration, song.id).catch(() => lyrics);
+            if (host.track()?.id === song.id) return seeded;
+          }}
           onParse={async (filename, text, song) => {
             const ms = song?.duration_ms ?? 0;
             const lyrics = /\.lrc$/i.test(filename)
@@ -523,9 +561,10 @@ export function CreatorSurface({ host, view: owner, settings, close, reviewSelec
             } catch (why) { notify(String(why), true); return false; }
           }}
           onSubmit={async (song, text, appleOriginal) => {
-            const spotify = song.spotify ?? { id: song.id, title: song.name, cover: song.album.images[0]?.url ?? "",
+            const spotify: SpotifyTrack = song.spotify ?? { id: song.id, local: song.is_local ? true : undefined, title: song.name, cover: song.album.images[0]?.url ?? "",
               album: song.album.name, artists: song.artists.map(({ name }) => name).join(", "), artistLinks: song.artists };
-            const result = await submitLyssnaTtml(new File([text], "lyrics.ttml"), spotify, host, confirmFirstUpload, appleOriginal);
+            const target = song.is_local && current?.uri === song.uri ? { ...spotify, isrc: localIsrc } : spotify;
+            const result = await submitLyssnaTtml(new File([text], "lyrics.ttml"), target, host, confirmFirstUpload, appleOriginal);
             if (!result) return;
             if (result.approved) {
               revalidateLyssnaSong(song.id, result.isrc, result.published);
@@ -534,17 +573,17 @@ export function CreatorSurface({ host, view: owner, settings, close, reviewSelec
             return result.message;
           }}
           renderPreview={(lyrics, position, song) => {
-            const cover = song.album.images[0]?.url;
-            const artwork = cover && !settings.lyrics_hide_artwork && !settings.lyrics_compact;
+            const cover = current?.uri === song.uri ? track?.cover : song.album.images[0]?.url;
+            const artwork = !settings.lyrics_hide_artwork && !settings.lyrics_compact;
             return <div className={`lyssna-creator-preview${settings.lyrics_artwork_right ? " artwork-right" : ""}`}>
               {cover && (settings.lyrics_background === "animated" || settings.lyrics_background === "static") &&
                 <Ambience image={cover} animate={isPlaying && settings.lyrics_background === "animated"}
                   reduceMotion={settings.reduce_motion} brightness={settings.lyrics_background_brightness} />}
               {artwork && <div className="lyssna-creator-preview-album">
-                <img src={cover} alt="" /><strong>{song.name}</strong><span>{song.artists.map(({ name }) => name).join(", ")}</span>
+                <TrackArtwork key={cover || song.id} src={cover} /><strong>{song.name}</strong><span>{song.artists.map(({ name }) => name).join(", ")}</span>
               </div>}
               <div className="lyssna-creator-preview-lines">
-                <LyricsDisplay lyrics={lyrics} positionMs={position} playing={isPlaying} settings={settings}
+                <LyricsDisplay lyrics={lyrics} positionMs={position} playing={isPlaying} settings={{ ...settings, reduce_motion: true }}
                   onSeek={(positionMs) => {
                     const offset = state.settings.lyric_offset_ms;
                     const target = Math.max(0, positionMs - offset);

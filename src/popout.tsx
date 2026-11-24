@@ -6,6 +6,7 @@ import { NextIcon, PauseIcon, PlayIcon, PreviousIcon, RepeatIcon, ShuffleIcon } 
 import { clock, usePlaybackControls, usePosition } from "./playback";
 import { appFontStyles } from "./font-settings";
 import type { Settings } from "./settings";
+import type { CreatorPlayback } from "./creator/surface";
 import { DJ_COVER, DJInterlude } from "./dj-interlude";
 
 export const pictureInPicture = (window as Window & {
@@ -14,13 +15,15 @@ export const pictureInPicture = (window as Window & {
   };
 }).documentPictureInPicture;
 
-function PopoutSeek({ host, playing, view, disabled }: { host: Host; playing: boolean; view: Window; disabled: boolean }) {
+function PopoutSeek({ host, playing, view, disabled, localPlayback }: {
+  host: Host; playing: boolean; view: Window; disabled: boolean; localPlayback?: CreatorPlayback;
+}) {
   const duration = host.duration();
-  const position = usePosition(host, playing, view);
+  const position = usePosition(host, playing, view, localPlayback?.read);
   const [seeking, setSeeking] = useState<number | null>(null);
   const shown = Math.max(0, Math.min(seeking ?? position, duration));
   function commit() {
-    if (!disabled && seeking !== null) host.seek(seeking);
+    if (!disabled && seeking !== null) (localPlayback?.seek ?? host.seek)(seeking);
     setSeeking(null);
   }
   return <footer className="lyrics-popout-seek">
@@ -32,7 +35,7 @@ function PopoutSeek({ host, playing, view, disabled }: { host: Host; playing: bo
   </footer>;
 }
 
-function PopoutControls({ host, track, playing }: { host: Host; track: Track | null; playing: boolean }) {
+function PopoutControls({ host, track, playing, toggle }: { host: Host; track: Track | null; playing: boolean; toggle(): void }) {
   const { liked, shuffle, repeat, activate, cycleRepeat } = usePlaybackControls(host, track?.id);
   return <div className="lyrics-popout-controls">
     <button type="button" className={`icon-button lyrics-popout-like${liked ? " active" : ""}`}
@@ -42,7 +45,7 @@ function PopoutControls({ host, track, playing }: { host: Host; track: Track | n
       <button type="button" className={`icon-button${shuffle ? " active" : ""}`}
         aria-label="Shuffle" aria-pressed={shuffle} onClick={activate(host.toggleShuffle)}><ShuffleIcon size={20} /></button>
       <button type="button" className="icon-button" aria-label="Previous song" onClick={host.previous}><PreviousIcon size={22} /></button>
-      <button type="button" className="icon-button" aria-label={playing ? "Pause" : "Play"} onClick={host.toggle}>
+      <button type="button" className="icon-button" aria-label={playing ? "Pause" : "Play"} onClick={toggle}>
         {playing ? <PauseIcon size={26} /> : <PlayIcon size={26} />}
       </button>
       <button type="button" className="icon-button" aria-label="Next song" onClick={host.next}><NextIcon size={22} /></button>
@@ -55,9 +58,9 @@ function PopoutControls({ host, track, playing }: { host: Host; track: Track | n
   </div>;
 }
 
-export function LyricsPopout({ host, view, close, track, playing, settings, narrating, children }: {
+export function LyricsPopout({ host, view, close, track, playing, settings, narrating, children, localPlayback, draft }: {
   host: Host; view: Window; close: () => void; track: Track | null; playing: boolean;
-  settings: Settings; narrating: boolean; children: ReactNode;
+  settings: Settings; narrating: boolean; children: ReactNode; localPlayback?: CreatorPlayback; draft?: boolean;
 }) {
   const fonts = appFontStyles(settings);
   const artwork = narrating ? DJ_COVER : track?.cover;
@@ -93,11 +96,12 @@ export function LyricsPopout({ host, view, close, track, playing, settings, narr
     <header className="lyrics-popout-title">
       <strong>{title ?? "Nothing playing"}</strong>
       {track?.artists && <span>{track.artists}</span>}
+      {draft && <span>TTML draft preview</span>}
     </header>
     <main className="lyrics-popout-lyrics">
       {narrating ? <DJInterlude playing={playing} reduceMotion={settings.reduce_motion} /> : children}
     </main>
-    <PopoutSeek key={track?.id} host={host} playing={playing} view={view} disabled={narrating} />
-    <PopoutControls host={host} track={track} playing={playing} />
+    <PopoutSeek key={track?.id} host={host} playing={playing} view={view} disabled={narrating} localPlayback={localPlayback} />
+    <PopoutControls host={host} track={track} playing={playing} toggle={localPlayback?.toggle ?? host.toggle} />
   </section>;
 }

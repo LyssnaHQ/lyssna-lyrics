@@ -20,7 +20,7 @@ export type PlayerRequest =
   | { command: "volume"; volume: number };
 
 export type CreatorState = {
-  settings: { lyric_offset_ms: number; reduce_motion: boolean };
+  settings: { lyric_offset_ms: number; reduce_motion: boolean; romaji_as_written: boolean };
   playback: { item?: Track; is_playing: boolean; volume: number };
   playback_rate: number;
   speedEnabled: boolean;

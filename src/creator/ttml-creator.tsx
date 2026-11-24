@@ -17,6 +17,7 @@ import {
   Download,
   Eye,
   EyeOff,
+  FileInput,
   History,
   Pause,
   Play,
@@ -36,7 +37,8 @@ import {
   Globe,
   X,
 } from "lucide-react";
-import { IS_MAC, MODIFIER, useCreatorClock, useCreatorEnvironment } from "./environment";
+import { IS_MAC, MODIFIER, useCreatorClock, useCreatorEnvironment, useCreatorTick } from "./environment";
+import { useEnhancedPerformance } from "../enhancements/config";
 import type { CreatorState } from "./types";
 import type { Lyrics, PlayerRequest, Track } from "./types";
 import { lyricsChanged, parseLocalTtml } from "../local-lyrics";
@@ -117,7 +119,7 @@ import {
   unitVoice,
   unknownSections,
 } from "./ttml-creator-model";
-import { romanizeCreatorLyrics } from "./romanize";
+import { romanizeLyrics } from "../lyssna/romanization";
 import { MetadataDialog } from "./ttml-metadata";
 import { CreatorPlay, CreatorSpectrogramToggle, CreatorSpeed, TtmlBar } from "./ttml-bar";
 import type { CreatorPlaybarSlots } from "./playbar";
@@ -187,6 +189,11 @@ const HISTORY_LIMIT = 200;
 const VOICE_CLASS = ["", " sung-second", " sung-third"];
 const WORD_VOICE_CLASS = [" sung-first", " sung-second", " sung-third"];
 
+type DraftHistory = {
+  lines: CreatorLine[];
+  draft?: { text: string; metadata?: MetaEntry[]; appleOriginal?: Lyrics["appleOriginal"] };
+};
+
 type Drag =
   | { kind: "line"; line: number }
   | { kind: "word" | "space"; at: Cursor; group?: Cursor[] };
@@ -233,7 +240,7 @@ const meta = (track: Track): SongMeta => ({
   name: track.name,
   artists: track.artists.map((artist) => artist.name),
   album: track.album?.name,
-  spotifyId: track.id,
+  spotifyId: track.is_local ? undefined : track.id,
   durationMs: track.duration_ms,
   songwriters: track.songwriters,
 });
@@ -260,6 +267,19 @@ function TimePill({ ms, end }: { ms?: number; end?: boolean }) {
   );
 }
 
+function CreatorTime({ playing, offset }: { playing: boolean; offset: number }) {
+  const position = useCreatorClock(playing, offset);
+  return <span className="ttml-time">{formatTime(position)}</span>;
+}
+
+function CreatorPreview({ lyrics, playing, offset, track, render }: {
+  lyrics: Lyrics; playing: boolean; offset: number; track: Track;
+  render: (lyrics: Lyrics, position: number, track: Track) => ReactNode;
+}) {
+  const position = useCreatorClock(playing, offset);
+  return render(lyrics, position, track);
+}
+
 export function TtmlCreator({
   state,
   onPlayer,
@@ -267,6 +287,7 @@ export function TtmlCreator({
   onSpeed,
   onApply,
   onSubmit,
+  onResetToSource,
   onParse,
   notify,
   renderPreview,
@@ -275,6 +296,7 @@ export function TtmlCreator({
   onClose,
   reviewSelection,
   onCloseReview,
+  localIsrc,
   draftPreview = false,
 }: {
   state: CreatorState;
@@ -283,6 +305,7 @@ export function TtmlCreator({
   onSpeed: (rate: number) => Promise<void>;
   onApply: (track: Track, filename: string, ttml: string) => Promise<boolean>;
   onSubmit: (track: Track, ttml: string, appleOriginal?: Lyrics["appleOriginal"]) => Promise<string | undefined>;
+  onResetToSource: (track: Track) => Promise<Lyrics | undefined>;
   onParse: (
     filename: string,
     contents: string,
@@ -295,9 +318,10 @@ export function TtmlCreator({
   onClose?: () => void;
   reviewSelection?: ReviewSelection;
   onCloseReview?: () => void;
+  localIsrc?: string;
   draftPreview?: boolean;
 }) {
-  const { root, view: window, waveform, playClip, recording, playingFullRecording, replayAvailable, replayCaptured, openAudio } = useCreatorEnvironment();
+  const { root, view: window, waveform, playClip, recording, playingFullRecording, replayAvailable, replayCaptured, openAudio, read: readTime } = useCreatorEnvironment();
   const document = window.document;
   const focused = () => (root.getRootNode() as Document | ShadowRoot).activeElement;
   const playing = state.playback.item;
@@ -307,9 +331,14 @@ export function TtmlCreator({
   }, [track, playing]);
 
   const [lines, setLinesRaw] = useState<CreatorLine[]>([]);
+  const linesRef = useRef(lines);
+  const replaceLines = useCallback((next: CreatorLine[]) => {
+    linesRef.current = next;
+    setLinesRaw(next);
+  }, []);
   const [text, setText] = useState("");
   const [cursor, setCursor] = useState<Cursor>({ line: 0, unit: 0 });
-  const history = useRef<{ past: CreatorLine[][]; future: CreatorLine[][] }>({
+  const history = useRef<{ past: DraftHistory[]; future: DraftHistory[] }>({
     past: [],
     future: [],
   });
@@ -317,11 +346,24 @@ export function TtmlCreator({
     () => Number(readStorage(OFFSET_KEY)) || 0,
   );
   const isPlaying = state.playback.is_playing;
-  const clock = useCreatorClock(isPlaying, !draftPreview);
   const here = !!track && playing?.uri === track.uri;
   const heard = state.settings.lyric_offset_ms;
-  const position = clock.position + heard;
-  const read = useCallback((at?: number) => clock.read(at) + heard, [clock.read, heard]);
+  const enhancePerformance = useEnhancedPerformance();
+  // Only timing boundaries change editor rows. The playhead, elapsed time,
+  // and inline preview use the full clock.
+  const boundaries = useMemo(() => {
+    if (!enhancePerformance) return;
+    const times = new Set<number>();
+    for (const line of lines) {
+      for (const unit of line.units) {
+        if (unit.start !== undefined) times.add(unit.start);
+        if (unit.end !== undefined) times.add(unit.end);
+      }
+    }
+    return [...times].sort((left, right) => left - right);
+  }, [lines, enhancePerformance]);
+  const position = useCreatorClock(isPlaying, heard, !draftPreview, boundaries);
+  const read = useCallback((at?: number) => readTime(at) + heard, [readTime, heard]);
   const rate = state.playback_rate;
 
   const [savedAt, setSavedAt] = useState<number | undefined>();
@@ -353,7 +395,7 @@ export function TtmlCreator({
     if (!track) return;
     const draft = loadDraft(track.uri);
     const loaded = joinHyphenated(draft?.lines ?? []);
-    setLinesRaw(loaded);
+    replaceLines(loaded);
     setText(draft?.text ?? "");
     setMetadata(draft?.metadata);
     setAppleOriginal(draft?.appleOriginal);
@@ -375,7 +417,7 @@ export function TtmlCreator({
     history.current = { past: [], future: [] };
     setTextMode(false);
     return () => snapshot(true);
-  }, [track, snapshot]);
+  }, [track, snapshot, replaceLines]);
 
   useEffect(() => {
     const leave = () => snapshot(true);
@@ -399,7 +441,7 @@ export function TtmlCreator({
     if (lines.length || text.trim() || loadDraft(track.uri)) return;
     const seeded = joinHyphenated(fromLyrics(lyrics));
     if (!seeded.length) return;
-    setLinesRaw(seeded);
+    replaceLines(seeded);
     setAppleOriginal(lyrics.appleOriginal);
     setCursor(cursorAt(seeded, read()));
     setText(toText(seeded));
@@ -413,6 +455,7 @@ export function TtmlCreator({
     lines.length,
     text,
     metadata,
+    replaceLines,
   ]);
 
   useEffect(() => {
@@ -450,55 +493,53 @@ export function TtmlCreator({
     snapshot(false);
   }, [track, lines, text, metadata, appleOriginal, snapshot]);
 
-  const lastPosition = useRef(0);
+  const lastPosition = useRef<{ track: Track | undefined; position: number }>(undefined);
   useEffect(() => {
-    if (draftPreview) { lastPosition.current = 0; return; }
+    if (draftPreview) lastPosition.current = undefined;
+  }, [draftPreview]);
+  useCreatorTick(isPlaying, !draftPreview, (raw) => {
     const duration = track?.duration_ms ?? 0;
+    const position = raw + heard;
+    const previous = lastPosition.current;
     const wrapped =
       here &&
       isPlaying &&
       duration > 5000 &&
-      lastPosition.current > duration - 2500 &&
+      previous?.track === track &&
+      previous.position > duration - 2500 &&
       position < 2000;
-    lastPosition.current = position;
+    lastPosition.current = { track, position };
     if (!wrapped) return;
     onPlayer({ command: "pause" });
     onPlayer({ command: "seek", positionMs: 0 });
-  }, [draftPreview, position, here, isPlaying, track, onPlayer]);
+  });
 
   const setLines = useCallback(
-    (next: CreatorLine[] | ((previous: CreatorLine[]) => CreatorLine[])) =>
-      setLinesRaw((previous) => {
-        const value = joinHyphenated(
-          typeof next === "function" ? next(previous) : next,
-        );
-        if (value !== previous) {
-          history.current.past = [
-            ...history.current.past.slice(-HISTORY_LIMIT),
-            previous,
-          ];
-          history.current.future = [];
-        }
-        return value;
-      }),
-    [],
+    (next: CreatorLine[] | ((previous: CreatorLine[]) => CreatorLine[])) => {
+      const previous = linesRef.current;
+      const value = joinHyphenated(typeof next === "function" ? next(previous) : next);
+      if (value === previous) return;
+      history.current.past = [...history.current.past.slice(-HISTORY_LIMIT), { lines: previous }];
+      history.current.future = [];
+      replaceLines(value);
+    },
+    [replaceLines],
   );
-  const undo = useCallback(() => {
-    const previous = history.current.past.pop();
-    if (!previous) return;
-    setLinesRaw((current) => {
-      history.current.future.push(current);
-      return previous;
-    });
-  }, []);
-  const redo = useCallback(() => {
-    const next = history.current.future.pop();
-    if (!next) return;
-    setLinesRaw((current) => {
-      history.current.past.push(current);
-      return next;
-    });
-  }, []);
+  const restoreHistory = useCallback((from: "past" | "future", to: "past" | "future") => {
+    const entry = history.current[from].pop();
+    if (!entry) return;
+    const { text, metadata, appleOriginal } = current.current;
+    history.current[to].push({ lines: linesRef.current, draft: entry.draft && { text, metadata, appleOriginal } });
+    replaceLines(entry.lines);
+    setCursor(at => clampCursor(entry.lines, at));
+    if (entry.draft) {
+      setText(entry.draft.text);
+      setMetadata(entry.draft.metadata);
+      setAppleOriginal(entry.draft.appleOriginal);
+    }
+  }, [replaceLines]);
+  const undo = useCallback(() => restoreHistory("past", "future"), [restoreHistory]);
+  const redo = useCallback(() => restoreHistory("future", "past"), [restoreHistory]);
 
   const [textMode, setTextMode] = useState(false);
   const [geniusOpen, setGeniusOpen] = useState(false);
@@ -894,9 +935,19 @@ export function TtmlCreator({
   const [syncRoman, setSyncRoman] = useState(
     () => readStorage(SYNC_ROMAN_KEY) === "1",
   );
-  const autoRomanize = () => {
+  const autoRomanize = async () => {
+    const source = current.current.uri;
     const request = romanizeRequest(lines);
-    const result = romanizeCreatorLyrics(request);
+    setRomanNote("Romanizing…");
+    const result = await romanizeLyrics(request, state.settings.romaji_as_written).catch(() => null);
+    if (source !== current.current.uri) {
+      setRomanNote("");
+      return;
+    }
+    if (!result) {
+      setRomanNote("Couldn’t romanize these lyrics. Try again.");
+      return;
+    }
     const found = result.lines.some((line, lineIndex) =>
       line.words.some(
         (word, index) =>
@@ -1211,6 +1262,49 @@ export function TtmlCreator({
     setText(toText(seeded));
     setCursor({ line: 0, unit: 0 });
   };
+  const [resettingSource, setResettingSource] = useState(false);
+  const resetToSource = async () => {
+    if (!track || !here || resettingSource) return;
+    const draft = current.current;
+    setResettingSource(true);
+    try {
+      const lyrics = await onResetToSource(track);
+      const latest = current.current;
+      if (!root.isConnected || latest.uri !== draft.uri) return;
+      if (linesRef.current !== draft.lines || latest.text !== draft.text ||
+        latest.metadata !== draft.metadata || latest.appleOriginal !== draft.appleOriginal) {
+        notify("The draft changed while looking up source lyrics.", true);
+        return;
+      }
+      if (!lyrics?.lines.length) {
+        notify("No source lyrics found for this song.", true);
+        return;
+      }
+      const seeded = joinHyphenated(fromLyrics(lyrics));
+      if (!seeded.length) {
+        notify("The source has no editable lyric lines.", true);
+        return;
+      }
+      history.current.past = [...history.current.past.slice(-HISTORY_LIMIT), {
+        lines: draft.lines, draft: { text: draft.text, metadata: draft.metadata, appleOriginal: draft.appleOriginal },
+      }];
+      history.current.future = [];
+      editedFor.current = track.uri;
+      replaceLines(seeded);
+      setText(toText(seeded));
+      setMetadata(undefined);
+      setAppleOriginal(lyrics.appleOriginal);
+      setCursor(cursorAt(seeded, read()));
+      setGroup([]);
+      setSpaces([]);
+      setPicked(new Set());
+      notify(`Reset to ${lyrics.source}. ${MODIFIER}+Z restores the previous draft.`);
+    } catch {
+      if (root.isConnected && current.current.uri === draft.uri) notify("Couldn’t load source lyrics. Try again.", true);
+    } finally {
+      if (root.isConnected) setResettingSource(false);
+    }
+  };
 
   const tap = useCallback(
     (at?: number) => Math.round(read(at) + offset),
@@ -1276,7 +1370,45 @@ export function TtmlCreator({
   const stateRef = useRef({ lines, cursor });
   stateRef.current = { lines, cursor };
   const wordField = useRef<HTMLInputElement>(null);
+  const scrolledAt = useRef(0);
+  const revealTimingWord = useRef(false);
   const editable = !draftPreview && !textMode && lines.length > 0 && !previewing;
+  useEffect(() => {
+    if (!track || draftPreview || textMode || previewing) return;
+    const pressed = new Set<string>();
+    const onHistoryKey = (event: KeyboardEvent) => {
+      const key = event.key.toLowerCase();
+      if (key !== "z" && key !== "y") return;
+      const release = event.type === "keyup";
+      // Spotify sometimes consumes keydown. Handle a lone keyup once.
+      if (release && pressed.delete(key)) return;
+      if (event.isComposing || event.altKey || !(IS_MAC ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey)) return;
+      if (!release) pressed.add(key);
+
+      const target = event.composedPath()[0];
+      if (!(target instanceof window.Element)) return;
+      const emptyAdder = target instanceof window.HTMLInputElement &&
+        target.classList.contains("ttml-chip-add") && !target.value;
+      if (!emptyAdder && target.closest("input, textarea, select, [contenteditable]:not([contenteditable='false'])")) return;
+      if (target.closest(".lyrics-settings-backdrop, .ttml-recording-popover, .ttml-spectrum-menu, .review-panel") ||
+        root.querySelector(".ttml-menu, .ttml-dialog")) return;
+
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (emptyAdder) target.blur();
+      if (key === "y" || event.shiftKey) redo();
+      else undo();
+    };
+    const clearPressed = () => pressed.clear();
+    window.addEventListener("keydown", onHistoryKey, true);
+    window.addEventListener("keyup", onHistoryKey, true);
+    window.addEventListener("blur", clearPressed);
+    return () => {
+      window.removeEventListener("keydown", onHistoryKey, true);
+      window.removeEventListener("keyup", onHistoryKey, true);
+      window.removeEventListener("blur", clearPressed);
+    };
+  }, [track, draftPreview, textMode, previewing, root, window, undo, redo]);
   useEffect(() => {
     if (!editable || readStorage(TOUR_KEY)) return;
     // Seen once is enough, even if the walkthrough is never finished.
@@ -1308,7 +1440,7 @@ export function TtmlCreator({
       if (deleteKey !== (event.type === "keyup")) return;
       const target = event.composedPath()[0] as HTMLElement | null;
       if (deleteKey && !root.contains(target)) return;
-      if (target?.closest(".lyrics-settings-backdrop, .ttml-recording-popover, .review-panel")) return;
+      if (target?.closest(".lyrics-settings-backdrop, .ttml-recording-popover, .ttml-spectrum-menu, .review-panel")) return;
       if (root.querySelector(".ttml-menu, .ttml-dialog")) return;
       if (target?.closest(".ttml-bar button, .ttml-spectrum button") && event.key === "Enter") return;
       if (
@@ -1336,9 +1468,7 @@ export function TtmlCreator({
         gaps = spacesRef.current;
       const pickedLines = pickedRef.current;
       let handled = true;
-      if (ctrl && key === "z") (event.shiftKey ? redo : undo)();
-      else if (ctrl && key === "y") redo();
-      else if (!ctrl && erase && pickedLines.size) {
+      if (!ctrl && erase && pickedLines.size) {
         const next = removeLines(lines, pickedLines);
         setLines(next);
         setCursor(clampCursor(next, cursor));
@@ -1445,12 +1575,13 @@ export function TtmlCreator({
         } else if (event.repeat && timing) handled = true;
         else if (action === "start")
           setLines(markStart(lines, cursor, tap(event.timeStamp)));
-        else if (action === "next") {
-          const result = markNext(lines, cursor, tap(event.timeStamp));
-          setLines(result.lines);
-          setCursor(result.cursor);
-        } else if (action === "end") {
-          const result = markEnd(lines, cursor, tap(event.timeStamp));
+        else if (action === "next" || action === "end") {
+          const mark = action === "next" ? markNext : markEnd;
+          const result = mark(lines, cursor, tap(event.timeStamp));
+          if (result.lines !== lines) {
+            scrolledAt.current = Date.now();
+            revealTimingWord.current = true;
+          }
           setLines(result.lines);
           setCursor(result.cursor);
         } else if (action === "replay") {
@@ -1482,8 +1613,6 @@ export function TtmlCreator({
     tap,
     read,
     seek,
-    undo,
-    redo,
     setLines,
     changeSpeed,
     rate,
@@ -1534,9 +1663,23 @@ export function TtmlCreator({
       clickedLine.current = false;
       return;
     }
-    if (touringRef.current) return;
+    if (touringRef.current || revealTimingWord.current) return;
     centre(cursor.line);
   }, [cursor.line, centre]);
+  useEffect(() => {
+    if (!revealTimingWord.current) return;
+    revealTimingWord.current = false;
+    cancelAnimationFrame(glide.current);
+    if (touringRef.current) return;
+    const container = list.current;
+    const word = container?.querySelector(".ttml-unit[aria-current='true']");
+    if (!container || !word) return;
+    const viewport = container.getBoundingClientRect();
+    const selection = word.getBoundingClientRect();
+    if (selection.top < viewport.top || selection.bottom > viewport.bottom) {
+      container.scrollTop += (selection.top + selection.bottom - viewport.top - viewport.bottom) / 2;
+    }
+  }, [lines, cursor]);
 
   const shownWord = useRef<(Cursor & { start: number }) | null>(null);
   const liveWord = useMemo(() => {
@@ -1614,9 +1757,8 @@ export function TtmlCreator({
   // Clicking a line in the preview seeks there, so coming back from it
   // picks up at the line and word the song is on.
   const selectPlaying = () => {
-    if (playingLine >= 0) setCursor(cursorAt(lines, position));
+    if (playingLine >= 0) setCursor(cursorAt(lines, read()));
   };
-  const scrolledAt = useRef(0);
   const typingInCreator = () => {
     const box = focused();
     return (
@@ -1868,7 +2010,7 @@ export function TtmlCreator({
     void onApply(track, fileName(meta(track)), ttml());
   };
   const [submitting, setSubmitting] = useState(false);
-  const submittable = !!track && !track.is_local && !!track.id;
+  const submittable = !!track?.id && (!track.is_local || !!(here ? localIsrc : track.spotify?.isrc));
   const submit = async () => {
     if (!track || submitting) return;
     setSubmitting(true);
@@ -2137,12 +2279,12 @@ export function TtmlCreator({
           </span>
           <button
             onClick={() => void submit()}
-            disabled={!done || !submittable || submitting}
+            disabled={!done || !submittable || submitting || resettingSource}
             aria-busy={submitting}
             title={
               submittable
                 ? "Send these lyrics to Lyssna so everyone gets them"
-                : "Only Spotify songs can be sent to Lyssna"
+                : track.is_local ? "A local file needs an ISRC match before it can be submitted" : "Play a Spotify song to submit lyrics"
             }
           >
             <Send size={15} />
@@ -2267,7 +2409,7 @@ export function TtmlCreator({
       {previewing && !textMode && (
         <div className="ttml-preview">
           {preview?.lines.length && renderPreview ? (
-            renderPreview(preview, position, track)
+            <CreatorPreview lyrics={preview} playing={isPlaying} offset={heard} track={track} render={renderPreview} />
           ) : (
             <p className="ttml-hint">Time some words to see them here.</p>
           )}
@@ -2288,7 +2430,7 @@ export function TtmlCreator({
                   <Play size={16} fill="currentColor" />
                 )}
               </button>
-              <span className="ttml-time">{formatTime(position)}</span>
+              <CreatorTime playing={isPlaying} offset={heard} />
               <label
                 className="ttml-offset"
                 title="Shift every tap by this much. Negative taps earlier."
@@ -2352,6 +2494,15 @@ export function TtmlCreator({
               >
                 <RotateCcw size={15} />
               </button>
+              {!reviewing && <button
+                onClick={() => void resetToSource()}
+                disabled={!here || resettingSource || submitting}
+                aria-busy={resettingSource}
+                title="Replace this draft with the best available lyric source"
+              >
+                <FileInput size={15} />
+                {resettingSource ? "Finding source…" : "Reset to source"}
+              </button>}
             </div>
           )}
           {writing && (
@@ -2539,19 +2690,6 @@ export function TtmlCreator({
                   onKeyDown={(event) => {
                     if (event.key === "Escape") event.currentTarget.blur();
                     const box = event.currentTarget;
-                    const key = event.key.toLowerCase();
-                    // An empty box hands undo to the creator, so a line
-                    // just added with Enter can be taken back.
-                    if (
-                      !box.value &&
-                      (IS_MAC ? event.metaKey : event.ctrlKey) &&
-                      (key === "z" || key === "y")
-                    ) {
-                      event.preventDefault();
-                      box.blur();
-                      (key === "y" || event.shiftKey ? redo : undo)();
-                      return;
-                    }
                     if (
                       !box.value &&
                       event.key === "Backspace" &&
@@ -2952,6 +3090,7 @@ export function TtmlCreator({
                             key={unitIndex}
                             className={`ttml-unit${unit.joined ? " joined" : ""}${timed(unit) ? " timed" : unit.start !== undefined ? " started" : ""}${selected ? " selected" : ""}${live ? " live" : ""}${inGroup(at) ? " chosen" : ""}${drag?.kind === "word" && ((drag.at.line === lineIndex && drag.at.unit === unitIndex) || (drag.group && inGroup(at))) ? " dragging" : ""}${dropClass(`unit:${lineIndex}:${unitIndex}`)}`}
                             aria-label={unit.text}
+                            aria-current={selected || undefined}
                             title={`Double-click to edit, or to replay while playing, right-click for word options, ${IS_MAC ? "Cmd+E" : "F2"} to edit, drag to move`}
                             draggable
                             onDragStart={(event) => dragWords(event, at)}
@@ -3137,7 +3276,7 @@ export function TtmlCreator({
           id={spectrogramId}
           uri={track.uri}
           duration={track.duration_ms}
-          position={position}
+          offset={heard}
           playing={isPlaying}
           lines={lines}
           cursor={cursor}
@@ -3150,7 +3289,7 @@ export function TtmlCreator({
         />
       )}
       {barSlot && createPortal(
-        <TtmlBar position={position} duration={track.duration_ms}
+        <TtmlBar playing={isPlaying} offset={heard} duration={track.duration_ms}
           peaks={peaks?.uri === track.uri ? peaks.values : null} spans={barSpans} onSeek={seek}
           track={playing?.uri === track.uri ? playing : track} recording={here ? recording : undefined} />, barSlot)}
       {barSlot && createPortal(speedControl(true), playbar?.speed ?? barSlot)}

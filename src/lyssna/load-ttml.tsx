@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { BulkTtml } from "./bulk-ttml";
-import type { TtmlTrack } from "../host";
+import type { Host, Track, TtmlTrack } from "../host";
 import type { LoadMode } from "../local-lyrics";
+import { confirmLocalTrackIsrc, matchLocalTrackIsrc, suggestLocalTrack, type LocalTrackSuggestion } from "../local-track-isrc";
+import { clock } from "../playback";
 import type { Settings } from "../settings";
 import { accountChanged, hasLyssnaSession, readLyssnaProfile } from "../lyssna-account";
 import { publishingRoles } from "../lyssna-submission";
 import { importError, type BulkFile, type BulkLyric } from "../ttml-import";
 import type { TransferLyrics } from "./transfer-format";
+import { spotifySongKey } from "../spotify-song";
 import {
   BookOpen,
   Files,
@@ -47,6 +50,87 @@ const MODES: { mode: LoadMode; title: string; detail: string }[] = [
   },
 ];
 
+function RecordingMatch({ track, duration, isrc, host, busy, act }: {
+  track: Track;
+  duration: number;
+  isrc?: string;
+  host: Host;
+  busy: boolean;
+  act: (action: () => Promise<void>) => void;
+}) {
+  const [input, setInput] = useState("");
+  const [unverifiedIsrc, setUnverifiedIsrc] = useState<string>();
+  const [suggestion, setSuggestion] = useState<LocalTrackSuggestion | null>();
+  const [editing, setEditing] = useState(false);
+  const showForm = !isrc || editing;
+  useEffect(() => {
+    if (!showForm) return;
+    let active = true;
+    void suggestLocalTrack(track, duration).catch(() => undefined).then(result => {
+      if (active) setSuggestion(result ?? null);
+    });
+    return () => { active = false; };
+  }, [track, duration, showForm]);
+  function finishMatch() {
+    setEditing(false);
+    setInput("");
+    setUnverifiedIsrc(undefined);
+  }
+  const confirm = (code: string) => act(async () => {
+    confirmLocalTrackIsrc(track, duration, code);
+    finishMatch();
+  });
+  if (!showForm) return <section className="load-ttml-match" aria-label="Local recording match">
+    <div className="load-ttml-match-result">
+      <div><strong>Local recording matched</strong><small>{isrc}</small></div>
+      {!track.isrc && <div className="load-ttml-actions">
+        <button type="button" disabled={busy} onClick={() => setEditing(true)}>Change match</button>
+      </div>}
+    </div>
+  </section>;
+  return <section className="load-ttml-match" aria-label="Match local recording">
+    <strong>Match local recording</strong>
+    <form className="load-ttml-isrc" onSubmit={event => {
+      event.preventDefault();
+      if (busy || !input.trim()) return;
+      act(async () => {
+        const result = await matchLocalTrackIsrc(track, duration, input, host);
+        if (result) setUnverifiedIsrc(result.unverifiedIsrc);
+        else finishMatch();
+      });
+    }}>
+      <label className="load-ttml-search">
+        <Search size={14} aria-hidden="true" />
+        <input aria-label="ISRC, Spotify track link, or Spotify album link" placeholder="ISRC or Spotify track or album link" value={input}
+          maxLength={300} disabled={busy} onChange={event => {
+            setInput(event.currentTarget.value);
+            setUnverifiedIsrc(undefined);
+          }} />
+      </label>
+      <div className="load-ttml-actions">
+        <button type="submit" disabled={busy || !input.trim()}>Find match</button>
+        {isrc && <button type="button" disabled={busy} onClick={finishMatch}>Cancel</button>}
+      </div>
+    </form>
+    {unverifiedIsrc && <div className="load-ttml-match-result">
+      <div><strong>{unverifiedIsrc}</strong><small>The catalogue couldn’t verify this code. Use it if it belongs to this recording.</small></div>
+      <div className="load-ttml-actions">
+        <button type="button" disabled={busy} onClick={() => confirm(unverifiedIsrc)}>Use entered ISRC</button>
+      </div>
+    </div>}
+    {suggestion ? <div className="load-ttml-match-result">
+      <div>
+        <small>Suggested · Check the recording before using this match</small>
+        <strong>{suggestion.title}</strong>
+        <small>{[suggestion.artists.join(", "), suggestion.album, clock(suggestion.duration), suggestion.isrc].filter(Boolean).join(" · ")}</small>
+      </div>
+      <div className="load-ttml-actions">
+        <button type="button" disabled={busy} onClick={() => confirm(suggestion.isrc)}>Use suggestion</button>
+      </div>
+    </div> : <small role="status">{suggestion === undefined ? "Finding a suggested recording…" : "No suggested recording found."}</small>}
+  </section>;
+}
+
 /**
  * Spicy Lyrics' "Load TTML" window (iPixelGalaxy/spicy-lyrics,
  * UploadTTMLModal and LyricsManager, AGPL-3.0), reimplemented: three ways to
@@ -54,6 +138,7 @@ const MODES: { mode: LoadMode; title: string; detail: string }[] = [
  */
 export function LoadTtml({
   song,
+  localRecording,
   reviewer,
   onReviewer,
   onLoad,
@@ -76,6 +161,7 @@ export function LoadTtml({
   attachSong: (file: BulkFile, songs: TtmlTrack[]) => Promise<void>;
   onSubmit: (file: File) => Promise<void>;
   song?: string;
+  localRecording?: { track: Track; duration: number; host: Host; isrc?: string };
   reviewer: Settings["ttml_reviewer"];
   onReviewer: (mode: Settings["ttml_reviewer"]) => void;
   onLoad: (file: File, mode: LoadMode) => Promise<void>;
@@ -96,7 +182,8 @@ export function LoadTtml({
   const [busy, setBusy] = useState(false);
   const signInRequired = "Sign in to Lyssna in Settings to submit lyrics";
   const [submitBlock, setSubmitBlock] = useState<string | null>(() => hasLyssnaSession() ? "Checking your Lyssna account…" : signInRequired);
-  const submitBlocked = submitBlock ?? (song ? null : "Play the song you want to submit lyrics for");
+  const submitBlocked = localRecording && !localRecording.isrc ? "A local file needs an ISRC match before it can be submitted" :
+    submitBlock ?? (song ? null : "Play the song you want to submit lyrics for");
   const [saved, setSaved] = useState<TransferLyrics[] | null>(null);
   const [error, setError] = useState("");
   const batch = useRef<AbortController>(null);
@@ -206,7 +293,7 @@ export function LoadTtml({
                 <strong>TTML Reviewer</strong>
                 <small>Use default lyric timing and rendering while reviewing.</small>
               </span>
-              <select className="settings-select" value={reviewer} disabled={busy}
+              <select className="settings-select" aria-label="TTML Reviewer" value={reviewer} disabled={busy}
                 onChange={(event) => onReviewer(event.currentTarget.value as Settings["ttml_reviewer"])}>
                 <option value="off">Off</option>
                 <option value="temporary">Apply on Temp</option>
@@ -253,6 +340,7 @@ export function LoadTtml({
                 <span><strong>Submit to Lyssna</strong><small>{submitBlocked ?? "Upload a TTML for this song to Lyssna for everyone"}</small></span>
               </button>
             </div>
+            {localRecording && <RecordingMatch key={localRecording.track.id} {...localRecording} busy={busy} act={act} />}
             <input ref={submitInput} type="file" accept=".ttml,.xml" hidden aria-label="TTML file to submit"
               onChange={(event) => {
                 const file = event.target.files?.[0];
@@ -363,7 +451,7 @@ export function LoadTtml({
                         <button
                           aria-label={`Play ${name}`}
                           title="Play"
-                          disabled={busy || !item.uri.startsWith("spotify:track:")}
+                          disabled={busy || !spotifySongKey(item.uri)}
                           onClick={() => act(() => onPlay(item.uri))}
                         >
                           <Play size={14} fill="currentColor" />

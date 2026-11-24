@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { hosts } from "./host-react";
 import { normalizeIsrc, spotifyTrackMetadata } from "./spotify-track-metadata";
+import { localSongTags, spotifySongKey } from "./spotify-song";
 
 type Removal = () => void;
 type RepeatMode = "off" | "context" | "track";
@@ -29,9 +30,18 @@ export type AudioSegment = { start: number; duration: number; pitches: number[];
 type AudioAnalysis = { segments?: AudioSegment[]; beats?: { start: number; duration: number }[]; track?: { duration?: number } };
 type ImageSource = { url?: string; width?: number; maxWidth?: number };
 type SpotifyHttp = { get(url: string): Promise<unknown> };
+type PlaybackToggle = { getValue(): Promise<boolean>; setValue(value: boolean): Promise<unknown> };
 type HeaderImages = { sources?: ImageSource[] };
 type CatalogueResult = {
-  data?: { trackUnion?: { canvas?: CanvasInfo | null }; albumUnion?: { date?: { isoString?: string; year?: number } }; artistUnion?: {
+  data?: { trackUnion?: { canvas?: CanvasInfo | null }; albumUnion?: {
+    date?: { isoString?: string; year?: number };
+    tracksV2?: { totalCount?: number; items?: { track?: {
+      uri?: string;
+      name?: string;
+      duration?: { totalMilliseconds?: number };
+      artists?: { items?: { profile?: { name?: string } }[] };
+    } }[] };
+  }; artistUnion?: {
     headerImage?: { data?: HeaderImages };
     visuals?: { headerImage?: HeaderImages; gallery?: { items?: HeaderImages[] } };
   } };
@@ -156,7 +166,7 @@ type SpotiKit = {
 
 export type Root = { render(node: ReactNode): void; unmount(): void };
 export type Track = { id: string; title: string; artists: string; artist?: string; artistUri?: string; cover: string;
-  artistLinks?: { name: string; uri?: string }[]; album?: string; albumUri?: string; albumUpc?: string; year?: string; isrc?: string };
+  artistLinks?: { name: string; uri?: string }[]; album?: string; albumUri?: string; albumUpc?: string; year?: string; isrc?: string; local?: true };
 type CatalogueAlbum = {
   uri?: string;
   name?: string;
@@ -345,6 +355,7 @@ export function getHost() {
     };
   }
   function trackCanvas(trackId: string) {
+    if (trackId.startsWith("spotify:local:")) return null;
     const trackUri = `spotify:track:${trackId}`;
     const item = currentTrack();
     const metadata = item?.uri === trackUri ? item.metadata : undefined;
@@ -452,9 +463,10 @@ export function getHost() {
       else console.warn(`[Lyssna Lyrics] ${message}`);
     },
     track(): Track | null {
-      const track = kit ? kit.Player.track : spice?.Player.data?.item;
-      const id = /^spotify:track:([A-Za-z0-9]+)$/.exec(track?.uri ?? "")?.[1];
+      const track = kit?.Player.track ?? currentTrack();
+      const id = spotifySongKey(track?.uri);
       if (!id || !track) return null;
+      const local = localSongTags(id);
       const artist = track.artists?.[0];
       const artistUri = [artist?.uri, track.metadata?.artist_uri, artist?.id && `spotify:artist:${artist.id}`]
         .find((uri) => uri && /^spotify:artist:[A-Za-z0-9]{22}$/.test(uri));
@@ -463,12 +475,13 @@ export function getHost() {
       }] : []);
       return {
         id,
-        title: track.name ?? track.metadata?.title ?? "",
-        artists: track.artists?.map((artist) => artist.name).filter(Boolean).join(", ") || track.metadata?.artist_name || "",
+        ...(local && { local: true }),
+        title: track.name || track.metadata?.title || local?.title || "",
+        artists: track.artists?.map((artist) => artist.name).filter(Boolean).join(", ") || track.metadata?.artist_name || local?.artist || "",
         artistUri,
         artistLinks,
-        artist: artist?.name || track.metadata?.artist_name,
-        album: track.album?.name ?? track.metadata?.album_title,
+        artist: artist?.name || track.metadata?.artist_name || local?.artist,
+        album: track.album?.name || track.metadata?.album_title || local?.album,
         albumUri: track.album?.uri || track.metadata?.album_uri,
         albumUpc: track.album?.upc ?? track.metadata?.album_upc,
         isrc: normalizeIsrc(track.metadata?.isrc),
@@ -489,6 +502,25 @@ export function getHost() {
       if (!Array.isArray(result?.tracks?.items)) throw new Error("Spotify search is unavailable.");
       return [...new Map(result.tracks.items.filter(isTtmlTrack).map((track) => [track.uri, track])).values()];
     },
+    async albumTracks(uri: string) {
+      const { definitions, request } = graph();
+      const definition = definitions?.queryAlbumTracks;
+      if (!definition || !request) throw new Error("Spotify album lookup is unavailable.");
+      const tracks: TtmlTrack[] = [];
+      const limit = 50;
+      for (let offset = 0; offset < 250; offset += limit) {
+        const result = await request(definition, { uri, offset, limit, locale: "" });
+        const page = result.data?.albumUnion?.tracksV2;
+        if (!Array.isArray(page?.items)) throw new Error("Spotify couldn’t read the tracks on this album.");
+        for (const { track } of page.items) {
+          if (!track?.uri || !track.name || !/^spotify:track:[A-Za-z0-9]{22}$/.test(track.uri)) continue;
+          const artists = track.artists?.items?.flatMap(({ profile }) => profile?.name ? [{ name: profile.name }] : []) ?? [];
+          tracks.push({ uri: track.uri, name: track.name, artists, duration_ms: track.duration?.totalMilliseconds });
+        }
+        if (page.items.length < limit || (page.totalCount !== undefined && offset + limit >= page.totalCount)) return tracks;
+      }
+      throw new Error("This album has too many tracks to match at once. Enter a track link instead.");
+    },
     lookupTrack,
     async lookupIsrc(id: string, known?: string) {
       return normalizeIsrc(known) ?? (await spotifyTrackMetadata(id))?.external_ids?.isrc
@@ -504,6 +536,13 @@ export function getHost() {
       return spotifyWeb.get(`https://spclient.wg.spotify.com/color-lyrics/v2/track/${id}?format=json&vocalRemoval=false&market=from_token`);
     },
     position: () => kit ? kit.Player.position : spice?.Player.getProgress() ?? 0,
+    playbackTransition(name: "audioCrossfade" | "autoMix"): PlaybackToggle | undefined {
+      const settings = (kit?.Platform.SettingsAPI ?? spice?.Platform?.SettingsAPI) as {
+        playback?: Partial<Record<"audioCrossfade" | "autoMix", PlaybackToggle>>;
+      } | undefined;
+      const control = settings?.playback?.[name];
+      if (typeof control?.getValue === "function" && typeof control.setValue === "function") return control;
+    },
     duration: () => kit ? kit.Player.duration : spice?.Player.getDuration?.() ?? 0,
     playing: () => kit ? kit.Player.isPlaying : spice?.Player.isPlaying() ?? false,
     toggle: () => kit ? kit.Player.toggle() : spice?.Player.togglePlay(),
@@ -565,6 +604,7 @@ export function getHost() {
       if (title) return { title, artist: track?.metadata?.artist_name ?? "", image: artwork(track?.metadata?.image_url ?? "") };
     },
     analysis: (trackId: string) => {
+      if (trackId.startsWith("spotify:local:")) return;
       const cached = analyses.get(trackId);
       if (cached) return cached;
       const uri = `spotify:track:${trackId}`;

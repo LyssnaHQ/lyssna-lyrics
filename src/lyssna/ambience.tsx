@@ -1,5 +1,6 @@
 import { memo, useEffect, useRef, useState, type CSSProperties } from "react";
 import Kawarp from "@kawarp/core";
+import { drawLocalArtwork, isLocalArtwork } from "./local-artwork";
 import {
   ambienceFps,
   ambienceSize,
@@ -49,7 +50,18 @@ export const Ambience = memo(function Ambience({
   // A GPU reset, as a game can cause, loses the canvas's WebGL context and
   // leaves a flat colour. Each loss swaps in a fresh canvas and renderer.
   const [generation, setGeneration] = useState(0);
+  const [loadedLocalCover, setLoadedLocalCover] = useState<{ source: string; generation: number }>();
   artwork.current = source;
+
+  async function loadCover(engine: Kawarp, url: string, page: Document, current: () => boolean) {
+    if (!isLocalArtwork(url)) return engine.loadImage(url);
+    const drawn = await drawLocalArtwork(url, page, 512);
+    if (!drawn || !current()) return;
+    const blob = await new Promise<Blob | null>(resolve => drawn.canvas.toBlob(resolve, "image/png"));
+    if (!blob || !current()) return;
+    await engine.loadBlob(blob);
+    if (current()) setLoadedLocalCover({ source: url, generation });
+  }
   useEffect(() => {
     const canvas = surface.current;
     if (!canvas) return;
@@ -185,9 +197,10 @@ export const Ambience = memo(function Ambience({
       following.current = null;
       delete surface.current?.dataset.source;
       engine.unloadVideo();
-      if (artwork.current)
-        void engine
-          .loadImage(artwork.current)
+      const cover = artwork.current;
+      if (cover && panel)
+        void loadCover(engine, cover, panel.ownerDocument, () =>
+          renderer.current === engine && artwork.current === cover && !following.current)
           .then(() => resume.current?.(engine.transitionDuration + 100))
           .catch(() => {});
     };
@@ -242,11 +255,11 @@ export const Ambience = memo(function Ambience({
     };
   }, [followCanvas, generation]);
   useEffect(() => {
-    if (!source || following.current) return;
+    if (!source || following.current || !surface.current || !renderer.current) return;
     let cancelled = false;
     const engine = renderer.current;
-    void engine
-      ?.loadImage(source)
+    void loadCover(engine, source, surface.current.ownerDocument, () =>
+      !cancelled && renderer.current === engine && artwork.current === source && !following.current)
       .then(() => {
         if (!cancelled) resume.current?.(engine.transitionDuration + 100);
       })
@@ -276,6 +289,8 @@ export const Ambience = memo(function Ambience({
         ref={surface}
         className="ambient-layer"
       />
+      {isLocalArtwork(source) && (loadedLocalCover?.source !== source || loadedLocalCover.generation !== generation) &&
+        <img className="ambient-local-cover" src={source} alt="" />}
       {shade && <div className="ambient-shade" />}
     </div>
   );

@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronUp, Gauge, Headphones, Pause, Play } from "lucide-react";
-import { useCreatorEnvironment, type RecordingStatus } from "./environment";
+import { useCreatorClock, useCreatorEnvironment, type RecordingStatus } from "./environment";
 import { RecordingDetails } from "./recording-meter";
 import { formatTime } from "./ttml-creator-model";
 import type { Track } from "./types";
@@ -46,44 +46,31 @@ export interface BarSpan {
   current: boolean;
 }
 
-export function TtmlBar({ position, duration, peaks, spans, onSeek, recording, track }: {
-  position: number; duration: number; peaks: Uint8Array | null; spans: BarSpan[]; onSeek(ms: number): void;
+export function TtmlBar({ playing, offset, duration, peaks, spans, onSeek, recording, track }: {
+  playing: boolean; offset: number; duration: number; peaks: Uint8Array | null; spans: BarSpan[]; onSeek(ms: number): void;
   recording?: RecordingStatus;
   track: Track;
 }) {
   const { view: window, manageStoredData } = useCreatorEnvironment();
+  const position = useCreatorClock(playing, offset);
   const canvas = useRef<HTMLCanvasElement>(null);
-  const [width, setWidth] = useState(0);
+  const [{ width, height }, setSize] = useState({ width: 0, height: 0 });
   const [dragging, setDragging] = useState<number | null>(null);
   const [hover, setHover] = useState<number | null>(null);
   useEffect(() => {
     const element = canvas.current;
     if (!element) return;
-    const observer = new ResizeObserver(([entry]) =>
-      setWidth(entry.contentRect.width),
-    );
+    const observer = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect;
+      setSize({ width, height });
+    });
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
   const shown = dragging ?? position;
-  useEffect(() => {
-    const element = canvas.current;
-    const context = element?.getContext("2d");
-    if (!element || !context || !width) return;
-    const scale = window.devicePixelRatio;
-    const height = element.clientHeight;
-    // Resizing the backing store every frame is costly; only on change.
-    if (element.width !== Math.round(width * scale))
-      element.width = Math.round(width * scale);
-    if (element.height !== Math.round(height * scale))
-      element.height = Math.round(height * scale);
-    context.setTransform(scale, 0, 0, scale, 0, 0);
-    context.clearRect(0, 0, width, height);
-    const span = Math.max(1, duration);
-    const x = (ms: number) => (Math.min(span, Math.max(0, ms)) / span) * width;
-    // A filled envelope with the played part tinted and the current line
-    // shaded, after the AMLL TTML Tool's timeline.
-    const played = x(shown);
+  // Keep the waveform geometry independent of playhead and hover updates.
+  const envelope = useMemo(() => {
+    if (!width || !height) return;
     const middle = height / 2;
     const reach = middle - 4;
     const columns = Math.ceil(width);
@@ -101,15 +88,15 @@ export function TtmlBar({ position, duration, peaks, spans, onSeek, recording, t
       }
       level[left] = loud;
     }
-    context.beginPath();
-    context.moveTo(0, middle);
+    const path = new Path2D();
+    path.moveTo(0, middle);
     for (let left = 0; left <= columns; left++) {
       const near =
         (level[Math.max(0, left - 1)] +
           level[left] * 2 +
           level[Math.min(columns, left + 1)]) /
         4;
-      context.lineTo(left, middle - Math.max(0.5, near * reach));
+      path.lineTo(left, middle - Math.max(0.5, near * reach));
     }
     for (let left = columns; left >= 0; left--) {
       const near =
@@ -117,11 +104,27 @@ export function TtmlBar({ position, duration, peaks, spans, onSeek, recording, t
           level[left] * 2 +
           level[Math.min(columns, left + 1)]) /
         4;
-      context.lineTo(left, middle + Math.max(0.5, near * reach));
+      path.lineTo(left, middle + Math.max(0.5, near * reach));
     }
-    context.closePath();
+    path.closePath();
+    return path;
+  }, [width, height, peaks]);
+  useEffect(() => {
+    const element = canvas.current;
+    const context = element?.getContext("2d");
+    if (!element || !context || !envelope) return;
+    const scale = window.devicePixelRatio;
+    if (element.width !== Math.round(width * scale))
+      element.width = Math.round(width * scale);
+    if (element.height !== Math.round(height * scale))
+      element.height = Math.round(height * scale);
+    context.setTransform(scale, 0, 0, scale, 0, 0);
+    context.clearRect(0, 0, width, height);
+    const span = Math.max(1, duration);
+    const x = (ms: number) => (Math.min(span, Math.max(0, ms)) / span) * width;
+    const played = x(shown);
     context.fillStyle = "#1ed76066";
-    context.fill();
+    context.fill(envelope);
     context.fillStyle = "#1ed7601f";
     context.fillRect(0, 0, played, height);
     for (const line of spans) {
@@ -151,7 +154,7 @@ export function TtmlBar({ position, duration, peaks, spans, onSeek, recording, t
     }
     context.fillStyle = "#1ed760";
     context.fillRect(Math.round(played) - 1, 0, 2, height);
-  }, [width, peaks, spans, shown, duration, hover, dragging]);
+  }, [width, height, envelope, spans, shown, duration, hover, dragging, window]);
 
   const timeAt = (clientX: number) => {
     const box = canvas.current!.getBoundingClientRect();

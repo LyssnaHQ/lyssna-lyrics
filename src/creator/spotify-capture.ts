@@ -1,12 +1,14 @@
 import type { Host } from "../host";
-import { VISUALISER_BARS } from "../lyssna/visualiser-frame";
+import { spotifySongUri } from "../spotify-song";
+import { spectrumBars, VISUALISER_BARS } from "../lyssna/visualiser-frame";
 import { spectrumFrequency } from "./audio";
 import { spotifyWindowMarker } from "./spotify-window";
 import { createCapturedReplay, isRecordingComplete, recordedCoverage, savedAudioCleared, type ReplayPacket } from "./captured-replay";
 import { trackCapture } from "./capture-sessions";
 import processorSource from "./live-spectrum-processor.js?raw";
 import {
-  LIVE_COLUMNS, LIVE_ROWS, LIVE_SAMPLE_MS, MEASURED_COLUMN, INTERPOLATED_COLUMN, saveLiveTiles, type LiveTile,
+  LIVE_COLUMNS, LIVE_FFT_SIZE, LIVE_ROWS, LIVE_SAMPLE_MS, TRANSIENT_FFT_SIZE,
+  MEASURED_COLUMN, INTERPOLATED_COLUMN, saveLiveTiles, type LiveTile,
 } from "./spectrum-storage";
 
 type CaptureHandle = { handle: string; origin?: string };
@@ -237,8 +239,7 @@ export function createSpotifyCapture(host: Host, view: Window & typeof globalThi
       // Only connect the verified audio track. Captured video is never stored.
       const source = context.createMediaStreamSource(new view.MediaStream([audio]));
       const audioContext = context;
-      const fftSize = 4096;
-      const halfWindowMs = 500 * fftSize / audioContext.sampleRate;
+      const halfWindowMs = 500 * LIVE_FFT_SIZE / audioContext.sampleRate;
       const frequencies = Array.from({ length: LIVE_ROWS + 1 }, (_, row) => spectrumFrequency(1 - row / LIVE_ROWS));
       let previousClock: { uri: string; ms: number; audioMs: number; transportRevision: number; volume: number } | undefined;
       let lastUri: string | undefined;
@@ -259,7 +260,7 @@ export function createSpotifyCapture(host: Host, view: Window & typeof globalThi
         if (usingLocalAudio || !host.playing() || host.djNarrating()) return;
         const track = host.track();
         if (!track) return;
-        const uri = `spotify:track:${track.id}`;
+        const uri = spotifySongUri(track.id);
         if (scope === "auto" || scope === uri) return uri;
       }
       const captureClock = () => {
@@ -337,14 +338,7 @@ export function createSpotifyCapture(host: Host, view: Window & typeof globalThi
       const writeFrame = (uri: string, duration: number, frame: number, levels: Uint16Array, before?: Uint16Array, weight = 1) => {
         if (frame < 0 || frame * LIVE_SAMPLE_MS >= duration) return;
         if (!before) {
-          // The existing worklet bands are logarithmic, ordered high to low.
-          for (let bar = 0; bar < spectrum.length; bar++) {
-            const start = LIVE_ROWS - Math.floor((bar + 1) * LIVE_ROWS / spectrum.length);
-            const end = LIVE_ROWS - Math.floor(bar * LIVE_ROWS / spectrum.length);
-            let peak = 0;
-            for (let row = start; row < end; row++) peak = Math.max(peak, levels[row]);
-            spectrum[bar] = Math.round(peak * 255 / 5400);
-          }
+          spectrumBars(spectrum, levels, 1, 0);
           spectrumTrack = uri;
           spectrumAt = view.performance.now();
         }
@@ -368,11 +362,12 @@ export function createSpotifyCapture(host: Host, view: Window & typeof globalThi
       const sampleOnTimer = () => {
         setMessage("Saving spectrograms only. This client couldn’t start audio recording.");
         const analyser = audioContext.createAnalyser();
-        analyser.fftSize = fftSize;
+        analyser.fftSize = 4096;
         analyser.smoothingTimeConstant = 0;
         source.connect(analyser);
         const bins = new Float32Array(analyser.frequencyBinCount);
-        const edges = Uint16Array.from(frequencies, (hz) => Math.min(bins.length, Math.round(hz * fftSize / audioContext.sampleRate)));
+        const edges = Uint16Array.from(frequencies, (hz) => Math.min(bins.length, Math.round(hz * analyser.fftSize / audioContext.sampleRate)));
+        const analyserDelayMs = 500 * analyser.fftSize / audioContext.sampleRate;
         const decibels = new Float32Array(LIVE_ROWS);
         const previousLevels = new Uint16Array(LIVE_ROWS);
         let previousSample = -1;
@@ -393,10 +388,10 @@ export function createSpotifyCapture(host: Host, view: Window & typeof globalThi
             decibels[row] = peak;
           }
           if (!normalizeFrame(decibels, clock.now)) return;
-          const sample = Math.floor((clock.ms - halfWindowMs) / LIVE_SAMPLE_MS);
+          const sample = Math.floor((clock.ms - analyserDelayMs) / LIVE_SAMPLE_MS);
           const elapsed = clock.now - previousSampleAt;
           const distance = sample - previousSample;
-          if (!clock.discontinuity && previousSample >= 0 && distance > 1 && distance <= 4 && elapsed <= 100 &&
+          if (!clock.discontinuity && previousSample >= 0 && distance > 1 && distance * LIVE_SAMPLE_MS <= 80 && elapsed <= 100 &&
             Math.abs(distance * LIVE_SAMPLE_MS - elapsed) < 35) {
             for (let missing = 1; missing < distance; missing++) writeFrame(clock.uri, clock.duration, previousSample + missing, levels, previousLevels, missing / distance);
           }
@@ -413,7 +408,7 @@ export function createSpotifyCapture(host: Host, view: Window & typeof globalThi
         finally { view.URL.revokeObjectURL(url); }
         if (session !== active) return;
         const node = new view.AudioWorkletNode(audioContext, "lyssna-live-spectrum", {
-          processorOptions: { frequencies, interval: LIVE_SAMPLE_MS },
+          processorOptions: { frequencies, interval: LIVE_SAMPLE_MS, fftSize: LIVE_FFT_SIZE, transientFftSize: TRANSIENT_FFT_SIZE },
           outputChannelCount: [1],
         });
         worklet = node;
@@ -509,7 +504,7 @@ export function createSpotifyCapture(host: Host, view: Window & typeof globalThi
     },
     state: () => state,
     spectrum(trackId: string) {
-      if (spectrumAt && spectrumTrack === `spotify:track:${trackId}` && view.performance.now() - spectrumAt < 180) return spectrum;
+      if (spectrumAt && spectrumTrack === spotifySongUri(trackId) && view.performance.now() - spectrumAt < 180) return spectrum;
     },
     subscribe(listener: () => void) {
       listeners.add(listener);

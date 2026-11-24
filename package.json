@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",
+    "build:romanization": "node scripts/build-romanization.mjs",
     "sync:app": "node scripts/sync-app.mjs"
   },
   "devDependencies": {

@@ -18,14 +18,14 @@ export function useLiveSpectrum(uri: string, canCapture: boolean) {
     for (const tile of loaded) {
       const entry = tiles.current.get(tile.index);
       if (entry) {
-        mergeLiveTile(entry.tile, tile, overwrite);
+        entry.tile = mergeLiveTile(entry.tile, tile, overwrite);
         entry.revision++;
       } else tiles.current.set(tile.index, { tile, revision: 0 });
     }
 
     const { first, last } = visible.current;
     for (const index of tiles.current.keys()) {
-      if (tiles.current.size <= 64) break;
+      if (tiles.current.size <= 32) break;
       if (index < first || index > last) tiles.current.delete(index);
     }
     if (loaded.length) redraw((value) => value + 1);

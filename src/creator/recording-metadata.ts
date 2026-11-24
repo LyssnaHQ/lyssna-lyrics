@@ -1,4 +1,5 @@
 import type { Host, Track } from "../host";
+import { spotifySongUri } from "../spotify-song";
 import { within } from "./current-lyrics";
 import type { SavedRecording } from "./captured-replay";
 import { downloadRecording, type RecordingFormat } from "./recording-export";
@@ -69,7 +70,7 @@ export async function readRecordingMetadata(host: Host, track: Track, writers?: 
   add("UPC", album?.external_ids?.upc || track.albumUpc);
   add("EAN", album?.external_ids?.ean);
   add("EXPLICIT", song?.explicit === undefined ? undefined : song.explicit ? "1" : "0");
-  add("SPOTIFY_TRACK_URL", spotifyUrl(song?.uri ?? `spotify:track:${track.id}`, "track"), "WOAS");
+  add("SPOTIFY_TRACK_URL", spotifyUrl(song?.uri ?? spotifySongUri(track.id), "track"), "WOAS");
   add("SPOTIFY_ALBUM_URL", spotifyUrl(albumUri, "album"));
 
   const images = [...(album?.images ?? []), ...(song?.album?.images ?? [])];

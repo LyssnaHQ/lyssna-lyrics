@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { SettingRow } from "../lyssna/setting-row";
 import type { Host, TtmlTrack } from "../host";
+import { localSongTags, spotifySongKey } from "../spotify-song";
 import { clearMotionArtworkCache, removeMotionArtworkCache } from "../motion-artwork";
 import { cachedMotionArtworkBytes, listStoredMotionArtwork, motionArtworkBudget, readStoredMotionArtwork } from "../motion-artwork-storage";
 import { stopCreatorCaptures } from "./capture-sessions";
@@ -35,22 +36,24 @@ function StoredDataItem({ host, cache, entry, busy, format, changeFormat, remove
 }) {
   const [details, setDetails] = useState<{ title: string; artists?: string; track?: TtmlTrack }>();
   const [albumId, extension] = entry.key.split(":");
-  const trackId = entry.key.split(":").at(-1)!;
+  const trackId = spotifySongKey(entry.key);
+  const local = localSongTags(entry.key);
   useEffect(() => {
     let active = true;
     if (cache.id === "cover") {
       void within(host.lookupAlbum(`spotify:album:${albumId}`), 4000).then((album) => {
         if (active && album?.name) setDetails({ title: album.name, artists: album.artists?.map(({ name }) => name).join(", ") });
       });
-    } else {
+    } else if (trackId && !localSongTags(trackId)) {
       void within(host.lookupTrack(trackId), 4000).then((track) => {
         if (active && track) setDetails({ title: track.name, artists: track.artists.map(({ name }) => name).join(", "), track });
       });
     }
     return () => { active = false; };
   }, [host, cache.id, trackId, albumId]);
-  const title = details?.title || (cache.id === "cover" ? `Album ${albumId}` : `Track ${trackId}`);
-  const filename = [title, details?.artists].filter(Boolean).join(" - ");
+  const title = details?.title || local?.title || (cache.id === "cover" ? `Album ${albumId}` : `Track ${trackId ?? entry.key}`);
+  const artists = details?.artists || local?.artist;
+  const filename = [title, artists].filter(Boolean).join(" - ");
   async function exportItem() {
     if (!recordingExportEnabled()) return;
     if (cache.id === "cover") {
@@ -60,13 +63,13 @@ function StoredDataItem({ host, cache, entry, busy, format, changeFormat, remove
     } else if (cache.id === "spectrum") {
       downloadStoredFile(await exportSpectrogram(entry.key), `${filename} - Spectrogram`, "png");
     } else {
-      const track = details?.track ?? await within(host.lookupTrack(trackId), 4000);
-      const audio = await readStoredRecording(entry.key, track?.duration_ms);
+      const track = details?.track ?? (trackId && !local ? await within(host.lookupTrack(trackId), 4000) : undefined);
+      const audio = await readStoredRecording(entry.key, track?.duration_ms ?? local?.duration);
       if (!audio) throw new Error("This audio is no longer saved.");
       const firstPartyTrack = host.track();
-      const metadata = await readRecordingMetadata(host, firstPartyTrack?.id === trackId ? firstPartyTrack : {
-        id: trackId, title: track?.name ?? title, artists: track?.artists.map(({ name }) => name).join(", ") ?? details?.artists ?? "",
-        cover: track?.album?.images?.[0]?.url ?? "", album: track?.album?.name, albumUri: track?.album?.uri,
+      const metadata = await readRecordingMetadata(host, firstPartyTrack && firstPartyTrack.id === trackId ? firstPartyTrack : {
+        id: trackId ?? entry.key, title: track?.name ?? title, artists: track?.artists.map(({ name }) => name).join(", ") ?? artists ?? "",
+        cover: track?.album?.images?.[0]?.url ?? "", album: track?.album?.name ?? local?.album, albumUri: track?.album?.uri,
       });
       const name = [metadata.tags.find(({ name }) => name === "TITLE")?.value, metadata.tags.find(({ name }) => name === "ARTIST")?.value]
         .filter(Boolean).join(" - ");
@@ -75,7 +78,7 @@ function StoredDataItem({ host, cache, entry, busy, format, changeFormat, remove
   }
   return <li className="stored-data-item">
     <div><strong>{title}</strong>
-      <small>{[details?.artists, cache.id === "cover" ? extension?.toUpperCase() : undefined,
+      <small>{[artists, cache.id === "cover" ? extension?.toUpperCase() : undefined,
         entry.bytes !== undefined ? formatBytes(entry.bytes) : undefined].filter(Boolean).join(" · ")}</small>
     </div>
     <div className="settings-actions">

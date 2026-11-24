@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import type { Host, Track } from "../host";
+import { spotifySongUri } from "../spotify-song";
 
 const sessions = new WeakMap<Host, symbol>();
 const pendingRestores = new WeakMap<Host, Promise<void>>();
@@ -124,7 +125,7 @@ export function useCreatorRepeat(host: Host, notify: (message: string, error?: b
       }
       if (!open || !ownsSession() || !original() || host.repeat() === "track") return;
 
-      const uri = `spotify:track:${track.id}`;
+      const uri = spotifySongUri(track.id);
       const previousContext = host.creatorPlaybackContext(uri);
       const wasPlaying = host.playing();
       const wasBlocked = host.repeatTrackBlocked();

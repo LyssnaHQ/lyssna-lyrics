@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactElement, type ReactNode, type RefObject } from "react";
 import { ChevronUp, Disc3, FilePenLine, FoldVertical, MessagesSquare, MicVocal, Music2, PanelLeftOpen, Settings as GearIcon, UnfoldVertical, X } from "lucide-react";
 import { getHost, type CanvasInfo, type Host, type Root, type Track } from "./host";
+import { spotifySongUri } from "./spotify-song";
 import { useArtworkColor } from "./lyssna/artwork-color";
 import { Ambience } from "./lyssna/ambience";
 import { setFrameCap } from "./lyssna/frame-cap";
@@ -11,6 +12,7 @@ import { SpaceGravityLyrics } from "./lyssna/space-gravity-lyrics";
 import type { VisualiserFrame } from "./lyssna/visualiser-frame";
 import { CompactIcon, FullScreenIcon, HideArtworkIcon, RetryIcon, SwapSidesIcon, TranslateIcon, UploadIcon, WordSyncIcon } from "./lyssna/toolbar-icons";
 import type { Lyrics } from "./lyssna/types";
+import { useRomanizedLyrics } from "./lyssna/romanization";
 import { setWindowActivity, setWindowPosition } from "./lyssna/window-activity";
 import { filterWords } from "./lyssna/word-filter";
 import { displayLyrics, needsWordSync } from "./word-sync";
@@ -25,13 +27,14 @@ import { attachBulkLyrics, importLyricFile, loadBulkLyrics } from "./ttml-import
 import { enabledSources, readLyrics, refreshLyrics, sourceIds } from "./lyric-sources";
 import { LyricCredits } from "./credits";
 import { SongSheetScope } from "./song-sheet";
-import { CanvasArtwork, SpotifyVisualiser, useCanvas } from "./spotify-artwork";
+import { CanvasArtwork, SpotifyVisualiser, TrackArtwork, useCanvas } from "./spotify-artwork";
 import { findNowPlaying, findNowPlayingCover, findPlaybarCover, nowPlayingArtistCard, nowPlayingArtwork, nowPlayingCanvas, placeNowPlayingPreview } from "./now-playing";
 import { TrackMetadata } from "./track-metadata";
 import { useDefaultLyricsFont } from "./lyrics-font-fallback";
 import { clock, usePlayback, usePlaybackControls, usePosition } from "./playback";
 import { LyricsPopout, pictureInPicture } from "./popout";
 import { startEnhancements } from "./enhancements";
+import { startLocalPlaylistPlayback } from "./enhancements/features/localPlaylistPlayback";
 import { getSetting, subscribeSettings } from "./enhancements/config";
 import { startVolumeDragController } from "./enhancements/features/volumeDrag";
 import { startPreferenceSync } from "./preference-sync";
@@ -44,15 +47,17 @@ import { lyssnaApiNotice, lyssnaInstallReady } from "./lyssna-api";
 import { accountChanged, hasLyssnaSession, readLyssnaProfile } from "./lyssna-account";
 import { markLyssnaInstrumental, revalidateLyssnaSong, resumeLyssnaRequests } from "./lyssna-provider";
 import { submitLyssnaTtml } from "./lyssna-submission";
+import { useLocalTrackIsrc } from "./local-track-isrc";
 import { useFirstUploadNotice } from "./first-upload-notice";
 import { CreatorSurface, type CreatorPlayback } from "./creator/surface";
 import { reviewTopbar } from "./creator/review-topbar";
 import { canReview } from "./creator/review-api";
 import { ReviewQueuePanel, type ReviewSelection } from "./creator/review-panel";
 import { startCreatorRepeatRecovery } from "./creator/repeat";
+import { restoreCreatorPlaybackTransitions } from "./creator/playback-transitions";
 import { createSpotifyCapture, type SpotifyCapture } from "./creator/spotify-capture";
 import { PlaybarRecorder } from "./creator/auto-record";
-import { dismissDraft, draftPreview, liveDraftChanged } from "./creator/ttml-working";
+import { dismissDraft, useDraftPreview } from "./creator/ttml-working";
 import { trackLyssnaListens, useLyssnaPlay } from "./lyssna-plays";
 import { MotionArtwork, useAlbumMotionArtwork } from "./motion-artwork";
 import { discordInvite, startReleaseNotices } from "./release-notices";
@@ -191,7 +196,7 @@ function MissingLyrics({ track, host, openCreator, searchAgain, openTtml }: {
       <button type="button" onClick={searchAgain}>Search again</button>
       <span aria-hidden="true">·</span>
       <button type="button" aria-haspopup="dialog" onClick={(event) => openTtml(event.currentTarget)}>Import a lyric file</button>
-      {reviewer && <>
+      {reviewer && !track.local && <>
         <span aria-hidden="true">·</span>
         <button type="button" onClick={() => void mark()} disabled={marking || !!markNotice && !markNotice.error}>
           {marking ? "Marking instrumental…" : "Mark as instrumental"}
@@ -229,9 +234,11 @@ function TrackLyrics({ track, host, playing, settings, compact = false, view = w
     });
     return () => { active = false; };
   }, [host, track.id, analyse]);
-  const rendered = useMemo(() => filterWords(displayLyrics(lyrics, estimateTiming,
-    settings.romanized && { below: settings.romanization_below && !gravity }, duration, analysis), settings.lyrics_word_filter),
-  [lyrics, duration, estimateTiming, settings.romanized, settings.romanization_below, gravity, settings.lyrics_word_filter, analysis]);
+  const timedLyrics = useMemo(() => displayLyrics(lyrics, estimateTiming, duration, analysis),
+    [lyrics, estimateTiming, duration, analysis]);
+  const romanized = useRomanizedLyrics(timedLyrics, settings.romanized,
+    settings.romanization_below && !gravity, settings.romaji_as_written);
+  const rendered = filterWords(romanized, settings.lyrics_word_filter);
   const defaultFont = useDefaultLyricsFont(selectedFont(settings, "lyric_font"), rendered, view.document);
   const fontClass = defaultFont ? "lyssna-default-lyrics-font" : undefined;
   const upcoming = fullView && settings.lyrics_up_next && duration > 0 && position >= duration - 30_000 ? host.upcoming() : undefined;
@@ -368,14 +375,21 @@ function spotifyMotionCover(host: Host) {
   };
 }
 
-function PopoutView({ host, view, close }: { host: Host; view: Window; close: () => void }) {
-  const { track, playing, narrating } = usePlayback(host, true);
-  const settings = useReviewerSettings(useLiveSettings(), track?.id);
+type DetachedPreview = { playback?: CreatorPlayback };
+
+function PopoutView({ host, view, close, preview }: { host: Host; view: Window; close: () => void; preview?: DetachedPreview }) {
+  const { track, playing: spotifyPlaying, narrating } = usePlayback(host, true);
+  const draft = useDraftPreview(preview && track ? spotifySongUri(track.id) : undefined, true);
+  const localPlayback = preview?.playback?.trackId === track?.id ? preview?.playback : undefined;
+  const playing = localPlayback?.playing ?? spotifyPlaying;
+  const preferences = useLiveSettings();
+  const settings = useReviewerSettings(preferences, track?.id, draft ? preferences.ttml_reviewer !== "off" : undefined);
   const duration = host.duration();
   const data = useTrackLyrics(track, duration, view, settings, host);
-  return <LyricsPopout host={host} view={view} close={close} track={track} playing={playing} settings={settings} narrating={narrating}>
+  return <LyricsPopout host={host} view={view} close={close} track={track} playing={playing} settings={settings}
+    narrating={narrating} localPlayback={localPlayback} draft={!!draft}>
     {track && <TrackLyrics key={track.id} track={track} host={host} playing={playing} settings={settings} view={view}
-      fullView={false} duration={duration} {...data} />}
+      fullView={false} duration={duration} lyrics={draft ?? data.lyrics} waiting={!draft && data.waiting} localPlayback={localPlayback} />}
   </LyricsPopout>;
 }
 
@@ -533,7 +547,7 @@ function requestDisplayFullscreen(parent: HTMLElement) {
 }
 
 function LyricsView({ host, options, close, parent, view = window, fullscreenRequest = 0, settingsRequest,
-  openCreator, closeCreator, reviewSelection, closeReview, onSidebarCover, onRecordingPlayback, capture }: {
+  openCreator, closeCreator, reviewSelection, closeReview, onSidebarCover, onRecordingPlayback, capture, detachedPreview }: {
   host: Host; options: BuildOptions; close: () => void; parent: HTMLElement; view?: Window;
   capture: SpotifyCapture;
   fullscreenRequest?: number;
@@ -544,6 +558,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
   closeReview?(): void;
   onSidebarCover?(cover?: string): void;
   onRecordingPlayback?(playback?: CreatorPlayback): void;
+  detachedPreview?: DetachedPreview;
 }) {
   const externalCinema = view !== window;
   const { track, playing: spotifyPlaying, narrating } = usePlayback(host, true);
@@ -555,31 +570,25 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
   const trackId = track?.id;
   const [creatorTrackId, setCreatorTrackId] = useState<string>();
   const [creatorPlayback, setCreatorPlayback] = useState<CreatorPlayback>();
-  const [draftRevision, refreshDraft] = useState(0);
-  const draftUri = trackId && !showCreator ? `spotify:track:${trackId}` : undefined;
-  const draft = useMemo(() => draftPreview(draftUri), [draftUri, draftRevision]);
+  const [originalDraftUri, setOriginalDraftUri] = useState<string>();
+  const draftUri = trackId && !showCreator ? spotifySongUri(trackId) : undefined;
+  const draft = useDraftPreview(detachedPreview && originalDraftUri === draftUri ? undefined : draftUri, !!detachedPreview);
   const [reviewerOverride, setReviewerOverride] = useState<boolean>();
   const draftReviewer = draft ? reviewerOverride ?? (preferences.ttml_reviewer !== "off") : undefined;
   const settings = useReviewerSettings(preferences, trackId, draftReviewer);
   const keepCreator = !!draft && preferences.ttml_creator && !!trackId && creatorTrackId === trackId;
-  const localPlayback = keepCreator && creatorPlayback?.trackId === trackId ? creatorPlayback : undefined;
+  const attachedPlayback = (showCreator || keepCreator) && creatorPlayback?.trackId === trackId ? creatorPlayback : undefined;
+  const detachedPlayback = detachedPreview?.playback?.trackId === trackId ? detachedPreview?.playback : undefined;
+  const localPlayback = attachedPlayback ?? detachedPlayback;
   useEffect(() => {
-    if (!onRecordingPlayback || !localPlayback?.returnToSpotify) return;
-    onRecordingPlayback(localPlayback);
+    if (!onRecordingPlayback || !attachedPlayback) return;
+    onRecordingPlayback(attachedPlayback);
     return () => onRecordingPlayback(undefined);
-  }, [localPlayback, onRecordingPlayback]);
+  }, [attachedPlayback, onRecordingPlayback]);
   const playing = localPlayback?.playing ?? spotifyPlaying;
   const visualiser = useRef<VisualiserFrame | null>(null);
   const showVisualiser = settings.lyrics_visualiser && settings.lyrics_visualiser_opacity > 0 && !settings.reduce_motion && !narrating;
   useLayoutEffect(() => setReviewerOverride(undefined), [draftUri, preferences.ttml_reviewer]);
-  useEffect(() => {
-    if (!draftUri) return;
-    const update = (event: Event) => {
-      if ((event as CustomEvent<string>).detail === draftUri) refreshDraft((revision) => revision + 1);
-    };
-    window.addEventListener(liveDraftChanged, update);
-    return () => window.removeEventListener(liveDraftChanged, update);
-  }, [draftUri]);
   useLayoutEffect(() => {
     if (showCreator) setCreatorTrackId(trackId);
     else if (!keepCreator) setCreatorTrackId(undefined);
@@ -592,6 +601,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
   const waiting = !draft && foundLyrics.waiting;
   const missing = !lyrics && !waiting;
   const coverOnly = !!track && (lyrics?.instrumental || (immersive && missing));
+  const localIsrc = useLocalTrackIsrc(track, duration, host, showTtml);
   const [leaving, setLeaving] = useState(false);
   const [narrow, setNarrow] = useState(false);
   const [notice, setNotice] = useState("");
@@ -916,8 +926,8 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
     </div>
   </div>;
   const renderCover = (controls?: ReactNode) => <div className="lyrics-media lyrics-motion-stage">
-    {track?.cover && <img className={`cover${settings.cover_animation && !settings.reduce_motion ? " crossfade" : ""}`}
-      key={track.cover} src={track.cover} alt="" />}
+    <TrackArtwork className={`cover${settings.cover_animation && !settings.reduce_motion ? " crossfade" : ""}`}
+      key={track?.cover || trackId} src={track?.cover} />
     <MotionArtwork cover={motion} playing={playing} />
     {controls}
     {toolbarOnCover && toolbar}
@@ -956,7 +966,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
         <div className="lyrics-album">
           {artworkDock ? playback : <>{canvas ? <CanvasArtwork key={`${track.id}:${canvas.fileId ?? canvas.url}`} info={canvas} cover={track.cover}
             playing={playing && !settings.reduce_motion} onUnavailable={setUnavailableCanvas} onVideo={setCanvasVideo} heldFrame={heldFrame} />
-            : (motion.state !== "idle" || track.cover) && renderCover()}
+            : renderCover()}
           {details}</>}
         </div>
         {!coverOnly && <div className="lyrics-body">
@@ -977,23 +987,26 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
             openCreator();
           }}>Back to Creator</button>}
           <button type="button" onClick={() => {
-            if (draftUri) dismissDraft(draftUri);
-            refreshDraft((revision) => revision + 1);
+            if (detachedPreview) setOriginalDraftUri(draftUri);
+            else if (draftUri) dismissDraft(draftUri);
           }}>Original lyrics</button>
           <button type="button" aria-pressed={draftReviewer} onClick={() => setReviewerOverride(!draftReviewer)}>Reviewer mode</button>
         </div>}
       </> : <div className="lyrics-message"><Music2 /><h2>Play something you love</h2><p>Your lyrics will appear here.</p></div>)}
-      {track && showVisualiser && !coverOnly && <SpotifyVisualiser key={track.id} host={host} trackId={track.id}
+      {track && showVisualiser && <SpotifyVisualiser key={track.id} host={host} trackId={track.id}
         opacity={settings.lyrics_visualiser_opacity} playing={playing} capture={capture} motion={visualiser} read={localPlayback?.read} />}
       {!toolbarOnCover && toolbar}
       {!showSettings && notice && <div className="lyssna-popout-error" role="status">{notice}</div>}
       {!artworkDock && playback}
     </section>}
-    {!showCreator && showTtml && <LoadTtml song={track ? track.title || "Unknown song" : undefined} glass={settings.liquid_glass} style={fonts}
+    {!showCreator && showTtml && <LoadTtml song={track ? track.title || "Unknown song" : undefined}
+      localRecording={track?.local ? { track, duration, host, isrc: localIsrc } : undefined}
+      glass={settings.liquid_glass} style={fonts}
       reviewer={preferences.ttml_reviewer} onReviewer={(ttml_reviewer) => change({ ttml_reviewer })}
       onSubmit={async (file) => {
         if (!track) throw new Error("Play the song you want to submit lyrics for.");
-        const result = await submitLyssnaTtml(file, track, host, confirmFirstUpload);
+        const target = track.local ? { ...track, isrc: localIsrc } : track;
+        const result = await submitLyssnaTtml(file, target, host, confirmFirstUpload);
         if (!result) return;
         if (result.approved) {
           revalidateLyssnaSong(track.id, result.isrc, result.published);
@@ -1010,7 +1023,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
       }}
       onReset={async () => {
         if (!track) return;
-        await removeLocalLyrics(`spotify:track:${track.id}`, true);
+        await removeLocalLyrics(spotifySongUri(track.id), true);
         closeTtml();
         setNotice("Imported lyrics cleared for this song.");
       }}
@@ -1064,6 +1077,7 @@ export default function start(options: BuildOptions) {
   let disposed = false;
   let autoRecord = false;
   let recorder: { root: Root; container: HTMLElement } | undefined;
+  let creatorWindowPlayback: CreatorPlayback | undefined;
   let recorderPlayback: CreatorPlayback | undefined;
   let renderMainView: (() => void) | undefined;
   function syncRecorder() {
@@ -1084,8 +1098,13 @@ export default function start(options: BuildOptions) {
       playback={recorderPlayback} manageStoredData={openStoredData} />);
   }
   function setRecordingPlayback(playback?: CreatorPlayback) {
-    recorderPlayback = playback;
-    if (!disposed) syncRecorder();
+    creatorWindowPlayback = playback;
+    const recordedPlayback = playback?.returnToSpotify ? playback : undefined;
+    if (!disposed && recorderPlayback !== recordedPlayback) {
+      recorderPlayback = recordedPlayback;
+      syncRecorder();
+    }
+    detached?.renderPreview();
   }
   function syncPlaybar() {
     if (!playbarButtons) return;
@@ -1101,6 +1120,7 @@ export default function start(options: BuildOptions) {
     renderMainView?.();
     syncPlaybar();
     syncRecorder();
+    detached?.renderPreview();
     reviewButton?.sync(reviewOpen || !!dismissReviewQueue);
   }
   function closeReview() {
@@ -1146,7 +1166,7 @@ export default function start(options: BuildOptions) {
   let backdrop: { panel: HTMLElement; container: HTMLElement; dispose(): void } | undefined;
   let sidebarCover: string | undefined;
   type DetachedMode = "popout" | "cinema";
-  let detached: { mode: DetachedMode; view: Window; dismiss(): void } | undefined;
+  let detached: { mode: DetachedMode; view: Window; dismiss(): void; renderPreview(): void } | undefined;
   let opening = false;
   let switchingLyricsView = false;
   let rememberedView = readViewSession();
@@ -1226,6 +1246,7 @@ export default function start(options: BuildOptions) {
       return;
     }
     if (cinema ? host.developerMode === false : !pictureInPicture) return;
+    let previewingCreator = creatorOpen;
     opening = true;
     try {
       const view = cinema ? window.open("", "_blank", "popup=yes,width=1280,height=720")
@@ -1254,18 +1275,27 @@ export default function start(options: BuildOptions) {
         const dismiss = () => { release(); view.close(); };
         view.addEventListener("pagehide", release, { once: true });
         window.addEventListener("pagehide", dismiss, { once: true });
-        detached = { mode, view, dismiss };
-        playbarButtons?.setPopoutActive(!cinema);
-        playbarButtons?.setCinemaActive(cinema);
-        if (cinema) close?.();
-        syncNowPlaying();
         const returnToCreator = async () => {
           if (!creatorOpen) await open("creator");
-          if (creatorOpen) dismiss();
+          if (creatorOpen) {
+            dismiss();
+            window.focus();
+          }
         };
-        root.render(<SongSheetScope>{cinema
-          ? <LyricsView host={host} options={options} close={dismiss} parent={parent} view={view} capture={capture} openCreator={() => void returnToCreator()} />
-          : <PopoutView host={host} view={view} close={dismiss} />}</SongSheetScope>);
+        const renderDetached = () => {
+          previewingCreator ||= creatorOpen;
+          const preview = previewingCreator ? { playback: creatorWindowPlayback } : undefined;
+          root.render(<SongSheetScope>{cinema
+            ? <LyricsView host={host} options={options} close={dismiss} parent={parent} view={view} capture={capture}
+              detachedPreview={preview} openCreator={() => void returnToCreator()} />
+            : <PopoutView host={host} view={view} close={dismiss} preview={preview} />}</SongSheetScope>);
+        };
+        detached = { mode, view, dismiss, renderPreview: renderDetached };
+        playbarButtons?.setPopoutActive(!cinema);
+        playbarButtons?.setCinemaActive(cinema);
+        if (cinema && !previewingCreator) close?.();
+        syncNowPlaying();
+        renderDetached();
       } catch (error) {
         if (detached?.view === view) detached.dismiss();
         else view.close();
@@ -1274,6 +1304,13 @@ export default function start(options: BuildOptions) {
     } finally {
       opening = false;
     }
+  }
+
+  function openCinemaWindow() {
+    void openDetached("cinema").catch((error) => {
+      console.warn("[Lyssna Lyrics] Could not open Cinema Lyrics", error);
+      host.notifyError("Spotify couldn’t open the Cinema Lyrics window. Check that Spotify DevTools is enabled.");
+    });
   }
 
   function activateReview(selection: ReviewSelection) {
@@ -1312,6 +1349,10 @@ export default function start(options: BuildOptions) {
   }
 
   async function open(mode?: FullscreenMode | "creator" | ReviewSelection) {
+    if (mode === "cinema" && creatorOpen) {
+      openCinemaWindow();
+      return;
+    }
     const queue = typeof mode === "object" ? dismissReviewQueue : undefined;
     if (typeof mode === "object" && !queue) return;
     if (mode === "creator" && !creatorEnabled) return;
@@ -1421,15 +1462,13 @@ export default function start(options: BuildOptions) {
       console.warn("[Lyssna Lyrics] Could not open pop-out", error);
       host.notifyError("Spotify couldn’t open the lyrics pop-out.");
     }) : undefined,
-    () => void openDetached("cinema").catch((error) => {
-      console.warn("[Lyssna Lyrics] Could not open Cinema Lyrics", error);
-      host.notifyError("Spotify couldn’t open the Cinema Lyrics window. Check that Spotify DevTools is enabled.");
-    }),
+    openCinemaWindow,
     () => void open("creator"),
   );
   const stopProfileSettings = host.profileSettings(openProfileSettings);
   reviewButton = reviewTopbar(host, toggleReviewQueue, closeReview);
   const stopEnhancementStartup = startEnhancements(host);
+  const stopLocalPlaylistPlayback = startLocalPlaylistPlayback(host);
   const stopVolumeDrag = startVolumeDragController(host);
   keepTemporaryLyricsFor(host.track()?.id);
   const stopTemporaryTrack = host.watch(() => keepTemporaryLyricsFor(host.track()?.id));
@@ -1558,6 +1597,7 @@ export default function start(options: BuildOptions) {
   });
   observer.observe(document.body, { childList: true, subtree: true });
   const stopCreatorRepeatRecovery = startCreatorRepeatRecovery(host);
+  restoreCreatorPlaybackTransitions(host);
   syncHost();
   const stopReleaseNotices = startReleaseNotices(host, options);
   return {
@@ -1588,6 +1628,7 @@ export default function start(options: BuildOptions) {
       disposeRuntimeSettings();
       stopPreferenceSync();
       stopEnhancementStartup();
+      stopLocalPlaylistPlayback();
       stopTemporaryTrack();
       stopLyssnaListens();
       window.removeEventListener(lyssnaApiNotice, reportApiNotice);
