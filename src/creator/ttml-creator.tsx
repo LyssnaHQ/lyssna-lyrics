@@ -36,7 +36,7 @@ import {
   Globe,
   X,
 } from "lucide-react";
-import { IS_MAC, MODIFIER, useCreatorClock, useCreatorEnvironment } from "./environment";
+import { IS_MAC, MODIFIER, useCreatorClock, useCreatorEnvironment, useCreatorTick } from "./environment";
 import type { CreatorState } from "./types";
 import type { Lyrics, PlayerRequest, Track } from "./types";
 import { lyricsChanged, parseLocalTtml } from "../local-lyrics";
@@ -260,6 +260,19 @@ function TimePill({ ms, end }: { ms?: number; end?: boolean }) {
   );
 }
 
+function CreatorTime({ playing, offset }: { playing: boolean; offset: number }) {
+  const position = useCreatorClock(playing, offset);
+  return <span className="ttml-time">{formatTime(position)}</span>;
+}
+
+function CreatorPreview({ lyrics, playing, offset, track, render }: {
+  lyrics: Lyrics; playing: boolean; offset: number; track: Track;
+  render: (lyrics: Lyrics, position: number, track: Track) => ReactNode;
+}) {
+  const position = useCreatorClock(playing, offset);
+  return render(lyrics, position, track);
+}
+
 export function TtmlCreator({
   state,
   onPlayer,
@@ -297,7 +310,7 @@ export function TtmlCreator({
   onCloseReview?: () => void;
   draftPreview?: boolean;
 }) {
-  const { root, view: window, waveform, playClip, recording, playingFullRecording, replayAvailable, replayCaptured, openAudio } = useCreatorEnvironment();
+  const { root, view: window, waveform, playClip, recording, playingFullRecording, replayAvailable, replayCaptured, openAudio, read: readTime } = useCreatorEnvironment();
   const document = window.document;
   const focused = () => (root.getRootNode() as Document | ShadowRoot).activeElement;
   const playing = state.playback.item;
@@ -317,11 +330,22 @@ export function TtmlCreator({
     () => Number(readStorage(OFFSET_KEY)) || 0,
   );
   const isPlaying = state.playback.is_playing;
-  const clock = useCreatorClock(isPlaying, !draftPreview);
   const here = !!track && playing?.uri === track.uri;
   const heard = state.settings.lyric_offset_ms;
-  const position = clock.position + heard;
-  const read = useCallback((at?: number) => clock.read(at) + heard, [clock.read, heard]);
+  // Only timing boundaries change editor rows. The playhead, elapsed time,
+  // and inline preview use the full clock.
+  const boundaries = useMemo(() => {
+    const times = new Set<number>();
+    for (const line of lines) {
+      for (const unit of line.units) {
+        if (unit.start !== undefined) times.add(unit.start);
+        if (unit.end !== undefined) times.add(unit.end);
+      }
+    }
+    return [...times].sort((left, right) => left - right);
+  }, [lines]);
+  const position = useCreatorClock(isPlaying, heard, !draftPreview, boundaries);
+  const read = useCallback((at?: number) => readTime(at) + heard, [readTime, heard]);
   const rate = state.playback_rate;
 
   const [savedAt, setSavedAt] = useState<number | undefined>();
@@ -450,21 +474,26 @@ export function TtmlCreator({
     snapshot(false);
   }, [track, lines, text, metadata, appleOriginal, snapshot]);
 
-  const lastPosition = useRef(0);
+  const lastPosition = useRef<{ track: Track | undefined; position: number }>(undefined);
   useEffect(() => {
-    if (draftPreview) { lastPosition.current = 0; return; }
+    if (draftPreview) lastPosition.current = undefined;
+  }, [draftPreview]);
+  useCreatorTick(isPlaying, !draftPreview, (raw) => {
     const duration = track?.duration_ms ?? 0;
+    const position = raw + heard;
+    const previous = lastPosition.current;
     const wrapped =
       here &&
       isPlaying &&
       duration > 5000 &&
-      lastPosition.current > duration - 2500 &&
+      previous?.track === track &&
+      previous.position > duration - 2500 &&
       position < 2000;
-    lastPosition.current = position;
+    lastPosition.current = { track, position };
     if (!wrapped) return;
     onPlayer({ command: "pause" });
     onPlayer({ command: "seek", positionMs: 0 });
-  }, [draftPreview, position, here, isPlaying, track, onPlayer]);
+  });
 
   const setLines = useCallback(
     (next: CreatorLine[] | ((previous: CreatorLine[]) => CreatorLine[])) =>
@@ -1624,7 +1653,7 @@ export function TtmlCreator({
   // Clicking a line in the preview seeks there, so coming back from it
   // picks up at the line and word the song is on.
   const selectPlaying = () => {
-    if (playingLine >= 0) setCursor(cursorAt(lines, position));
+    if (playingLine >= 0) setCursor(cursorAt(lines, read()));
   };
   const scrolledAt = useRef(0);
   const typingInCreator = () => {
@@ -2277,7 +2306,7 @@ export function TtmlCreator({
       {previewing && !textMode && (
         <div className="ttml-preview">
           {preview?.lines.length && renderPreview ? (
-            renderPreview(preview, position, track)
+            <CreatorPreview lyrics={preview} playing={isPlaying} offset={heard} track={track} render={renderPreview} />
           ) : (
             <p className="ttml-hint">Time some words to see them here.</p>
           )}
@@ -2298,7 +2327,7 @@ export function TtmlCreator({
                   <Play size={16} fill="currentColor" />
                 )}
               </button>
-              <span className="ttml-time">{formatTime(position)}</span>
+              <CreatorTime playing={isPlaying} offset={heard} />
               <label
                 className="ttml-offset"
                 title="Shift every tap by this much. Negative taps earlier."
@@ -3147,7 +3176,7 @@ export function TtmlCreator({
           id={spectrogramId}
           uri={track.uri}
           duration={track.duration_ms}
-          position={position}
+          offset={heard}
           playing={isPlaying}
           lines={lines}
           cursor={cursor}
@@ -3160,7 +3189,7 @@ export function TtmlCreator({
         />
       )}
       {barSlot && createPortal(
-        <TtmlBar position={position} duration={track.duration_ms}
+        <TtmlBar playing={isPlaying} offset={heard} duration={track.duration_ms}
           peaks={peaks?.uri === track.uri ? peaks.values : null} spans={barSpans} onSeek={seek}
           track={playing?.uri === track.uri ? playing : track} recording={here ? recording : undefined} />, barSlot)}
       {barSlot && createPortal(speedControl(true), playbar?.speed ?? barSlot)}

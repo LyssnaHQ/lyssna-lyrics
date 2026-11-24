@@ -1,6 +1,6 @@
 import { memo, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowRightToLine, AudioLines, Eye, EyeOff, Plus, Settings2, Square, Trash2 } from "lucide-react";
-import { useCreatorEnvironment } from "./environment";
+import { useCreatorEnvironment, useCreatorTick } from "./environment";
 import { pitchBands, spectrumFrequency, spectrumFrequencyPosition } from "./audio";
 import { useLiveSpectrum } from "./live-spectrum";
 import { useAnchoredPopover } from "../anchored-popover";
@@ -202,7 +202,7 @@ export function TtmlSpectrogram({
   id,
   uri,
   duration,
-  position,
+  offset,
   playing,
   lines,
   cursor,
@@ -216,7 +216,7 @@ export function TtmlSpectrogram({
   id: string;
   uri: string;
   duration: number;
-  position: number;
+  offset: number;
   playing: boolean;
   lines: CreatorLine[];
   cursor: Cursor;
@@ -227,7 +227,7 @@ export function TtmlSpectrogram({
   onPlayUnit: (at: Cursor) => void;
   canCapture: boolean;
 }) {
-  const { view: window, spectrogram, spectrumKey: audioKey, spectrumAudioUri } = useCreatorEnvironment();
+  const { view: window, read, spectrogram, spectrumKey: audioKey, spectrumAudioUri } = useCreatorEnvironment();
   const localAudio = spectrumAudioUri === uri;
   const canShare = canCapture && !localAudio && duration > 0;
   const liveSpectrum = useLiveSpectrum(uri, canShare);
@@ -295,6 +295,8 @@ export function TtmlSpectrogram({
   const spectrum = useRef<HTMLElement>(null);
   const area = useRef<HTMLDivElement>(null);
   const ruler = useRef<HTMLCanvasElement>(null);
+  const rulerBacking = useRef<OffscreenCanvas>(undefined);
+  const playhead = useRef<HTMLDivElement>(null);
   const target = useRef({ zoom, scroll });
   const live = useRef({ zoom, scroll, width, duration });
   live.current = { zoom, scroll, width, duration };
@@ -395,12 +397,15 @@ export function TtmlSpectrogram({
     placed.current = false;
   }, [uri]);
 
-  const shown = position;
-  const last = useRef(position);
+  const last = useRef(read() + offset);
   // Scrolling away while the song plays holds the view for a while before
   // following the playhead again.
   const browsed = useRef(-Infinity);
-  useEffect(() => {
+  useCreatorTick(playing, true, raw => {
+    const shown = raw + offset;
+    if (playhead.current) playhead.current.style.transform = `translate3d(${shown / 1000 * zoom}px, 0, 0)`;
+    const value = String(Math.round(shown));
+    if (ruler.current?.getAttribute("aria-valuenow") !== value) ruler.current?.setAttribute("aria-valuenow", value);
     const jumped = Math.abs(shown - last.current) > 1000;
     last.current = shown;
     if (!width || drag) return;
@@ -413,7 +418,7 @@ export function TtmlSpectrogram({
     placed.current = true;
     if (outside && ((follow && playing && resting) || jumped || opening))
       jump(x - width * 0.1);
-  }, [shown, width, follow, playing]);
+  });
 
   const tileMs = liveCapture ? LIVE_TILE_MS : TILE_MS;
   const tilePx = (tileMs / 1000) * zoom;
@@ -504,11 +509,23 @@ export function TtmlSpectrogram({
 
   useLayoutEffect(() => {
     const element = ruler.current;
-    const context = element?.getContext("2d");
-    if (!element || !context || !width) return;
+    const output = element?.getContext("2d");
+    if (!element || !output || !width) return;
     const scale = window.devicePixelRatio;
-    element.width = Math.round(width * scale);
-    element.height = Math.round(RULER * scale);
+    const deviceWidth = Math.round(width * scale);
+    const deviceHeight = Math.round(RULER * scale);
+    if (element.width !== deviceWidth) element.width = deviceWidth;
+    if (element.height !== deviceHeight) element.height = deviceHeight;
+    // Offscreen text avoids synchronously resolving the editor's document
+    // styles every time the visible time range moves.
+    const backing = typeof window.OffscreenCanvas === "function"
+      ? rulerBacking.current ??= new window.OffscreenCanvas(deviceWidth, deviceHeight)
+      : undefined;
+    if (backing) {
+      if (backing.width !== deviceWidth) backing.width = deviceWidth;
+      if (backing.height !== deviceHeight) backing.height = deviceHeight;
+    }
+    const context = backing?.getContext("2d") ?? output;
     context.setTransform(scale, 0, 0, scale, 0, 0);
     context.clearRect(0, 0, width, RULER);
     const step = rulerStep(zoom);
@@ -527,7 +544,15 @@ export function TtmlSpectrogram({
         context.fillText(formatTime(Math.round(ms)), x + 3, 8);
       }
     }
-  }, [zoom, scroll, width, duration]);
+    if (backing && context !== output) {
+      output.clearRect(0, 0, deviceWidth, deviceHeight);
+      output.drawImage(backing, 0, 0);
+    }
+  }, [zoom, scroll, width, duration, window]);
+
+  useLayoutEffect(() => {
+    if (playhead.current) playhead.current.style.transform = `translate3d(${(read() + offset) / 1000 * zoom}px, 0, 0)`;
+  }, [zoom, offset, read]);
 
   const timeAt = (clientX: number) => {
     const box = area.current!.getBoundingClientRect();
@@ -555,14 +580,15 @@ export function TtmlSpectrogram({
   };
   // Playback moves the playhead every frame; reading it through refs keeps
   // the drag listeners, and the edit in progress, alive while it plays.
-  const dragging = useRef({ lines, zoom, position, onLines });
-  dragging.current = { lines, zoom, position, onLines };
+  const dragging = useRef({ lines, zoom, read, offset, onLines });
+  dragging.current = { lines, zoom, read, offset, onLines };
   useEffect(() => {
     if (!drag) return;
     let latest: CreatorLine[] | null = null;
     let moved = false;
     const move = (event: PointerEvent) => {
-      const { lines, zoom, position } = dragging.current;
+      const { lines, zoom, read, offset } = dragging.current;
+      const position = read() + offset;
       const shift = event.clientX - drag.x;
       if (!moved && Math.abs(shift) < 3) return;
       moved = true;
@@ -737,7 +763,7 @@ export function TtmlSpectrogram({
           aria-label="Spectrogram position"
           aria-valuemin={0}
           aria-valuemax={duration}
-          aria-valuenow={Math.round(position)}
+          aria-valuenow={Math.round(read() + offset)}
           onPointerDown={scrub}
         />
         <div className="ttml-spectrum-plot" onPointerDown={scrub}>
@@ -817,8 +843,8 @@ export function TtmlSpectrogram({
               </div>
             ))}
             <div
+              ref={playhead}
               className="ttml-spectrum-playhead"
-              style={{ left: ms(position) }}
             />
             {hover && !drag && (
               <div

@@ -48,17 +48,6 @@ export function WriterCredits({ names }: { names: string[] }) {
   );
 }
 
-function creditsInView(container: HTMLElement, above: HTMLElement) {
-  const credits = above.nextElementSibling as HTMLElement | null;
-  const height = credits
-    ? credits.offsetHeight + parseFloat(getComputedStyle(credits).marginTop)
-    : 0;
-  return (
-    above.offsetTop + above.offsetHeight + height <=
-    container.scrollTop + container.clientHeight + 2
-  );
-}
-
 /** Spicy Lyrics resumes following this long after the last scroll. */
 const BROWSE_COOLDOWN_MS = 750;
 export function LyricsDisplay({
@@ -133,35 +122,37 @@ export function LyricsDisplay({
   const heldEnd = useRef<{ top: number; gap: number } | null>(null);
   /** The credits are in view at the scroll's target, so they hold. */
   const holdEnd = useRef(false);
+  const scrollBounds = useRef<{ end: number; creditsTop: number; beforeCredits: HTMLElement | null }>(undefined);
   // Where held credits rest, noted wherever the scroll settles (not only
   // at the very end: the current line can hold the scroll above it), so
   // the first frames of the dots opening are corrected too. A scroll event
   // notes it only when none is known, and a spot the scroll still sits on
   // is kept, or growth read before it is corrected would be taken as rest.
   const noteHeldRest = (container: HTMLElement, settled: boolean) => {
-    const above = container.querySelector(":scope > .lyric-end-credits")
-      ?.previousElementSibling as HTMLElement | null | undefined;
+    const bounds = scrollBounds.current;
+    const above = bounds?.beforeCredits;
+    if (!holdEnd.current || !above || !bounds) {
+      heldEnd.current = null;
+      return;
+    }
+    const top = container.scrollTop;
     // Re-checked as the scroll moves: pinned credits left behind by a
     // scroll back up were drawn over the lines below them.
-    if (above) {
-      const rest = heldEnd.current;
-      const anchored = !!rest && Math.abs(container.scrollTop - rest.top) < 2;
-      container.toggleAttribute(
-        "data-hold-end",
-        holdEnd.current && (anchored || creditsInView(container, above)),
-      );
-    }
-    if (!above || !container.hasAttribute("data-hold-end")) {
+    const rest = heldEnd.current;
+    const anchored = !!rest && Math.abs(top - rest.top) < 2;
+    const visible = anchored || bounds.creditsTop <= top + 2;
+    container.toggleAttribute("data-hold-end", visible);
+    if (!visible) {
       heldEnd.current = null;
       return;
     }
     const held = heldEnd.current;
-    if (held && (!settled || Math.abs(container.scrollTop - held.top) < 0.5))
+    if (held && (!settled || Math.abs(top - held.top) < 0.5))
       return;
     const viewport = container.getBoundingClientRect();
     const scale = viewport.height / container.clientHeight || 1;
     heldEnd.current = {
-      top: container.scrollTop,
+      top,
       gap: (viewport.bottom - above.getBoundingClientRect().bottom) / scale,
     };
   };
@@ -264,6 +255,10 @@ export function LyricsDisplay({
       line = gap ? waiting.current : lines.current[primary];
     if (!container || !line || !lyrics.synced) {
       spring.current.velocity = 0;
+      scrollBounds.current = undefined;
+      holdEnd.current = false;
+      heldEnd.current = null;
+      container?.removeAttribute("data-hold-end");
       return;
     }
     const view = container.ownerDocument.defaultView ?? window;
@@ -333,43 +328,37 @@ export function LyricsDisplay({
       const leadTop = `${card ? 8 : compact || !stacked ? container.clientHeight * opening : Math.max(0, focus - (lines.current[0]?.offsetHeight ?? 0) / 2)}px`;
       if (container.style.getPropertyValue("--lead-top") !== leadTop)
         container.style.setProperty("--lead-top", leadTop);
-      spring.current.target = Math.max(
-        0,
-        Math.min(
-          container.scrollHeight - container.clientHeight,
-          line.offsetTop + (centred ? line.offsetHeight / 2 : 0) - focus,
-        ),
-      );
+      const height = container.clientHeight;
+      const end = container.scrollHeight - height;
+      const lineTop = line.offsetTop;
+      spring.current.target = Math.max(0, Math.min(end, lineTop + (centred ? line.offsetHeight / 2 : 0) - focus));
       // Credits in view stay whole: when a pause's dots open near the end,
       // the lyrics move up rather than the credits being pushed off the
       // bottom. The current line still stays in view.
       const credits = container.querySelector<HTMLElement>(
         ":scope > .lyric-end-credits",
       );
-      const end = container.scrollHeight - container.clientHeight;
       // Read from the row above: held credits are sticky, which moves
       // their own offsetTop.
       const above = credits?.previousElementSibling as HTMLElement | null;
+      const aboveEnd = above ? above.offsetTop + above.offsetHeight : Infinity;
+      const creditsTop = aboveEnd + (credits ? credits.offsetHeight + (parseFloat(getComputedStyle(credits).marginTop) || 0) : 0) - height;
+      scrollBounds.current = { end, creditsTop, beforeCredits: above };
       const holding =
         !!above &&
-        above.offsetTop + above.offsetHeight <
-          spring.current.target + container.clientHeight;
+        aboveEnd < spring.current.target + height;
       // The card keeps its faded line above the current one even here;
       // aiming at the line's top edge slid it to the very top and back.
       if (holding)
         spring.current.target = Math.max(
           spring.current.target,
-          Math.min(end, line.offsetTop - (card ? focus : 0)),
+          Math.min(end, lineTop - (card ? focus : 0)),
         );
       // The dots grow over half a second; a spring chasing them would let
       // the credits dip out of view first. Shifting in the same frame keeps
       // them still while the lyrics move up.
       // Measured from where the lyrics end, not the whole-pixel scroll
       // height, which lags the dots' fractional growth.
-      const viewport = container.getBoundingClientRect();
-      const scale = viewport.height / container.clientHeight || 1;
-      const gap = () =>
-        (viewport.bottom - above!.getBoundingClientRect().bottom) / scale;
       // The gap is kept from when the scroll rested, so rounding can't add
       // up while the dots keep growing.
       const held = heldEnd.current;
@@ -379,7 +368,10 @@ export function LyricsDisplay({
         !!held &&
         Math.abs(container.scrollTop - held.top) < 2;
       if (anchored) {
-        const shift = held.gap - gap();
+        const viewport = container.getBoundingClientRect();
+        const scale = viewport.height / height || 1;
+        const gap = (viewport.bottom - above!.getBoundingClientRect().bottom) / scale;
+        const shift = held.gap - gap;
         if (shift > 0) {
           container.scrollTop += shift;
           spring.current.position = container.scrollTop;
@@ -401,7 +393,7 @@ export function LyricsDisplay({
       holdEnd.current = holding;
       container.toggleAttribute(
         "data-hold-end",
-        holding && (anchored || creditsInView(container, above!)),
+        holding && (anchored || creditsTop <= container.scrollTop + 2),
       );
       if (!following) {
         spring.current.velocity = 0;
@@ -524,7 +516,7 @@ export function LyricsDisplay({
         onScroll={(event) => {
           const node = event.currentTarget;
           const writersEnd = scrollingWriters.current;
-          let end = node.scrollHeight - node.clientHeight;
+          let end = scrollBounds.current?.end ?? node.scrollHeight - node.clientHeight;
           if (!following && writersEnd) {
             end = Math.min(end, Math.max(0, writersEnd.offsetTop + writersEnd.offsetHeight - node.clientHeight));
             if (node.scrollTop > end + 1) node.scrollTop = end;

@@ -1560,6 +1560,8 @@
   pointer-events: none;
 }
 .ttml-spectrum-playhead {
+  left: 0;
+  will-change: transform;
   z-index: 3;
   background: #ff5f8f;
   box-shadow: 0 0 6px 1px #ff5f8fa6;
