@@ -999,7 +999,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
       {!artworkDock && playback}
     </section>}
     {!showCreator && showTtml && <LoadTtml song={track ? track.title || "Unknown song" : undefined}
-      localRecording={track?.local ? { track, duration, isrc: localIsrc } : undefined}
+      localRecording={track?.local ? { track, duration, host, isrc: localIsrc } : undefined}
       glass={settings.liquid_glass} style={fonts}
       reviewer={preferences.ttml_reviewer} onReviewer={(ttml_reviewer) => change({ ttml_reviewer })}
       onSubmit={async (file) => {

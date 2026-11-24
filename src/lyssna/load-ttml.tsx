@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { BulkTtml } from "./bulk-ttml";
-import type { Track, TtmlTrack } from "../host";
+import type { Host, Track, TtmlTrack } from "../host";
 import type { LoadMode } from "../local-lyrics";
 import { confirmLocalTrackIsrc, matchLocalTrackIsrc, suggestLocalTrack, type LocalTrackSuggestion } from "../local-track-isrc";
 import { clock } from "../playback";
@@ -50,10 +50,11 @@ const MODES: { mode: LoadMode; title: string; detail: string }[] = [
   },
 ];
 
-function RecordingMatch({ track, duration, isrc, busy, act }: {
+function RecordingMatch({ track, duration, isrc, host, busy, act }: {
   track: Track;
   duration: number;
   isrc?: string;
+  host: Host;
   busy: boolean;
   act: (action: () => Promise<void>) => void;
 }) {
@@ -93,14 +94,14 @@ function RecordingMatch({ track, duration, isrc, busy, act }: {
       event.preventDefault();
       if (busy || !input.trim()) return;
       act(async () => {
-        const result = await matchLocalTrackIsrc(track, duration, input);
+        const result = await matchLocalTrackIsrc(track, duration, input, host);
         if (result) setUnverifiedIsrc(result.unverifiedIsrc);
         else finishMatch();
       });
     }}>
       <label className="load-ttml-search">
         <Search size={14} aria-hidden="true" />
-        <input aria-label="ISRC or Spotify track link" placeholder="ISRC or Spotify track link" value={input}
+        <input aria-label="ISRC, Spotify track link, or Spotify album link" placeholder="ISRC or Spotify track or album link" value={input}
           maxLength={300} disabled={busy} onChange={event => {
             setInput(event.currentTarget.value);
             setUnverifiedIsrc(undefined);
@@ -160,7 +161,7 @@ export function LoadTtml({
   attachSong: (file: BulkFile, songs: TtmlTrack[]) => Promise<void>;
   onSubmit: (file: File) => Promise<void>;
   song?: string;
-  localRecording?: { track: Track; duration: number; isrc?: string };
+  localRecording?: { track: Track; duration: number; host: Host; isrc?: string };
   reviewer: Settings["ttml_reviewer"];
   onReviewer: (mode: Settings["ttml_reviewer"]) => void;
   onLoad: (file: File, mode: LoadMode) => Promise<void>;
@@ -339,8 +340,7 @@ export function LoadTtml({
                 <span><strong>Submit to Lyssna</strong><small>{submitBlocked ?? "Upload a TTML for this song to Lyssna for everyone"}</small></span>
               </button>
             </div>
-            {localRecording && <RecordingMatch key={localRecording.track.id}
-              track={localRecording.track} duration={localRecording.duration} isrc={localRecording.isrc} busy={busy} act={act} />}
+            {localRecording && <RecordingMatch key={localRecording.track.id} {...localRecording} busy={busy} act={act} />}
             <input ref={submitInput} type="file" accept=".ttml,.xml" hidden aria-label="TTML file to submit"
               onChange={(event) => {
                 const file = event.target.files?.[0];

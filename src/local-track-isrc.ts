@@ -3,7 +3,7 @@ import type { Host, Track } from "./host";
 import { lyssnaRequest } from "./lyssna-api";
 import { lyricsChanged } from "./local-lyrics";
 import { localSongTags, spotifySongKey } from "./spotify-song";
-import { normalizeIsrc } from "./spotify-track-metadata";
+import { normalizeIsrc, spotifyTrackMetadata } from "./spotify-track-metadata";
 
 const matches = new Map<string, { until: number; result: Promise<string | undefined> }>();
 const comparable = (name?: string) => (name ?? "").normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase();
@@ -83,20 +83,47 @@ export function confirmLocalTrackIsrc(track: Track, duration: number, code: stri
   saveLocalTrackMatch(track, details.key, isrc);
 }
 
-export async function matchLocalTrackIsrc(track: Track, duration: number, value: string) {
+export async function matchLocalTrackIsrc(track: Track, duration: number, value: string, host: Host) {
   const details = metadata(track, duration);
   if (!track.local || !details) throw new Error("The local file needs a title, artist, and duration to verify a match.");
   const input = value.trim();
   const isrc = normalizeIsrc(input);
-  const spotify = /^(?:spotify:track:|https:\/\/open\.spotify\.com\/(?:intl-[a-z-]+\/)?track\/)?([A-Za-z0-9]{22})(?:[?#].*)?$/i.exec(input)?.[1];
-  if (!isrc && !spotify) throw new Error("Enter an ISRC or a Spotify track link.");
-  const results = await resolveCatalogue(isrc ?? spotify!);
+  const link = /^(?:spotify:|https:\/\/open\.spotify\.com\/(?:intl-[a-z-]+\/)?)(track|album)[:/]([A-Za-z0-9]{22})(?:[?#].*)?$/i.exec(input);
+  const trackId = /^[A-Za-z0-9]{22}$/.test(input) ? input : link?.[1].toLowerCase() === "track" ? link[2] : undefined;
+  const albumId = link?.[1].toLowerCase() === "album" ? link[2] : undefined;
+  if (albumId) {
+    const match = await albumTrackIsrc(`spotify:album:${albumId}`, details, host);
+    if (!match) throw new Error("Couldn’t find a single matching recording on this album.");
+    return saveLocalTrackMatch(track, details.key, match);
+  }
+  if (!isrc && !trackId) throw new Error("Enter an ISRC, Spotify track link, or Spotify album link.");
+  const results = await resolveCatalogue(isrc ?? trackId!).catch(error => {
+    if (trackId) return [];
+    throw error;
+  });
   const codes = new Set(results.filter(item => details.fits(item.title, item.artists, item.duration_ms))
     .flatMap(item => (item.isrcs ?? []).map(normalizeIsrc)).filter(Boolean));
-  const match = isrc ? codes.has(isrc) && isrc : codes.size === 1 && [...codes][0];
+  let match = isrc ? codes.has(isrc) && isrc : codes.size === 1 && [...codes][0];
+  if (!match && trackId && !codes.size) {
+    const original = await spotifyTrackMetadata(trackId);
+    if (original && details.fits(original.name, original.artists?.map(({ name }) => name), original.duration_ms)) {
+      match = normalizeIsrc(original.external_ids?.isrc);
+    }
+  }
   if (!match && isrc) return { unverifiedIsrc: isrc };
   if (!match) throw new Error("Couldn’t verify a single ISRC for this title, artist, and duration.");
   saveLocalTrackMatch(track, details.key, match);
+}
+
+async function albumTrackIsrc(uri: string, details: NonNullable<ReturnType<typeof metadata>>, host: Host) {
+  const albumTracks = await host.albumTracks(uri);
+  const ids = [...new Set(albumTracks.filter(item =>
+    details.fits(item.name, item.artists.map(({ name }) => name), item.duration_ms))
+    .map(item => spotifySongKey(item.uri)))];
+  if (!ids.length || ids.length > 5 || ids.some(id => !id)) return;
+  const codes = await Promise.all(ids.map(id => host.lookupIsrc(id!).catch(() => undefined)));
+  const match = normalizeIsrc(codes[0]);
+  if (match && codes.every(code => normalizeIsrc(code) === match)) return match;
 }
 
 export function localTrackIsrc(track: Track, duration: number, host: Host) {
@@ -139,6 +166,10 @@ export function localTrackIsrc(track: Track, duration: number, host: Host) {
       .filter(item => fits(item.title, item.artists, item.duration_ms));
     const selected = shortlist(catalogue, item => [item.album]);
     if (selected.some(item => item.isrcs?.length)) return uniqueCode(selected.map(item => item.isrcs ?? []));
+    if (track.albumUri && /^spotify:album:[A-Za-z0-9]{22}$/.test(track.albumUri)) {
+      const code = await albumTrackIsrc(track.albumUri, details!, host).catch(() => undefined);
+      if (code) return code;
+    }
 
     const escape = (value: string) => value.replace(/[\\"]/g, "\\$&");
     const params = new URLSearchParams({

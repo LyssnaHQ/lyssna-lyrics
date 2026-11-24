@@ -15,6 +15,7 @@ type NativeTrack = {
   artist?: { name: string }[];
   number?: number;
   disc_number?: number;
+  duration?: number;
   explicit?: boolean;
   external_id?: { type: string; id: string }[];
   album?: {
@@ -74,6 +75,7 @@ function fromProtobuf(bytes: Uint8Array): NativeTrack {
     }
     if (number === 5) track.number = signed(field);
     if (number === 6) track.disc_number = signed(field);
+    if (number === 7) track.duration = signed(field);
     if (number === 9) track.explicit = field === 1;
     if (number === 10 && field instanceof Uint8Array) {
       const external = new Map(fields(field));
@@ -91,6 +93,7 @@ function normalize(raw: NativeTrack, id: string): Partial<TtmlTrack> {
   const albumId = (type: string) => album?.external_id?.find((entry) => entry.type?.toLowerCase() === type)?.id;
   return {
     uri: `spotify:track:${id}`, name: raw.name, artists: raw.artist?.filter(({ name }) => !!name),
+    duration_ms: raw.duration,
     track_number: raw.number, disc_number: raw.disc_number, explicit: raw.explicit,
     external_ids: { isrc: normalizeIsrc(raw.external_id?.find(({ type }) => type?.toLowerCase() === "isrc")?.id) },
     album: album && {

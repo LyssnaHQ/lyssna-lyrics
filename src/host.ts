@@ -33,7 +33,15 @@ type SpotifyHttp = { get(url: string): Promise<unknown> };
 type PlaybackToggle = { getValue(): Promise<boolean>; setValue(value: boolean): Promise<unknown> };
 type HeaderImages = { sources?: ImageSource[] };
 type CatalogueResult = {
-  data?: { trackUnion?: { canvas?: CanvasInfo | null }; albumUnion?: { date?: { isoString?: string; year?: number } }; artistUnion?: {
+  data?: { trackUnion?: { canvas?: CanvasInfo | null }; albumUnion?: {
+    date?: { isoString?: string; year?: number };
+    tracksV2?: { totalCount?: number; items?: { track?: {
+      uri?: string;
+      name?: string;
+      duration?: { totalMilliseconds?: number };
+      artists?: { items?: { profile?: { name?: string } }[] };
+    } }[] };
+  }; artistUnion?: {
     headerImage?: { data?: HeaderImages };
     visuals?: { headerImage?: HeaderImages; gallery?: { items?: HeaderImages[] } };
   } };
@@ -493,6 +501,25 @@ export function getHost() {
       const result = await spotifyWeb.get(`https://api.spotify.com/v1/search?${params}`) as { tracks?: { items?: unknown[] } };
       if (!Array.isArray(result?.tracks?.items)) throw new Error("Spotify search is unavailable.");
       return [...new Map(result.tracks.items.filter(isTtmlTrack).map((track) => [track.uri, track])).values()];
+    },
+    async albumTracks(uri: string) {
+      const { definitions, request } = graph();
+      const definition = definitions?.queryAlbumTracks;
+      if (!definition || !request) throw new Error("Spotify album lookup is unavailable.");
+      const tracks: TtmlTrack[] = [];
+      const limit = 50;
+      for (let offset = 0; offset < 250; offset += limit) {
+        const result = await request(definition, { uri, offset, limit, locale: "" });
+        const page = result.data?.albumUnion?.tracksV2;
+        if (!Array.isArray(page?.items)) throw new Error("Spotify couldn’t read the tracks on this album.");
+        for (const { track } of page.items) {
+          if (!track?.uri || !track.name || !/^spotify:track:[A-Za-z0-9]{22}$/.test(track.uri)) continue;
+          const artists = track.artists?.items?.flatMap(({ profile }) => profile?.name ? [{ name: profile.name }] : []) ?? [];
+          tracks.push({ uri: track.uri, name: track.name, artists, duration_ms: track.duration?.totalMilliseconds });
+        }
+        if (page.items.length < limit || (page.totalCount !== undefined && offset + limit >= page.totalCount)) return tracks;
+      }
+      throw new Error("This album has too many tracks to match at once. Enter a track link instead.");
     },
     lookupTrack,
     async lookupIsrc(id: string, known?: string) {
