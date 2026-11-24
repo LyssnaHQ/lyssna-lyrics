@@ -34,6 +34,7 @@ import { useDefaultLyricsFont } from "./lyrics-font-fallback";
 import { clock, usePlayback, usePlaybackControls, usePosition } from "./playback";
 import { LyricsPopout, pictureInPicture } from "./popout";
 import { startEnhancements } from "./enhancements";
+import { startLocalPlaylistPlayback } from "./enhancements/features/localPlaylistPlayback";
 import { getSetting, subscribeSettings } from "./enhancements/config";
 import { startVolumeDragController } from "./enhancements/features/volumeDrag";
 import { startPreferenceSync } from "./preference-sync";
@@ -1467,6 +1468,7 @@ export default function start(options: BuildOptions) {
   const stopProfileSettings = host.profileSettings(openProfileSettings);
   reviewButton = reviewTopbar(host, toggleReviewQueue, closeReview);
   const stopEnhancementStartup = startEnhancements(host);
+  const stopLocalPlaylistPlayback = startLocalPlaylistPlayback(host);
   const stopVolumeDrag = startVolumeDragController(host);
   keepTemporaryLyricsFor(host.track()?.id);
   const stopTemporaryTrack = host.watch(() => keepTemporaryLyricsFor(host.track()?.id));
@@ -1626,6 +1628,7 @@ export default function start(options: BuildOptions) {
       disposeRuntimeSettings();
       stopPreferenceSync();
       stopEnhancementStartup();
+      stopLocalPlaylistPlayback();
       stopTemporaryTrack();
       stopLyssnaListens();
       window.removeEventListener(lyssnaApiNotice, reportApiNotice);

@@ -2727,3 +2727,32 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   height: 100%;
   border: 0;
 }
+
+.main-trackList-rowSectionIndex:has(> [data-lyssna-play-local]) .main-trackList-rowMarker {
+  visibility: hidden;
+}
+
+[data-lyssna-play-local] {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: var(--spice-text, #fff);
+  background: transparent;
+  cursor: pointer;
+}
+
+[data-lyssna-play-local]::before {
+  content: "";
+  border-block: 6px solid transparent;
+  border-inline-start: 9px solid currentColor;
+}
+
+[data-lyssna-play-local]:hover,
+[data-lyssna-play-local]:focus-visible {
+  background: #fff2;
+}

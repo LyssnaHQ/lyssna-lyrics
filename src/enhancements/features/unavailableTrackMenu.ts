@@ -2,13 +2,16 @@ import { getSetting } from "../config";
 import { isElementVisible, rootMenuSelector } from "../dom";
 
 type CopyAction = { label: string; copy(uri: string): void };
-type TrackRowProps = { uri?: string; isPlayable?: boolean; item?: { uri?: string } };
+type TrackRowProps = {
+  uri?: string; isPlayable?: boolean; item?: { uri?: string }; contextUri?: string; index?: number;
+  isArtistBanned?: boolean; isBannedInContext?: boolean; ageRestricted?: boolean;
+};
 type Fiber = { memoizedProps?: TrackRowProps; return?: Fiber };
 const rowSelector = ".main-trackList-trackListRow, [data-testid='tracklist-row']";
 const unavailableSelector = "[aria-disabled='true'], [data-disabled], .main-trackList-trackListRow--disabled, .uWhqNrxEmH2qfzeRF1d2";
 const trackUri = /^spotify:track:[A-Za-z0-9]{22}$/;
 
-function unavailableTrack(target: Element) {
+export function unavailableTrack(target: Element) {
   const row = target.closest<HTMLElement>(rowSelector);
   if (!row) return;
   const fields = row as unknown as Record<string, unknown>;
@@ -16,6 +19,9 @@ function unavailableTrack(target: Element) {
   let fiber = fiberKey ? fields[fiberKey] as Fiber | undefined : undefined;
   let unavailable = row.matches(unavailableSelector) || !!row.closest("[role='row'][aria-disabled='true']");
   let uri = row.dataset.uri;
+  let contextUri: string | undefined;
+  let index: number | undefined;
+  let restricted = false;
   // Unavailable tracks may render a plain title. Read the row component's
   // own track URI before relying on a link in the row.
   for (let depth = 0; fiber && depth < 8; depth++, fiber = fiber.return) {
@@ -25,11 +31,13 @@ function unavailableTrack(target: Element) {
     if (uri && trackUri.test(uri) && uri !== candidate) break;
     uri = candidate;
     unavailable ||= props?.isPlayable === false;
-    if (unavailable) break;
+    contextUri ??= props?.contextUri;
+    index ??= props?.index;
+    restricted ||= !!(props?.isArtistBanned || props?.isBannedInContext || props?.ageRestricted);
   }
   const link = row.querySelector<HTMLAnchorElement>("a[href^='/track/']");
   uri ??= link?.pathname.match(/^\/track\/([A-Za-z0-9]{22})$/)?.[0].replace("/track/", "spotify:track:");
-  if (unavailable && uri && trackUri.test(uri)) return { row, uri };
+  if (unavailable && uri && trackUri.test(uri)) return { row, uri, contextUri, index, restricted };
 }
 
 const visibleMenus = () => Array.from(document.querySelectorAll<HTMLElement>(rootMenuSelector)).filter(isElementVisible);
