@@ -2,6 +2,15 @@ html.ll-enhancements-hideLyricsButton button[data-testid="lyrics-button"] { disp
 html.ll-enhancements-hideFriendActivityButton [data-restore-focus-key="buddy_feed"], html.ll-enhancements-hideFriendActivityButton button[aria-label="Friend Activity" i] { display: none !important; }
 html.ll-enhancements-hideMiniplayerButton :is(button[data-testid="pip-toggle-button"], [data-restore-focus-key="miniplayer"], button[aria-label*="miniplayer" i]) { display: none !important; }
 
+/* Keep freshly mounted profile menus out of view until their rows and dividers are filtered. */
+html.ll-enhancements-profile-cleanup :is(
+  [role="menu"]:not([data-lyssna-profile-ready]):has(> a[href="/preferences"], > li > a[href="/preferences"]),
+  :is(#context-menu, [data-encore-id="popover"]):has([role="menu"]:not([data-lyssna-profile-ready]):has(> a[href="/preferences"], > li > a[href="/preferences"]))
+) {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
 .main-contextMenu-menu.spotify-plus-custom-playlist-root,
 [role="menu"].spotify-plus-custom-playlist-root {
   position: relative !important;
