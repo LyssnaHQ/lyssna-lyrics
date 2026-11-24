@@ -296,6 +296,7 @@ export function TtmlCreator({
   onClose,
   reviewSelection,
   onCloseReview,
+  localIsrc,
   draftPreview = false,
 }: {
   state: CreatorState;
@@ -317,6 +318,7 @@ export function TtmlCreator({
   onClose?: () => void;
   reviewSelection?: ReviewSelection;
   onCloseReview?: () => void;
+  localIsrc?: string;
   draftPreview?: boolean;
 }) {
   const { root, view: window, waveform, playClip, recording, playingFullRecording, replayAvailable, replayCaptured, openAudio, read: readTime } = useCreatorEnvironment();
@@ -1992,7 +1994,7 @@ export function TtmlCreator({
     void onApply(track, fileName(meta(track)), ttml());
   };
   const [submitting, setSubmitting] = useState(false);
-  const submittable = !!track && !track.is_local && !!track.id;
+  const submittable = !!track?.id && (!track.is_local || !!(here ? localIsrc : track.spotify?.isrc));
   const submit = async () => {
     if (!track || submitting) return;
     setSubmitting(true);
@@ -2266,7 +2268,7 @@ export function TtmlCreator({
             title={
               submittable
                 ? "Send these lyrics to Lyssna so everyone gets them"
-                : "Only Spotify songs can be sent to Lyssna"
+                : track.is_local ? "A local file needs an ISRC match before it can be submitted" : "Play a Spotify song to submit lyrics"
             }
           >
             <Send size={15} />

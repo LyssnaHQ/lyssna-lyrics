@@ -5,6 +5,7 @@ import { spotifySongUri } from "../spotify-song";
 import type { Settings } from "../settings";
 import { usePlayback } from "../playback";
 import { enabledSources, type LyricSource } from "../lyric-sources";
+import { useLocalTrackIsrc } from "../local-track-isrc";
 import { lyricsChanged, parseLocalTtml, saveLocalLyrics } from "../local-lyrics";
 import { displayLyrics, needsWordSync } from "../word-sync";
 import type { Lyrics } from "../lyssna/types";
@@ -73,6 +74,7 @@ export function CreatorSurface({ host, view: owner, settings, close, reviewSelec
   const view = owner as Window & typeof globalThis;
   const { track, playing } = usePlayback(host);
   const duration = host.duration();
+  const localIsrc = useLocalTrackIsrc(track, duration, host, !previewing);
   const current = useMemo(() => track ? creatorTrack(track, duration) : undefined, [track, duration]);
   const [root, setRoot] = useState<HTMLDivElement | null>(null);
   const [portal, setPortal] = useState<HTMLDivElement | null>(null);
@@ -531,6 +533,7 @@ export function CreatorSurface({ host, view: owner, settings, close, reviewSelec
           onClose={close}
           reviewSelection={reviewSelection}
           onCloseReview={closeReview}
+          localIsrc={localIsrc}
           onResetToSource={async (song) => {
             if (track?.id !== song.id || host.track()?.id !== song.id) return;
             const sources = enabledSources(settings).filter(source => source !== "local");
@@ -557,9 +560,10 @@ export function CreatorSurface({ host, view: owner, settings, close, reviewSelec
             } catch (why) { notify(String(why), true); return false; }
           }}
           onSubmit={async (song, text, appleOriginal) => {
-            const spotify = song.spotify ?? { id: song.id, title: song.name, cover: song.album.images[0]?.url ?? "",
+            const spotify: SpotifyTrack = song.spotify ?? { id: song.id, local: song.is_local ? true : undefined, title: song.name, cover: song.album.images[0]?.url ?? "",
               album: song.album.name, artists: song.artists.map(({ name }) => name).join(", "), artistLinks: song.artists };
-            const result = await submitLyssnaTtml(new File([text], "lyrics.ttml"), spotify, host, confirmFirstUpload, appleOriginal);
+            const target = song.is_local && current?.uri === song.uri ? { ...spotify, isrc: localIsrc } : spotify;
+            const result = await submitLyssnaTtml(new File([text], "lyrics.ttml"), target, host, confirmFirstUpload, appleOriginal);
             if (!result) return;
             if (result.approved) {
               revalidateLyssnaSong(song.id, result.isrc, result.published);

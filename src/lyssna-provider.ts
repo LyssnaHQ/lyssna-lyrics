@@ -156,10 +156,8 @@ export function revalidateLyssnaSong(trackId: string, isrc?: string, approved?: 
   }
   while (refreshes.size > cacheLimit) refreshes.delete(refreshes.keys().next().value!);
   if (approved && uuid.test(approved.songId) && uuid.test(approved.revision)) {
-    for (const source of communitySources) {
-      for (const code of new Set([normalizedIsrc, undefined])) {
-        approvals.set(lyricsPath(trackId, code, source), { ...approved, expires: Date.now() + 300_000 });
-      }
+    for (const path of paths) {
+      if (!path.endsWith("source=apple_music")) approvals.set(path, { ...approved, expires: Date.now() + 300_000 });
     }
     while (approvals.size > cacheLimit) approvals.delete(approvals.keys().next().value!);
   }
@@ -239,7 +237,9 @@ async function lookupRefreshed(path: string, current: () => boolean, refresh: bo
       if (current()) approvals.delete(path);
       return value;
     }
-    const link = song.links?.find(({ platform, external_id }) => platform === "spotify" && path.split("?")[0] === `/v1/lyrics/spotify/${external_id}`);
+    const route = path.split("?")[0];
+    const link = song.links?.find(({ platform, external_id }) =>
+      (platform === "spotify" || platform === "isrc") && route === `/v1/lyrics/${platform}/${external_id}`);
     if (!link || !Number.isFinite(link.offset_ms) || !current()) return value;
     const [file, credits] = await Promise.all([
       lyssnaRequest(`/v1/revisions/${approval.revision}/ttml`),

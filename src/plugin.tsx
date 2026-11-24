@@ -46,6 +46,7 @@ import { lyssnaApiNotice, lyssnaInstallReady } from "./lyssna-api";
 import { accountChanged, hasLyssnaSession, readLyssnaProfile } from "./lyssna-account";
 import { markLyssnaInstrumental, revalidateLyssnaSong, resumeLyssnaRequests } from "./lyssna-provider";
 import { submitLyssnaTtml } from "./lyssna-submission";
+import { useLocalTrackIsrc } from "./local-track-isrc";
 import { useFirstUploadNotice } from "./first-upload-notice";
 import { CreatorSurface, type CreatorPlayback } from "./creator/surface";
 import { reviewTopbar } from "./creator/review-topbar";
@@ -599,6 +600,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
   const waiting = !draft && foundLyrics.waiting;
   const missing = !lyrics && !waiting;
   const coverOnly = !!track && (lyrics?.instrumental || (immersive && missing));
+  const localIsrc = useLocalTrackIsrc(track, duration, host, showTtml);
   const [leaving, setLeaving] = useState(false);
   const [narrow, setNarrow] = useState(false);
   const [notice, setNotice] = useState("");
@@ -996,12 +998,13 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
       {!showSettings && notice && <div className="lyssna-popout-error" role="status">{notice}</div>}
       {!artworkDock && playback}
     </section>}
-    {!showCreator && showTtml && <LoadTtml song={track ? track.title || "Unknown song" : undefined} localSong={track?.local}
+    {!showCreator && showTtml && <LoadTtml song={track ? track.title || "Unknown song" : undefined} unmatchedLocalSong={track?.local && !localIsrc}
       glass={settings.liquid_glass} style={fonts}
       reviewer={preferences.ttml_reviewer} onReviewer={(ttml_reviewer) => change({ ttml_reviewer })}
       onSubmit={async (file) => {
         if (!track) throw new Error("Play the song you want to submit lyrics for.");
-        const result = await submitLyssnaTtml(file, track, host, confirmFirstUpload);
+        const target = track.local ? { ...track, isrc: localIsrc } : track;
+        const result = await submitLyssnaTtml(file, target, host, confirmFirstUpload);
         if (!result) return;
         if (result.approved) {
           revalidateLyssnaSong(track.id, result.isrc, result.published);

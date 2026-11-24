@@ -55,7 +55,7 @@ const MODES: { mode: LoadMode; title: string; detail: string }[] = [
  */
 export function LoadTtml({
   song,
-  localSong,
+  unmatchedLocalSong,
   reviewer,
   onReviewer,
   onLoad,
@@ -78,7 +78,7 @@ export function LoadTtml({
   attachSong: (file: BulkFile, songs: TtmlTrack[]) => Promise<void>;
   onSubmit: (file: File) => Promise<void>;
   song?: string;
-  localSong?: boolean;
+  unmatchedLocalSong?: boolean;
   reviewer: Settings["ttml_reviewer"];
   onReviewer: (mode: Settings["ttml_reviewer"]) => void;
   onLoad: (file: File, mode: LoadMode) => Promise<void>;
@@ -99,7 +99,7 @@ export function LoadTtml({
   const [busy, setBusy] = useState(false);
   const signInRequired = "Sign in to Lyssna in Settings to submit lyrics";
   const [submitBlock, setSubmitBlock] = useState<string | null>(() => hasLyssnaSession() ? "Checking your Lyssna account…" : signInRequired);
-  const submitBlocked = localSong ? "Lyrics for local tracks can be saved on this device" :
+  const submitBlocked = unmatchedLocalSong ? "A local file needs an ISRC match before it can be submitted" :
     submitBlock ?? (song ? null : "Play the song you want to submit lyrics for");
   const [saved, setSaved] = useState<TransferLyrics[] | null>(null);
   const [error, setError] = useState("");

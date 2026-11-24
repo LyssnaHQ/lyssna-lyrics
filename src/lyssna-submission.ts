@@ -4,6 +4,8 @@ import { hasLyssnaSession, lyssnaAccountRequest } from "./lyssna-account";
 import { lyssnaRetryAt } from "./lyssna-api";
 import { readLyssnaLyrics } from "./lyssna-provider";
 import type { AppleOriginal } from "./lyssna/types";
+import { normalizeIsrc } from "./spotify-track-metadata";
+import { localSongTags } from "./spotify-song";
 
 export const publishingRoles = ["uploader", "reviewer", "moderator", "admin"];
 
@@ -24,7 +26,10 @@ const submissionErrors: Record<string, string> = {
 
 export async function submitLyssnaTtml(file: File, track: Track, host: Host, confirmFirstUpload: () => Promise<boolean>, appleOriginal?: AppleOriginal) {
   if (!hasLyssnaSession()) throw new Error(submissionErrors.unauthorized);
-  if (!/^[A-Za-z0-9]{22}$/.test(track.id)) throw new Error("Only Spotify songs can be submitted to Lyssna.");
+  const local = !!localSongTags(track.id);
+  const localIsrc = local ? normalizeIsrc(track.isrc) : undefined;
+  if (local && !localIsrc) throw new Error("Match the local file to an ISRC before submitting lyrics.");
+  if (!local && !/^[A-Za-z0-9]{22}$/.test(track.id)) throw new Error("Play a Spotify song to submit lyrics to Lyssna.");
   if (!/\.(ttml|xml)$/i.test(file.name)) throw new Error("Choose a TTML or XML lyrics file.");
   if (file.size > 2_000_000) throw new Error("Lyric file exceeds 2 MB.");
 
@@ -38,8 +43,8 @@ export async function submitLyssnaTtml(file: File, track: Track, host: Host, con
   if (!Array.isArray(submissions)) throw new Error("Couldn’t check your Lyssna upload history. Try again later.");
   if (submissions.length === 0 && !await confirmFirstUpload()) return;
 
-  const validIsrc = appleOriginal?.isrc ?? await host.lookupIsrc(track.id, track.isrc).catch(() => undefined);
-  let original = appleOriginal;
+  const validIsrc = localIsrc ?? appleOriginal?.isrc ?? await host.lookupIsrc(track.id, track.isrc).catch(() => undefined);
+  let original = local && appleOriginal?.isrc !== localIsrc ? undefined : appleOriginal;
   if (original && original.timing_kind !== "word") {
     // Older drafts kept the source reference without its timing kind.
     const source = await readLyssnaLyrics({ ...track, isrc: original.isrc }, host.lookupIsrc, "apple_music").catch(() => undefined);
@@ -48,7 +53,7 @@ export async function submitLyssnaTtml(file: File, track: Track, host: Host, con
     original = verified?.apple_id === original.apple_id && verified.sha256 === original.sha256 ? verified : undefined;
   }
   const links = validIsrc ? [{ platform: "isrc", external_id: validIsrc }] : [];
-  links.push({ platform: "spotify", external_id: track.id });
+  if (!local) links.push({ platform: "spotify", external_id: track.id });
   const artists = track.artistLinks?.map(({ name }) => name).filter(Boolean);
   const response = await lyssnaAccountRequest(withActAs("/v1/submissions"), {
     ttml, links, title: track.title,
