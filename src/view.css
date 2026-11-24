@@ -2728,6 +2728,19 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   border: 0;
 }
 
+:root [data-lyssna-local-match] :is(
+  .main-trackList-rowSectionIndex,
+  .main-trackList-rowSectionStart,
+  .main-trackList-rowSectionVariable,
+  .main-trackList-rowSectionEnd
+) > :not([data-encore-id="buttonTertiary"]) {
+  opacity: 1 !important;
+}
+
+[data-lyssna-local-match] .main-trackList-rowMainContentTitle {
+  color: var(--encore-text-base, var(--spice-text, #fff));
+}
+
 .main-trackList-rowSectionIndex:has(> [data-lyssna-play-local]) .main-trackList-rowMarker {
   visibility: hidden;
 }

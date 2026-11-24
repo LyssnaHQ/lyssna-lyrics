@@ -37,6 +37,7 @@ type Playlist = { tracks: PlaylistTrack[]; replacements: Map<string, PlaybackTra
 
 const playlistUri = /^spotify:playlist:[A-Za-z0-9]{22}$/;
 const catalogueUri = /^spotify:track:[A-Za-z0-9]{22}$/;
+const matchedRow = "[data-lyssna-local-match]";
 const playButton = "[data-lyssna-play-local]";
 const rowSelector = ".main-trackList-trackListRow, [data-testid='tracklist-row']";
 
@@ -123,18 +124,26 @@ export function startLocalPlaylistPlayback(host: Host) {
       const item = replacement ? { ...replacement, uid: track.uid } : { uri: track.uri, uid: track.uid };
       return [{ original: track, index, item }];
     });
-    const start = skipTo && rows.find(row => skipTo.uid ? row.original.uid === skipTo.uid
+    const start = skipTo && rows.findIndex(row => skipTo.uid ? row.original.uid === skipTo.uid
       : skipTo.uri ? row.original.uri === skipTo.uri
       : skipTo.index !== undefined && row.index === skipTo.index);
-    if (skipTo && !start && (skipTo.uid || skipTo.uri || skipTo.index !== undefined)) return;
-    return { items: rows.map(row => row.item), skipTo: start ? { index: rows.indexOf(start) } : undefined };
+    if (start === -1 && (skipTo?.uid || skipTo?.uri || skipTo?.index !== undefined)) return;
+    let offset: StartAt | undefined;
+    if (start !== undefined && start >= 0) {
+      const { uid } = rows[start].item;
+      offset = uid ? { uid } : { index: start };
+    }
+    return { items: rows.map(row => row.item), skipTo: offset };
   }
 
   function playAdapted(receiver: Player, uri: string, playback: NonNullable<ReturnType<typeof adaptedPlayback>>,
     origin: Record<string, unknown>, options: PlayOptions) {
     const repeat = { off: 0, context: 1, track: 2 }[host.repeat()];
     return nativePlay.call(receiver, {
-      uri: `spotify:trackset:Lyssna ${uri.split(":")[2]}`,
+      uri,
+      // Spotify routes a playlist URI with no URL through its playlist
+      // service. The explicit URL keeps our supplied context pages in use.
+      url: `context://${uri}`,
       pages: [{ items: playback.items }],
     }, origin, { ...options, skipTo: playback.skipTo, shuffle: options.shuffle ?? host.shuffle(), repeat: options.repeat ?? repeat });
   }
@@ -167,21 +176,44 @@ export function startLocalPlaylistPlayback(host: Host) {
     if (target && !target.restricted && (!target.contextUri || target.contextUri === context)) return target;
   }
   let shown: { uri: string; data: Playlist } | undefined;
+  function clearMatchedRows() {
+    for (const row of document.querySelectorAll(matchedRow)) {
+      row.removeAttribute("data-lyssna-local-match");
+      row.querySelector(playButton)?.remove();
+    }
+  }
+
   async function scan() {
     const uri = visiblePlaylist();
+    if (shown?.uri !== uri) {
+      shown = undefined;
+      clearMatchedRows();
+    }
     if (!uri || !hasSavedLocalTrackMatches()) return;
     const revision = matchRevision;
-    if (!Array.from(document.querySelectorAll(rowSelector)).some(row => rowTarget(row, uri))) {
-      document.querySelectorAll(playButton).forEach(button => button.remove());
-      return;
+    const rows = Array.from(document.querySelectorAll(rowSelector));
+    let hasUnavailableRows = false;
+    for (const row of rows) {
+      const target = rowTarget(row, uri);
+      hasUnavailableRows ||= !!target;
+      if (!target || !shown?.data.replacements.has(target.uri)) {
+        row.removeAttribute("data-lyssna-local-match");
+        row.querySelector(playButton)?.remove();
+      }
     }
+    if (!hasUnavailableRows) return;
     const data = await readPlaylist(uri).catch(() => undefined);
     if (!active || !data || visiblePlaylist() !== uri || matchRevision !== revision) return;
     shown = { uri, data };
     for (const row of document.querySelectorAll(rowSelector)) {
       const target = rowTarget(row, uri);
       const button = row.querySelector<HTMLButtonElement>(playButton);
-      if (!target || !data.replacements.has(target.uri)) { button?.remove(); continue; }
+      if (!target || !data.replacements.has(target.uri)) {
+        row.removeAttribute("data-lyssna-local-match");
+        button?.remove();
+        continue;
+      }
+      row.setAttribute("data-lyssna-local-match", "");
       if (button) continue;
       const cell = row.querySelector(".main-trackList-rowSectionIndex");
       if (!cell) continue;
@@ -194,7 +226,7 @@ export function startLocalPlaylistPlayback(host: Host) {
     }
   }
   function scheduleScan() {
-    if (scanFrame || !visiblePlaylist()) return;
+    if (scanFrame || (!shown && !visiblePlaylist())) return;
     scanFrame = window.requestAnimationFrame(() => {
       scanFrame = 0;
       void scan();
@@ -233,7 +265,7 @@ export function startLocalPlaylistPlayback(host: Host) {
     matchRevision++;
     cache.clear();
     shown = undefined;
-    document.querySelectorAll(playButton).forEach(button => button.remove());
+    clearMatchedRows();
     scheduleScan();
   }
   window.addEventListener(lyricsChanged, matchesChanged, { signal: handlers.signal });
@@ -246,7 +278,7 @@ export function startLocalPlaylistPlayback(host: Host) {
     handlers.abort();
     observer.disconnect();
     cancelAnimationFrame(scanFrame);
-    document.querySelectorAll(playButton).forEach(button => button.remove());
+    clearMatchedRows();
     if (player.play === wrappedPlay) player.play = nativePlay;
   };
 }
