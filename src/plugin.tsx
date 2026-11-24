@@ -52,6 +52,7 @@ import { reviewTopbar } from "./creator/review-topbar";
 import { canReview } from "./creator/review-api";
 import { ReviewQueuePanel, type ReviewSelection } from "./creator/review-panel";
 import { startCreatorRepeatRecovery } from "./creator/repeat";
+import { restoreCreatorPlaybackTransitions } from "./creator/playback-transitions";
 import { createSpotifyCapture, type SpotifyCapture } from "./creator/spotify-capture";
 import { PlaybarRecorder } from "./creator/auto-record";
 import { dismissDraft, useDraftPreview } from "./creator/ttml-working";
@@ -1593,6 +1594,7 @@ export default function start(options: BuildOptions) {
   });
   observer.observe(document.body, { childList: true, subtree: true });
   const stopCreatorRepeatRecovery = startCreatorRepeatRecovery(host);
+  restoreCreatorPlaybackTransitions(host);
   syncHost();
   const stopReleaseNotices = startReleaseNotices(host, options);
   return {

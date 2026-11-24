@@ -30,6 +30,7 @@ export type AudioSegment = { start: number; duration: number; pitches: number[];
 type AudioAnalysis = { segments?: AudioSegment[]; beats?: { start: number; duration: number }[]; track?: { duration?: number } };
 type ImageSource = { url?: string; width?: number; maxWidth?: number };
 type SpotifyHttp = { get(url: string): Promise<unknown> };
+type PlaybackToggle = { getValue(): Promise<boolean>; setValue(value: boolean): Promise<unknown> };
 type HeaderImages = { sources?: ImageSource[] };
 type CatalogueResult = {
   data?: { trackUnion?: { canvas?: CanvasInfo | null }; albumUnion?: { date?: { isoString?: string; year?: number } }; artistUnion?: {
@@ -508,6 +509,13 @@ export function getHost() {
       return spotifyWeb.get(`https://spclient.wg.spotify.com/color-lyrics/v2/track/${id}?format=json&vocalRemoval=false&market=from_token`);
     },
     position: () => kit ? kit.Player.position : spice?.Player.getProgress() ?? 0,
+    playbackTransition(name: "audioCrossfade" | "autoMix"): PlaybackToggle | undefined {
+      const settings = (kit?.Platform.SettingsAPI ?? spice?.Platform?.SettingsAPI) as {
+        playback?: Partial<Record<"audioCrossfade" | "autoMix", PlaybackToggle>>;
+      } | undefined;
+      const control = settings?.playback?.[name];
+      if (typeof control?.getValue === "function" && typeof control.setValue === "function") return control;
+    },
     duration: () => kit ? kit.Player.duration : spice?.Player.getDuration?.() ?? 0,
     playing: () => kit ? kit.Player.isPlaying : spice?.Player.isPlaying() ?? false,
     toggle: () => kit ? kit.Player.toggle() : spice?.Player.togglePlay(),

@@ -369,7 +369,7 @@ export function createSpotifyCapture(host: Host, view: Window & typeof globalThi
       const sampleOnTimer = () => {
         setMessage("Saving spectrograms only. This client couldn’t start audio recording.");
         const analyser = audioContext.createAnalyser();
-        analyser.fftSize = TRANSIENT_FFT_SIZE;
+        analyser.fftSize = 4096;
         analyser.smoothingTimeConstant = 0;
         source.connect(analyser);
         const bins = new Float32Array(analyser.frequencyBinCount);

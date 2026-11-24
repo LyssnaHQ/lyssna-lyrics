@@ -1,7 +1,6 @@
 import type { Host } from "../host";
 import { spotifySongKey } from "../spotify-song";
 
-const fftSize = 2048;
 const analysisLevel = (db = -60) => Math.min(1, Math.max(0, (db + 55) / 55));
 export const pitchBands = 12;
 const lowFrequency = 40;
@@ -68,30 +67,33 @@ export async function creatorPitchSpectrum(host: Host, uri: string, fromMs: numb
   return data;
 }
 
-const taper = Float32Array.from({ length: fftSize }, (_, i) => 0.5 * (1 - Math.cos(2 * Math.PI * i / (fftSize - 1))));
-const reversed = Uint16Array.from({ length: fftSize }, (_, index) => {
-  let reversed = 0;
-  for (let bit = 1; bit < fftSize; bit *= 2) {
-    reversed = (reversed << 1) | (index & 1);
-    index >>= 1;
-  }
-  return reversed;
-});
-const cosine = Float32Array.from({ length: fftSize / 2 }, (_, i) => Math.cos(-2 * Math.PI * i / fftSize));
-const sine = Float32Array.from({ length: fftSize / 2 }, (_, i) => Math.sin(-2 * Math.PI * i / fftSize));
+function spectrumWindow(fftSize: number) {
+  const taper = Float32Array.from({ length: fftSize }, (_, i) => 0.5 * (1 - Math.cos(2 * Math.PI * i / (fftSize - 1))));
+  const reversed = Uint16Array.from({ length: fftSize }, (_, index) => {
+    let value = 0;
+    for (let bit = 1; bit < fftSize; bit *= 2) {
+      value = (value << 1) | (index & 1);
+      index >>= 1;
+    }
+    return value;
+  });
+  const cosine = Float32Array.from({ length: fftSize / 2 }, (_, i) => Math.cos(-2 * Math.PI * i / fftSize));
+  const sine = Float32Array.from({ length: fftSize / 2 }, (_, i) => Math.sin(-2 * Math.PI * i / fftSize));
+  return { fftSize, taper, reversed, cosine, sine };
+}
 
-export async function creatorSpectrum(buffer: AudioBuffer, fromMs: number, toMs: number, columns: number, rows: number, signal: AbortSignal) {
-  const left = buffer.getChannelData(0);
-  const right = buffer.numberOfChannels > 1 ? buffer.getChannelData(1) : left;
-  const output = new Uint16Array(columns * rows);
+const bassWindow = spectrumWindow(4096);
+const transientWindow = spectrumWindow(1024);
+
+function spectrumBand(window: typeof bassWindow, sampleRate: number, rows: number, firstRow: number, endRow: number) {
+  const { fftSize, taper, reversed, cosine, sine } = window;
   const real = new Float32Array(fftSize);
   const imaginary = new Float32Array(fftSize);
-  const binEdges = Uint16Array.from({ length: rows + 1 }, (_, edge) =>
-    Math.min(fftSize / 2, Math.round(spectrumFrequency(1 - edge / rows) * fftSize / buffer.sampleRate)));
-  for (let column = 0; column < columns; column++) {
-    signal.throwIfAborted();
-    const at = (fromMs + (toMs - fromMs) * (column + 0.5) / columns) * buffer.sampleRate / 1000;
-    const start = Math.round(at) - fftSize / 2;
+  const binEdges = Float32Array.from({ length: endRow - firstRow + 1 }, (_, edge) =>
+    Math.min(fftSize / 2 - 1, spectrumFrequency(1 - (firstRow + edge) / rows) * fftSize / sampleRate));
+  const powerAt = (bin: number) => real[bin] ** 2 + imaginary[bin] ** 2;
+  return (left: Float32Array, right: Float32Array, at: number, output: Uint16Array, columns: number, column: number) => {
+    const start = at - fftSize / 2;
     imaginary.fill(0);
     for (let i = 0; i < fftSize; i++) {
       real[reversed[i]] = ((left[start + i] ?? 0) + (right[start + i] ?? 0)) * taper[i] / 2;
@@ -114,17 +116,38 @@ export async function creatorSpectrum(buffer: AudioBuffer, fromMs: number, toMs:
         }
       }
     }
-    for (let row = 0; row < rows; row++) {
-      const first = binEdges[row + 1];
-      const last = Math.max(first + 1, binEdges[row]);
+    for (let row = firstRow; row < endRow; row++) {
+      const low = binEdges[row - firstRow + 1];
+      const high = binEdges[row - firstRow];
       let power = 0;
-      for (let bin = first; bin < last && bin < fftSize / 2; bin++) {
-        power = Math.max(power, real[bin] * real[bin] + imaginary[bin] * imaginary[bin]);
+      if (high - low < 1) {
+        const center = (low + high) / 2;
+        const bin = Math.floor(center);
+        const lower = powerAt(bin);
+        power = lower + (center - bin) * (powerAt(bin + 1) - lower);
+      } else {
+        for (let bin = Math.ceil(low); bin <= high; bin++) power = Math.max(power, powerAt(bin));
       }
-      const level = Math.log10(1 + Math.sqrt(power));
+      const level = Math.log10(1 + Math.sqrt(power) * 2048 / fftSize);
       output[row * columns + column] = Math.min(65535, Math.round(level / 4 * 65535));
     }
-    if (column % 16 === 15) await new Promise((resolve) => setTimeout(resolve, 0));
+  };
+}
+
+export async function creatorSpectrum(buffer: AudioBuffer, fromMs: number, toMs: number, columns: number, rows: number, signal: AbortSignal) {
+  const left = buffer.getChannelData(0);
+  const right = buffer.numberOfChannels > 1 ? buffer.getChannelData(1) : left;
+  const output = new Uint16Array(columns * rows);
+  const split = Math.ceil((1 - spectrumFrequencyPosition(600)) * rows);
+  const bass = spectrumBand(bassWindow, buffer.sampleRate, rows, split, rows);
+  const transients = spectrumBand(transientWindow, buffer.sampleRate, rows, 0, split);
+  for (let column = 0; column < columns; column++) {
+    signal.throwIfAborted();
+    const time = fromMs + (toMs - fromMs) * (column + 0.5) / columns;
+    const sample = Math.round(time * buffer.sampleRate / 1000);
+    bass(left, right, sample, output, columns, column);
+    transients(left, right, sample, output, columns, column);
+    if (column % 12 === 11) await new Promise(resolve => setTimeout(resolve, 0));
   }
   return output;
 }

@@ -21,6 +21,7 @@ import { recordingExportEnabled, type RecordingFormat } from "./recording-export
 import { exportSavedAudio } from "./recording-metadata";
 import { useCreatorPlaybar, usePreviewTransport } from "./playbar";
 import { useCreatorRepeat } from "./repeat";
+import { useCreatorPlaybackTransitions } from "./playback-transitions";
 import { creatorPitchSpectrum, creatorSpectrum, creatorWaveform } from "./audio";
 import type { ReviewSelection } from "./review-panel";
 import { TtmlCreator } from "./ttml-creator";
@@ -96,6 +97,7 @@ export function CreatorSurface({ host, view: owner, settings, close, reviewSelec
   const audioLoad = useRef(0);
   const audioCacheGeneration = useRef(0);
   const clip = useRef<{ uri: string; end: number; from: number; expires: number; started: boolean }>(undefined);
+  const pausedAt = useRef<{ uri?: string; position: number; requested: number; settled?: number }>(undefined);
   const audioForSong = audio?.uri === current?.uri ? audio : undefined;
   useLayoutEffect(() => {
     if (!audioForSong) return;
@@ -146,7 +148,11 @@ export function CreatorSurface({ host, view: owner, settings, close, reviewSelec
   }, [captured, current?.uri, deletingRecording, duration, fullRecording, notify, saved?.frames, saved?.sampleRate]);
 
   useCreatorRepeat(host, notify, !previewing);
-  useLayoutEffect(() => { if (previewing) clip.current = undefined; }, [previewing]);
+  useCreatorPlaybackTransitions(host, !previewing);
+  useLayoutEffect(() => {
+    pausedAt.current = undefined;
+    if (previewing) clip.current = undefined;
+  }, [previewing, current?.uri, audioForSong]);
 
   const sourceKey = enabledSources(settings).join(",");
   useEffect(() => {
@@ -207,14 +213,26 @@ export function CreatorSurface({ host, view: owner, settings, close, reviewSelec
     const element = audioForSong && audioElement.current;
     const now = view.performance.now();
     const raw = element ? (audioForSong?.replay?.startMs ?? 0) + element.currentTime * 1000 : host.position();
+    const pause = pausedAt.current;
+    if (pause && pause.uri === current?.uri) {
+      const stillPlaying = element ? !element.paused : host.playing();
+      if (stillPlaying) {
+        if (pause.settled === undefined && now - pause.requested < 1500) return pause.position;
+        pausedAt.current = undefined;
+      } else if (pause.settled === undefined || Math.abs(raw - pause.settled) < 25) {
+        pause.settled ??= raw;
+        return pause.position;
+      } else pausedAt.current = undefined;
+    }
     const adjusted = raw + (isPlaying && at !== undefined ? (at - now) * (element ? element.playbackRate : 1) : 0);
     return Math.max(0, Math.min(adjusted, audioForSong?.replay?.endMs ?? Infinity));
-  }, [audioForSong, host, isPlaying, view]);
+  }, [audioForSong, current?.uri, host, isPlaying, view]);
 
   const player = useCallback((request: PlayerRequest) => {
     const element = audioForSong && audioElement.current;
     switch (request.command) {
       case "play":
+        pausedAt.current = undefined;
         if (request.uri && request.uri !== current?.uri) {
           element && element.pause();
           void host.playTrack(request.uri).catch((why) => notify(String(why), true));
@@ -226,6 +244,7 @@ export function CreatorSurface({ host, view: owner, settings, close, reviewSelec
         break;
       case "pause":
         clip.current = undefined;
+        if (!previewing) pausedAt.current = { uri: current?.uri, position: read(), requested: view.performance.now() };
         if (element) element.pause();
         else if (host.playing()) {
           capture.transportChanged();
@@ -234,6 +253,7 @@ export function CreatorSurface({ host, view: owner, settings, close, reviewSelec
         break;
       case "seek":
         clip.current = undefined;
+        pausedAt.current = undefined;
         if (element) {
           const replay = audioForSong?.replay;
           const position = Math.min(request.positionMs, replay?.endMs ?? Infinity) - (replay?.startMs ?? 0);
@@ -248,7 +268,7 @@ export function CreatorSurface({ host, view: owner, settings, close, reviewSelec
         host.setVolume(request.volume / 100);
         setVolume(request.volume / 100);
     }
-  }, [audioForSong, capture, current?.uri, host, notify]);
+  }, [audioForSong, capture, current?.uri, host, notify, previewing, read, view]);
 
   const toggle = useCallback(() => {
     const element = audioForSong && audioElement.current;
@@ -550,7 +570,7 @@ export function CreatorSurface({ host, view: owner, settings, close, reviewSelec
                 <img src={cover} alt="" /><strong>{song.name}</strong><span>{song.artists.map(({ name }) => name).join(", ")}</span>
               </div>}
               <div className="lyssna-creator-preview-lines">
-                <LyricsDisplay lyrics={lyrics} positionMs={position} playing={isPlaying} settings={settings}
+                <LyricsDisplay lyrics={lyrics} positionMs={position} playing={isPlaying} settings={{ ...settings, reduce_motion: true }}
                   onSeek={(positionMs) => {
                     const offset = state.settings.lyric_offset_ms;
                     const target = Math.max(0, positionMs - offset);

@@ -5,7 +5,7 @@ export const LIVE_SAMPLE_MS = 10;
 export const LIVE_COLUMNS = LIVE_TILE_MS / LIVE_SAMPLE_MS;
 export const LIVE_ROWS = 512;
 export const LIVE_FFT_SIZE = 8192;
-export const TRANSIENT_FFT_SIZE = 4096;
+export const TRANSIENT_FFT_SIZE = 2048;
 const LEGACY_COLUMNS = LIVE_TILE_MS / 20;
 const LEGACY_ROWS = 256;
 const tileBytes = (columns: number, rows: number) => columns * (rows * Uint16Array.BYTES_PER_ELEMENT + Uint8Array.BYTES_PER_ELEMENT);

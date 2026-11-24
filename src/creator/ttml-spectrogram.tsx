@@ -17,9 +17,9 @@ import {
   panUnit,
 } from "./ttml-creator-model";
 
-const TILE_MS = 5000;
+const AUDIO_TILE_MS = 1250;
 const FOLLOW_AFTER_MS = 5000;
-const DETAIL = [512, 1024, 2048];
+const DETAIL = [256, 512, 1024, 2048];
 const ROWS = 384;
 const SPOTIFY_DETAIL = 512;
 const FREQUENCY_LABELS = [50, 100, 250, 500, 1000, 2500, 5000, 10000, 20000];
@@ -302,48 +302,17 @@ export function TtmlSpectrogram({
   const target = useRef({ zoom, scroll });
   const live = useRef({ zoom, scroll, width, duration });
   live.current = { zoom, scroll, width, duration };
-  const frame = useRef<number | null>(null);
 
   const span = (atZoom: number) => (live.current.duration / 1000) * atZoom;
   const clampScroll = (value: number, atZoom: number) =>
     Math.max(0, Math.min(value, span(atZoom) - live.current.width));
-  const glide = () => {
-    if (frame.current !== null) return;
-    const step = () => {
-      const { zoom: nowZoom, scroll: nowScroll } = live.current;
-      const goal = target.current;
-      const nextZoom = nowZoom + (goal.zoom - nowZoom) * 0.35;
-      const nextScroll = nowScroll + (goal.scroll - nowScroll) * 0.35;
-      const done =
-        Math.abs(nextZoom - goal.zoom) < 1 &&
-        Math.abs(nextScroll - goal.scroll) < 1;
-      setZoom(done ? goal.zoom : nextZoom);
-      setScroll(done ? goal.scroll : nextScroll);
-      live.current = {
-        ...live.current,
-        zoom: done ? goal.zoom : nextZoom,
-        scroll: done ? goal.scroll : nextScroll,
-      };
-      if (done) {
-        frame.current = null;
-        store("lyssna.ttml-spectrum-zoom", goal.zoom);
-      } else frame.current = requestAnimationFrame(step);
-    };
-    frame.current = requestAnimationFrame(step);
+  const updateViewport = (nextZoom: number, nextScroll: number) => {
+    if (nextZoom !== target.current.zoom) store("lyssna.ttml-spectrum-zoom", nextZoom);
+    const left = Math.round(clampScroll(nextScroll, nextZoom));
+    target.current = { zoom: nextZoom, scroll: left };
+    setZoom(nextZoom);
+    setScroll(left);
   };
-  const jump = (value: number) => {
-    target.current = {
-      ...target.current,
-      scroll: clampScroll(value, target.current.zoom),
-    };
-    glide();
-  };
-  useEffect(
-    () => () => {
-      if (frame.current !== null) cancelAnimationFrame(frame.current);
-    },
-    [],
-  );
 
   useEffect(() => {
     const element = area.current;
@@ -370,20 +339,11 @@ export function TtmlSpectrogram({
           MAX_ZOOM,
           Math.max(MIN_ZOOM, goal.zoom * (event.deltaY < 0 ? 1.15 : 0.85)),
         );
-        target.current = {
-          zoom: zoomTo,
-          scroll: clampScroll(at * zoomTo - x, zoomTo),
-        };
+        updateViewport(zoomTo, at * zoomTo - x);
       } else {
-        target.current = {
-          ...goal,
-          scroll: clampScroll(
-            goal.scroll + event.deltaY + event.deltaX,
-            goal.zoom,
-          ),
-        };
+        const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? element.clientWidth : 1;
+        updateViewport(goal.zoom, goal.scroll + (event.deltaY + event.deltaX) * unit);
       }
-      glide();
     };
     panel.addEventListener("wheel", wheel, { capture: true, passive: false });
     return () => {
@@ -419,12 +379,14 @@ export function TtmlSpectrogram({
     const opening = !placed.current;
     placed.current = true;
     if (outside && ((follow && playing && resting) || jumped || opening))
-      jump(x - width * 0.1);
+      updateViewport(target.current.zoom, x - width * 0.1);
   });
 
-  const tileMs = liveCapture ? LIVE_TILE_MS : TILE_MS;
+  const tileMs = localAudio ? AUDIO_TILE_MS : LIVE_TILE_MS;
   const tilePx = (tileMs / 1000) * zoom;
-  const detail = pitch ? SPOTIFY_DETAIL : DETAIL.find((columns) => columns >= tilePx) ?? DETAIL.at(-1)!;
+  // FFT window length sets the actual time resolution. Cap the sampling
+  // density so extreme zoom does not recalculate near-identical columns.
+  const detail = pitch ? SPOTIFY_DETAIL : DETAIL.find(columns => columns >= tilePx * window.devicePixelRatio) ?? DETAIL.at(-1)!;
   const failureKey = `${spectrumKey}|${uri}`;
   const tileCount = Math.ceil(duration / tileMs);
   const firstTile = Math.max(0, Math.floor(scroll / tilePx) - 1);
@@ -445,8 +407,8 @@ export function TtmlSpectrogram({
     const key = `${spectrumKey}|${uri}|${index}|${detail}`;
     let data = tiles.get(key);
     let columns = detail;
-    if (!data)
-      for (const other of DETAIL) {
+    if (!data && !pitch)
+      for (const other of DETAIL.toReversed()) {
         const fallback = tiles.get(`${spectrumKey}|${uri}|${index}|${other}`);
         if (fallback) {
           data = fallback;
@@ -473,7 +435,7 @@ export function TtmlSpectrogram({
       if (tiles.has(key) || asked.current.has(key)) continue;
       const request = new AbortController();
       asked.current.set(key, request);
-      spectrogram(uri, index * TILE_MS, (index + 1) * TILE_MS, detail, rows, request.signal)
+      spectrogram(uri, index * tileMs, (index + 1) * tileMs, detail, rows, request.signal)
         .then((data) => {
           if (!request.signal.aborted && data.length === detail * rows) {
             keep(key, data);
@@ -483,7 +445,7 @@ export function TtmlSpectrogram({
         .catch(() => { if (!request.signal.aborted) setFailed(failureKey); })
         .finally(() => { if (asked.current.get(key) === request) asked.current.delete(key); });
     }
-  }, [uri, firstTile, lastTile, detail, rows, width, failed, failureKey, spectrogram, liveCapture]);
+  }, [uri, firstTile, lastTile, detail, rows, width, failed, failureKey, spectrogram, liveCapture, tileMs]);
 
   const table = useMemo(() => paletteTable(palette, customStops), [palette, customStops]);
   const paletteRamp = useMemo(() => paletteGradient(paletteStops(palette, customStops)), [palette, customStops]);
@@ -782,8 +744,8 @@ export function TtmlSpectrogram({
                 data={tile.data}
                 columns={tile.columns}
                 rows={tile.rows}
-                left={tile.index * tilePx}
-                width={tilePx}
+                left={Math.round(tile.index * tilePx)}
+                width={Math.round((tile.index + 1) * tilePx) - Math.round(tile.index * tilePx)}
                 table={table}
                 gain={gain}
                 revision={tile.revision}
