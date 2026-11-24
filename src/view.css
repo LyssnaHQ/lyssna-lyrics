@@ -2732,6 +2732,24 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   color: var(--text-base, #fff);
 }
 
+:root :is(.main-trackList-trackListRow, [data-testid="tracklist-row"]):has([data-lyssna-local-play]) :is(
+  .main-trackList-rowSectionIndex,
+  .main-trackList-rowSectionStart,
+  .main-trackList-rowSectionVariable,
+  .main-trackList-rowSectionEnd
+) > :not([data-encore-id="buttonTertiary"], [data-lyssna-local-play]) {
+  opacity: 1 !important;
+}
+
+.main-trackList-rowSectionIndex:has(> [data-lyssna-local-play]) .main-trackList-rowImagePlayButton {
+  display: none !important;
+}
+
+:root :is(.main-trackList-trackListRow, [data-testid="tracklist-row"]):has([data-lyssna-local-play])
+  .main-trackList-rowSectionIndex > [data-lyssna-local-play] {
+  opacity: var(--lyssna-local-play-opacity, 0) !important;
+}
+
 :is(.main-trackList-trackListRow, [data-testid="tracklist-row"])[data-lyssna-current-local-playlist-row] :is(.main-trackList-rowMarker, .main-trackList-rowMainContentTitle) {
   color: var(--text-bright-accent, #1ed760);
 }
@@ -2749,7 +2767,6 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   border-radius: 50%;
   color: var(--text-base, #fff);
   background: transparent;
-  opacity: 0;
   pointer-events: none;
   cursor: pointer;
 }
@@ -2761,7 +2778,7 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
 
 :is(.main-trackList-trackListRow, [data-testid="tracklist-row"]):hover [data-lyssna-local-play],
 [data-lyssna-local-play]:focus-visible {
-  opacity: 1;
+  --lyssna-local-play-opacity: 1;
   pointer-events: auto;
 }
 
@@ -2779,6 +2796,26 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   height: 14px;
   border: 0;
   border-inline: 4px solid currentColor;
+}
+
+[data-lyssna-library-playlist-playing] [data-encore-id="listRowTitle"] {
+  color: var(--text-bright-accent, #1ed760);
+}
+
+[data-lyssna-library-speaker] {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  margin-inline-end: var(--encore-spacing-tighter, 8px);
+  color: var(--text-bright-accent, #1ed760);
+}
+
+[data-lyssna-library-speaker]::before {
+  content: "";
+  width: 16px;
+  height: 16px;
+  background-color: currentColor;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M10 1a.75.75 0 0 0-1-.15L2.07 4.85a3.64 3.64 0 0 0 0 6.3l6.93 4a.75.75 0 0 0 1.12-.65v-13A.75.75 0 0 0 10 1ZM11.5 5.56a2.75 2.75 0 0 1 0 4.88zM16 8a5.75 5.75 0 0 1-4.5 5.61v-1.55a4.25 4.25 0 0 0 0-8.12V2.39A5.75 5.75 0 0 1 16 8Z'/%3E%3C/svg%3E") center / contain no-repeat;
 }
 
 [data-lyssna-local-playlist-playing="true"] [class*="button__icon-wrapper"] {

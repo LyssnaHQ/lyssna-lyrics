@@ -39,6 +39,10 @@ const control = "[data-lyssna-local-play]";
 const rowAccent = "data-lyssna-current-local-playlist-row";
 const headerAccent = "data-lyssna-local-playlist-playing";
 const headerButton = '[data-testid="action-bar-row"] button[data-encore-id="buttonPrimary"]';
+const libraryRow = ".main-yourLibraryX-listItem";
+const libraryAccent = "data-lyssna-library-playlist-playing";
+const librarySpeaker = "data-lyssna-library-speaker";
+const playlistContext = /^spotify:trackset:Lyssna ([A-Za-z0-9]{22}) [\da-f-]{36}$/;
 
 function viewQuery(view: HTMLElement, rows: PlaylistRow[]) {
   const filter = view.querySelector<HTMLInputElement>(".x-filterBox-filterInput")?.value.trim() || undefined;
@@ -92,6 +96,7 @@ export function startLocalPlaylistPlayback(host: Host) {
   let frame = 0;
   let playbackState = "";
   let header: { button: HTMLButtonElement; label: string | null; written?: string } | undefined;
+  let libraryTile: HTMLElement | undefined;
 
   function playlistUri() {
     const id = /^\/playlist\/([A-Za-z0-9]{22})(?:[?#]|$)/.exec(host.viewLocation() ?? "")?.[1];
@@ -174,11 +179,39 @@ export function startLocalPlaylistPlayback(host: Host) {
     return session && host.playbackContextUri() === session.uri ? session : undefined;
   }
 
+  function activePlaylist() {
+    const id = playlistContext.exec(host.playbackContextUri() ?? "")?.[1];
+    return activeSession()?.playlist ?? (id ? `spotify:playlist:${id}` : undefined);
+  }
+
+  function paintLibrary(playlist?: string) {
+    const title = playlist && document.getElementById(`listrow-title-${playlist}`);
+    const tile = title ? title.closest<HTMLElement>('[data-encore-id="listRow"]') : null;
+    const next = tile?.closest(libraryRow) ? tile : undefined;
+    if (libraryTile !== next) {
+      libraryTile?.removeAttribute(libraryAccent);
+      libraryTile?.querySelector(`[${librarySpeaker}]`)?.remove();
+      libraryTile = next;
+    }
+    if (!libraryTile) return;
+    libraryTile.setAttribute(libraryAccent, "");
+    const container = title && title.closest('[class*="list-row__header"]');
+    if (!container || container.querySelector(`[${librarySpeaker}]`)) return;
+    const speaker = document.createElement("span");
+    speaker.setAttribute(librarySpeaker, "");
+    speaker.setAttribute("role", "img");
+    speaker.setAttribute("aria-label", "Playing");
+    container.append(speaker);
+  }
+
   function paint(view?: HTMLElement | null, playlist?: string, rows: PlaylistRow[] = []) {
     const active = activeSession();
-    const inPlaylist = active?.playlist === playlist ? active : undefined;
+    const activeUri = activePlaylist();
+    const inPlaylist = !!playlist && activeUri === playlist;
     const current = player!._state?.item;
-    const original = inPlaylist && current?.uid ? inPlaylist.originalByUid.get(current.uid) : undefined;
+    const original = inPlaylist && current?.uid
+      ? active?.originalByUid.get(current.uid) ?? context?.data.tracks.find(item => item.uid === current.uid)
+      : undefined;
     const playing = host.playing();
     const nextHeader = inPlaylist && view?.querySelector<HTMLButtonElement>(headerButton);
     const nextProps = nextHeader && Array.from(rowProps(nextHeader, 8)).find(props => props.uri === playlist);
@@ -200,23 +233,27 @@ export function startLocalPlaylistPlayback(host: Host) {
       retained.add(row.row);
       const item = context && rowItem(row, context.data.tracks);
       const replacement = item && context?.data.replacements.get(item);
-      const selected = inPlaylist && original && (item
+      const selected = original && (item
         ? original === item || (!!original.uid && original.uid === item.uid)
-        : rowItem(row, inPlaylist.selection.tracks) === original);
+        : active && rowItem(row, active.selection.tracks) === original);
       if (selected) row.row.setAttribute(rowAccent, playing ? "playing" : "paused");
       else row.row.removeAttribute(rowAccent);
-      const existing = row.row.querySelector(control);
+      const existing = row.row.querySelector<HTMLButtonElement>(control);
       if (!replacement || !row.unavailable || row.restricted) {
         existing?.remove();
         continue;
       }
-      if (existing) continue;
+      const label = selected && playing ? "Pause matched local file" : "Play matched local file";
+      if (existing) {
+        if (existing.getAttribute("aria-label") !== label) existing.setAttribute("aria-label", label);
+        continue;
+      }
       const cell = row.row.querySelector(".main-trackList-rowSectionIndex");
       if (!cell?.querySelector(".main-trackList-rowMarker")) continue;
       const button = document.createElement("button");
       button.type = "button";
       button.dataset.lyssnaLocalPlay = "";
-      button.setAttribute("aria-label", "Play matched local file");
+      button.setAttribute("aria-label", label);
       cell.append(button);
     }
     for (const row of document.querySelectorAll<HTMLElement>(`[${rowAccent}]`)) {
@@ -231,6 +268,7 @@ export function startLocalPlaylistPlayback(host: Host) {
   async function scan() {
     const view = host.mainView();
     const uri = playlistUri();
+    paintLibrary(host.playing() ? activePlaylist() : undefined);
     if (!view || !uri) {
       context = undefined;
       paint();
@@ -252,7 +290,7 @@ export function startLocalPlaylistPlayback(host: Host) {
   }
 
   function schedule() {
-    if (!frame && (playlistUri() || context || header)) frame = requestAnimationFrame(() => {
+    if (!frame && (playlistUri() || context || header || libraryTile || activePlaylist())) frame = requestAnimationFrame(() => {
       frame = 0;
       void scan();
     });
@@ -269,7 +307,7 @@ export function startLocalPlaylistPlayback(host: Host) {
     });
     const index = items.findIndex(item => item.uid && originalByUid.get(item.uid) === target);
     if (index < 0) throw new Error("The matched row is no longer in the playlist.");
-    const uri = `spotify:trackset:Lyssna ${crypto.randomUUID()}`;
+    const uri = `spotify:trackset:Lyssna ${playlist.split(":")[2]} ${crypto.randomUUID()}`;
     const previous = session;
     const next = { uri, playlist, originalByUid, selection: data };
     session = next;
@@ -287,7 +325,7 @@ export function startLocalPlaylistPlayback(host: Host) {
   function activate(event: MouseEvent | KeyboardEvent) {
     const element = event.target;
     if (!(element instanceof Element)) return;
-    if (event.type === "click" && header && element.closest(headerButton) === header.button && activeSession()?.playlist === playlistUri()) {
+    if (event.type === "click" && header && element.closest(headerButton) === header.button && activePlaylist() === playlistUri()) {
       event.preventDefault();
       event.stopImmediatePropagation();
       host.toggle();
@@ -310,7 +348,7 @@ export function startLocalPlaylistPlayback(host: Host) {
     if (!selected || !data.replacements.has(selected)) return;
     event.preventDefault();
     event.stopImmediatePropagation();
-    if (row.hasAttribute(rowAccent) && activeSession()?.playlist === uri) {
+    if (row.hasAttribute(rowAccent) && activePlaylist() === uri) {
       host.toggle();
       return;
     }
@@ -321,11 +359,12 @@ export function startLocalPlaylistPlayback(host: Host) {
     }).finally(() => { starting = false; });
   }
 
-  const observed = `${rowSelector}, ${headerButton}, .x-sortBox-sortDropdown`;
+  const observed = `${rowSelector}, ${headerButton}, ${libraryRow}, .x-sortBox-sortDropdown`;
   const observer = new MutationObserver(records => {
     if (records.some(record =>
       (record.target instanceof Element && record.target.closest(observed) && (record.type === "attributes" ||
-        [...record.addedNodes, ...record.removedNodes].some(node => !(node instanceof Element && node.matches(control))))) ||
+        [...record.addedNodes, ...record.removedNodes].some(node =>
+          !(node instanceof Element && node.matches(`${control}, [${librarySpeaker}]`))))) ||
       [...record.addedNodes, ...record.removedNodes].some(node =>
         node instanceof Element && (node.matches(observed) || node.querySelector(observed))),
     )) schedule();
@@ -356,6 +395,7 @@ export function startLocalPlaylistPlayback(host: Host) {
     stopRoute();
     stopPlayback();
     cancelAnimationFrame(frame);
+    paintLibrary();
     paint();
   };
 }
