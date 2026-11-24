@@ -1,5 +1,5 @@
 import { LIVE_COLUMNS, LIVE_ROWS, readLiveTiles } from "./spectrum-storage";
-import { colourIndex, paletteTable } from "./ttml-spectrogram";
+import { colourIndex, storedPaletteTable } from "./spectrum-palette";
 
 export async function exportSpectrogram(uri: string) {
   const tiles = await readLiveTiles(uri, 0, Number.MAX_SAFE_INTEGER);
@@ -26,7 +26,7 @@ export async function exportSpectrogram(uri: string) {
   }
   const image = context.createImageData(width, LIVE_ROWS);
   const pixels = new Uint32Array(image.data.buffer);
-  const palette = new Uint32Array(paletteTable("icy").buffer);
+  const palette = new Uint32Array(storedPaletteTable().buffer);
   for (let pixel = 0; pixel < pixels.length; pixel++) {
     pixels[pixel] = palette[colourIndex(levels[pixel], 2)];
   }

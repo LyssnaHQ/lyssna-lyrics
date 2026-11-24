@@ -271,7 +271,7 @@ export function CreatorSurface({ host, view: owner, settings, close, reviewSelec
       if (previewing && target instanceof view.Element && target.closest("button, a[href], input, select, textarea, [contenteditable]")) return;
       event.stopImmediatePropagation();
       if (target instanceof view.Element && target.closest(
-        "textarea, input:is(:not([type]), [type='text'], [type='search'], [type='number'], [type='password'], [type='email'], [type='url'], [type='tel']), [contenteditable]:not([contenteditable='false'])",
+        ".ttml-spectrum-menu, textarea, input:is(:not([type]), [type='text'], [type='search'], [type='number'], [type='password'], [type='email'], [type='url'], [type='tel']), [contenteditable]:not([contenteditable='false'])",
       )) return;
 
       event.preventDefault();

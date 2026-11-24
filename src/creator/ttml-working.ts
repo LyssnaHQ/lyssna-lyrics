@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useState } from "react";
 import { loadDraft } from "./ttml-saves";
 import { type CreatorLine, toLyrics } from "./ttml-creator-model";
 import type { Lyrics } from "./types";
@@ -18,6 +19,7 @@ export function forgetWorking(uri: string) {
 
 export function dismissDraft(uri: string) {
   dismissed.add(uri);
+  window.dispatchEvent(new CustomEvent(liveDraftChanged, { detail: uri }));
 }
 
 const SHOW_KEY = "lyssna.ttml-show-preview";
@@ -37,6 +39,7 @@ export function setShowsPreview(on: boolean) {
     // Without storage the choice lasts until Lyssna restarts.
   }
   shown = on;
+  window.dispatchEvent(new Event(liveDraftChanged));
 }
 
 let shown = showsPreview();
@@ -53,11 +56,27 @@ export function showLive(uri: string, lines: CreatorLine[]) {
   window.dispatchEvent(new CustomEvent(liveDraftChanged, { detail: uri }));
 }
 
-export function draftPreview(uri: string | undefined): Lyrics | null {
-  if (!uri || !shown || dismissed.has(uri)) return null;
+function draftPreview(uri: string | undefined, detached: boolean): Lyrics | null {
+  if (!uri || (!detached && (!shown || dismissed.has(uri)))) return null;
   const lines =
     live.get(uri) ?? (working.has(uri) ? loadDraft(uri)?.lines : undefined);
   if (!lines?.length) return null;
   const lyrics = toLyrics(lines);
   return lyrics.lines.length ? lyrics : null;
+}
+
+export function useDraftPreview(uri: string | undefined, detached = false) {
+  const [revision, refresh] = useState(0);
+  useEffect(() => {
+    if (!uri) return;
+    const update = (event: Event) => {
+      const changed = (event as CustomEvent<string>).detail;
+      if (!changed || changed === uri) refresh(previous => previous + 1);
+    };
+    window.addEventListener(liveDraftChanged, update);
+    // The editor can publish an update before this window finishes mounting.
+    refresh(previous => previous + 1);
+    return () => window.removeEventListener(liveDraftChanged, update);
+  }, [uri]);
+  return useMemo(() => draftPreview(uri, detached), [uri, detached, revision]);
 }

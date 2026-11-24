@@ -1318,7 +1318,7 @@ export function TtmlCreator({
       if (deleteKey !== (event.type === "keyup")) return;
       const target = event.composedPath()[0] as HTMLElement | null;
       if (deleteKey && !root.contains(target)) return;
-      if (target?.closest(".lyrics-settings-backdrop, .ttml-recording-popover, .review-panel")) return;
+      if (target?.closest(".lyrics-settings-backdrop, .ttml-recording-popover, .ttml-spectrum-menu, .review-panel")) return;
       if (root.querySelector(".ttml-menu, .ttml-dialog")) return;
       if (target?.closest(".ttml-bar button, .ttml-spectrum button") && event.key === "Enter") return;
       if (

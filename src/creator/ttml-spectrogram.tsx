@@ -1,10 +1,12 @@
 import { memo, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ArrowRightToLine, AudioLines, Eye, EyeOff, Settings2, Square } from "lucide-react";
+import { ArrowRightToLine, AudioLines, Eye, EyeOff, Plus, Settings2, Square, Trash2 } from "lucide-react";
 import { useCreatorEnvironment } from "./environment";
 import { pitchBands, spectrumFrequency, spectrumFrequencyPosition } from "./audio";
 import { useLiveSpectrum } from "./live-spectrum";
 import { useAnchoredPopover } from "../anchored-popover";
 import { LIVE_COLUMNS, LIVE_ROWS, LIVE_TILE_MS } from "./spectrum-storage";
+import { COLOR_STOPS_KEY, colourIndex, DEFAULT_STOPS, MAX_STOPS, PALETTES, PALETTE_KEY,
+  paletteGradient, paletteStops, paletteTable, validColorStops, validPalette, type ColorStop, type Palette } from "./spectrum-palette";
 import {
   type CreatorLine,
   type Cursor,
@@ -20,55 +22,12 @@ const DETAIL = [512, 1024, 2048];
 const ROWS = 384;
 const SPOTIFY_DETAIL = 512;
 const FREQUENCY_LABELS = [50, 100, 250, 500, 1000, 2500, 5000, 10000, 20000];
-// The backend sends levels as 16-bit fractions of this.
-const LEVEL_SPAN = 4;
 const RULER = 30;
 const SNAP_PX = 7;
 const MIN_ZOOM = 50;
 const MAX_ZOOM = 10000;
 const TILE_CACHE_BYTES = 32 * 1024 * 1024;
 const NOTES = "C C# D D# E F F# G G# A A# B".split(" ");
-
-export type Palette = "icy" | "green" | "gray";
-export const PALETTES: { id: Palette; name: string }[] = [
-  { id: "icy", name: "Icy Blue" },
-  { id: "green", name: "Green" },
-  { id: "gray", name: "Grayscale" },
-];
-
-function hsl(hue: number, saturation: number, light: number) {
-  const chroma = (1 - Math.abs(2 * light - 1)) * saturation;
-  const sector = (((hue % 360) + 360) % 360) / 60;
-  const second = chroma * (1 - Math.abs((sector % 2) - 1));
-  const [r, g, b] = [
-    [chroma, second, 0],
-    [second, chroma, 0],
-    [0, chroma, second],
-    [0, second, chroma],
-    [second, 0, chroma],
-    [chroma, 0, second],
-  ][Math.min(5, Math.floor(sector))];
-  const base = light - chroma / 2;
-  return [r, g, b].map((part) => Math.round((part + base) * 255));
-}
-
-// Aegisub's colour schemes, which AMLL's TTML tool also offers.
-function colour(palette: Palette, level: number) {
-  if (palette === "gray") return [level * 255, level * 255, level * 255];
-  if (palette === "green") return hsl(120, 1, Math.min(1, (200 * level) / 255));
-  const hue = ((((-128 * level + 191) % 256) + 256) % 256) * (360 / 255);
-  return hsl(hue, Math.min(255, 128 * level + 127) / 255, level);
-}
-
-export function paletteTable(palette: Palette) {
-  const table = new Uint8ClampedArray(256 * 4);
-  for (let index = 0; index < 256; index++)
-    table.set([...colour(palette, index / 255), 255], index * 4);
-  return table;
-}
-
-export const colourIndex = (encoded: number, gain: number) =>
-  Math.min(255, Math.floor((encoded / 65535) * LEVEL_SPAN * gain * 255 + 0.5));
 
 export function noteName(hz: number) {
   if (hz < 8) return "";
@@ -306,11 +265,8 @@ export function TtmlSpectrogram({
   const [pitchGain, setPitchGain] = useStored("lyssna.ttml-pitch-gain", 1, isNumber);
   const gain = pitch ? pitchGain : audioGain;
   const setGain = pitch ? setPitchGain : setAudioGain;
-  const [palette, setPalette] = useStored<Palette>(
-    "lyssna.ttml-spectrum-palette",
-    "icy",
-    (value) => PALETTES.some((each) => each.id === value),
-  );
+  const [palette, setPalette] = useStored<Palette>(PALETTE_KEY, "icy", validPalette);
+  const [customStops, setCustomStops] = useStored(COLOR_STOPS_KEY, DEFAULT_STOPS, validColorStops);
   const [follow, setFollow] = useStored(
     "lyssna.ttml-spectrum-follow",
     true,
@@ -328,6 +284,10 @@ export function TtmlSpectrogram({
   const [{ width, height: plotAreaHeight }, setPlotSize] = useState({ width: 0, height: 0 });
   const [hover, setHover] = useState<{ x: number; y: number } | null>(null);
   const [settings, setSettings] = useState(false);
+  const settingsButton = useRef<HTMLButtonElement>(null);
+  const colorsPanel = useRef<HTMLDivElement>(null);
+  const colorsId = useId();
+  useAnchoredPopover(window, settings, settingsButton, colorsPanel);
   const [drag, setDrag] = useState<Drag | null>(null);
   const [preview, setPreview] = useState<CreatorLine[] | null>(null);
   const [, setLoaded] = useState(0);
@@ -515,7 +475,29 @@ export function TtmlSpectrogram({
     }
   }, [uri, firstTile, lastTile, detail, rows, width, failed, failureKey, spectrogram, liveCapture]);
 
-  const table = useMemo(() => paletteTable(palette), [palette]);
+  const table = useMemo(() => paletteTable(palette, customStops), [palette, customStops]);
+  const paletteRamp = useMemo(() => paletteGradient(paletteStops(palette, customStops)), [palette, customStops]);
+
+  function updateColorStop(index: number, patch: Partial<ColorStop>) {
+    setCustomStops(customStops.map((stop, at) => at === index ? { ...stop, ...patch } : stop));
+  }
+
+  function addColorStop() {
+    if (customStops.length >= MAX_STOPS) return;
+    const sorted = customStops.toSorted((left, right) => left.position - right.position);
+    const positions = [0, ...sorted.map(stop => stop.position), 1];
+    let position = 0.5;
+    let gap = 0;
+    for (let index = 1; index < positions.length; index++) {
+      const span = positions[index] - positions[index - 1];
+      if (span <= gap) continue;
+      gap = span;
+      position = (positions[index] + positions[index - 1]) / 2;
+    }
+    const at = Math.round(position * 255) * 4;
+    const color = "#" + Array.from(table.subarray(at, at + 3), byte => byte.toString(16).padStart(2, "0")).join("");
+    setCustomStops([...customStops, { position: Math.round(position * 1000) / 1000, color }]);
+  }
 
   useLayoutEffect(() => {
     const element = ruler.current;
@@ -908,44 +890,68 @@ export function TtmlSpectrogram({
         </button>
         <div className="ttml-spectrum-settings">
           <button
+            ref={settingsButton}
+            type="button"
             className={`ttml-spectrum-tool${settings ? " on" : ""}`}
             aria-expanded={settings}
-            aria-label="Spectrogram colours"
-            title="Spectrogram colours"
+            aria-controls={settings ? colorsId : undefined}
+            aria-label="Spectrogram colors"
+            title="Spectrogram colors"
             onClick={() => setSettings(!settings)}
           >
             <Settings2 size={15} />
           </button>
           {settings && (
             <div
+              id={colorsId}
+              ref={colorsPanel}
               className="ttml-spectrum-menu"
-              role="menu"
-              aria-label="Colours"
+              role="dialog"
+              aria-label="Spectrogram colors"
+              popover="auto"
+              onToggle={(event) => {
+                if (event.newState === "closed") setSettings(false);
+              }}
             >
-              {PALETTES.map((each) => (
-                <button
-                  key={each.id}
-                  role="menuitemradio"
-                  aria-checked={palette === each.id}
-                  onClick={() => {
-                    setPalette(each.id);
-                    setSettings(false);
-                  }}
-                >
-                  <i
-                    style={{
-                      background: `linear-gradient(90deg, ${[
-                        0, 0.25, 0.5, 0.75, 1,
-                      ]
-                        .map(
-                          (level) => `rgb(${colour(each.id, level).join(",")})`,
-                        )
-                        .join(",")})`,
-                    }}
-                  />
-                  {each.name}
-                </button>
-              ))}
+              <label className="ttml-palette-picker">
+                <strong>Color palette</strong>
+                <select value={palette} onChange={(event) => setPalette(event.currentTarget.value as Palette)}>
+                  {PALETTES.map(each => <option key={each.id} value={each.id}>{each.name}</option>)}
+                </select>
+              </label>
+              <div className="ttml-palette-gradient" style={{ background: paletteRamp }} aria-hidden="true" />
+              {palette === "custom" ? <>
+                <p>Position 0.0 is quietest and 1.0 is loudest.</p>
+                <div className="ttml-palette-stops">
+                  {customStops.map((stop, index) => <div key={index} className="ttml-palette-stop">
+                    <input type="color" aria-label={`Color stop ${index + 1}`} value={stop.color}
+                      onChange={(event) => updateColorStop(index, { color: event.currentTarget.value })} />
+                    <input type="range" min="0" max="1" step="0.005" aria-label={`Position of color stop ${index + 1}`}
+                      value={stop.position} onChange={(event) => updateColorStop(index, { position: event.currentTarget.valueAsNumber })} />
+                    <input key={stop.position} type="number" min="0" max="1" step="0.001"
+                      aria-label={`Exact position of color stop ${index + 1}`} defaultValue={stop.position}
+                      onBlur={(event) => {
+                        const value = event.currentTarget.valueAsNumber;
+                        const position = Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : stop.position;
+                        event.currentTarget.value = String(position);
+                        updateColorStop(index, { position });
+                      }}
+                      onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} />
+                    <button className="ttml-remove-color-stop" type="button" disabled={customStops.length <= 2}
+                      aria-label={`Remove color stop ${index + 1}`}
+                      onClick={() => setCustomStops(customStops.filter((_, at) => at !== index))}>
+                      <Trash2 size={14} /> Remove
+                    </button>
+                  </div>)}
+                </div>
+                <div className="ttml-palette-actions">
+                  <button type="button" disabled={customStops.length >= MAX_STOPS} onClick={addColorStop}><Plus size={15} /> Add color stop</button>
+                  <button type="button" onClick={() => setCustomStops(DEFAULT_STOPS)}>Reset</button>
+                </div>
+              </> : <button type="button" onClick={() => {
+                setCustomStops(paletteStops(palette, customStops));
+                setPalette("custom");
+              }}>Customize this palette</button>}
             </div>
           )}
         </div>
