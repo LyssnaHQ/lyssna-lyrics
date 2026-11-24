@@ -371,6 +371,12 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   background-color: light-dark(#0000000f, #ffffff0f);
 }
 
+@media (prefers-reduced-motion: no-preference) {
+  .lyrics-display:not(.reduce-motion) .lyric-line :is(.lyric-syllable:not(.emphasis), .lyric-letter) {
+    transition: text-shadow 150ms ease-in-out;
+  }
+}
+
 .lyssna-lyrics-view :is(.lyrics-title, .lyrics-artists, .lyrics-popout-title, .lyric-source, .lyric-end-credits, .gravity-credits, .writer-credits) {
   font-family: var(--lyric-detail-font, inherit);
 }
