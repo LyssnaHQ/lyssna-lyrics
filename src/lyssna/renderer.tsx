@@ -187,8 +187,16 @@ export function LyricsDisplay({
       ? (settings.lyrics_early_scroll_ms ?? 200)
       : 0);
   const active = activeLines(lyrics.lines, scrollTime);
+  // Overlapping vocals keep animating, while the newest start drives scrolling.
+  const newestActive = active.reduce<number | undefined>((latest, index) => {
+    if (latest === undefined) return index;
+    const line = lyrics.lines[index];
+    const previous = lyrics.lines[latest];
+    if (line.start_ms !== previous.start_ms) return line.start_ms > previous.start_ms ? index : latest;
+    return line.background && !previous.background ? latest : index;
+  }, undefined);
   const primary =
-    selected ?? active.find((index) => !lyrics.lines[index].background) ??
+    selected ?? newestActive ??
     lyrics.lines.reduce(
       (last, line, index) =>
         line.start_ms <= scrollTime && !line.background ? index : last,
