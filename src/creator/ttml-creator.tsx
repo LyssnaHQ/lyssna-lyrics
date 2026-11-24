@@ -17,6 +17,7 @@ import {
   Download,
   Eye,
   EyeOff,
+  FileInput,
   History,
   Pause,
   Play,
@@ -188,6 +189,11 @@ const HISTORY_LIMIT = 200;
 const VOICE_CLASS = ["", " sung-second", " sung-third"];
 const WORD_VOICE_CLASS = [" sung-first", " sung-second", " sung-third"];
 
+type DraftHistory = {
+  lines: CreatorLine[];
+  draft?: { text: string; metadata?: MetaEntry[]; appleOriginal?: Lyrics["appleOriginal"] };
+};
+
 type Drag =
   | { kind: "line"; line: number }
   | { kind: "word" | "space"; at: Cursor; group?: Cursor[] };
@@ -281,6 +287,7 @@ export function TtmlCreator({
   onSpeed,
   onApply,
   onSubmit,
+  onResetToSource,
   onParse,
   notify,
   renderPreview,
@@ -297,6 +304,7 @@ export function TtmlCreator({
   onSpeed: (rate: number) => Promise<void>;
   onApply: (track: Track, filename: string, ttml: string) => Promise<boolean>;
   onSubmit: (track: Track, ttml: string, appleOriginal?: Lyrics["appleOriginal"]) => Promise<string | undefined>;
+  onResetToSource: (track: Track) => Promise<Lyrics | undefined>;
   onParse: (
     filename: string,
     contents: string,
@@ -328,7 +336,7 @@ export function TtmlCreator({
   }, []);
   const [text, setText] = useState("");
   const [cursor, setCursor] = useState<Cursor>({ line: 0, unit: 0 });
-  const history = useRef<{ past: CreatorLine[][]; future: CreatorLine[][] }>({
+  const history = useRef<{ past: DraftHistory[]; future: DraftHistory[] }>({
     past: [],
     future: [],
   });
@@ -509,26 +517,27 @@ export function TtmlCreator({
       const previous = linesRef.current;
       const value = joinHyphenated(typeof next === "function" ? next(previous) : next);
       if (value === previous) return;
-      history.current.past = [...history.current.past.slice(-HISTORY_LIMIT), previous];
+      history.current.past = [...history.current.past.slice(-HISTORY_LIMIT), { lines: previous }];
       history.current.future = [];
       replaceLines(value);
     },
     [replaceLines],
   );
-  const undo = useCallback(() => {
-    const previous = history.current.past.pop();
-    if (!previous) return;
-    history.current.future.push(linesRef.current);
-    replaceLines(previous);
-    setCursor(at => clampCursor(previous, at));
+  const restoreHistory = useCallback((from: "past" | "future", to: "past" | "future") => {
+    const entry = history.current[from].pop();
+    if (!entry) return;
+    const { text, metadata, appleOriginal } = current.current;
+    history.current[to].push({ lines: linesRef.current, draft: entry.draft && { text, metadata, appleOriginal } });
+    replaceLines(entry.lines);
+    setCursor(at => clampCursor(entry.lines, at));
+    if (entry.draft) {
+      setText(entry.draft.text);
+      setMetadata(entry.draft.metadata);
+      setAppleOriginal(entry.draft.appleOriginal);
+    }
   }, [replaceLines]);
-  const redo = useCallback(() => {
-    const next = history.current.future.pop();
-    if (!next) return;
-    history.current.past.push(linesRef.current);
-    replaceLines(next);
-    setCursor(at => clampCursor(next, at));
-  }, [replaceLines]);
+  const undo = useCallback(() => restoreHistory("past", "future"), [restoreHistory]);
+  const redo = useCallback(() => restoreHistory("future", "past"), [restoreHistory]);
 
   const [textMode, setTextMode] = useState(false);
   const [geniusOpen, setGeniusOpen] = useState(false);
@@ -1250,6 +1259,49 @@ export function TtmlCreator({
     setLines(seeded);
     setText(toText(seeded));
     setCursor({ line: 0, unit: 0 });
+  };
+  const [resettingSource, setResettingSource] = useState(false);
+  const resetToSource = async () => {
+    if (!track || !here || resettingSource) return;
+    const draft = current.current;
+    setResettingSource(true);
+    try {
+      const lyrics = await onResetToSource(track);
+      const latest = current.current;
+      if (!root.isConnected || latest.uri !== draft.uri) return;
+      if (linesRef.current !== draft.lines || latest.text !== draft.text ||
+        latest.metadata !== draft.metadata || latest.appleOriginal !== draft.appleOriginal) {
+        notify("The draft changed while looking up source lyrics.", true);
+        return;
+      }
+      if (!lyrics?.lines.length) {
+        notify("No source lyrics found for this song.", true);
+        return;
+      }
+      const seeded = joinHyphenated(fromLyrics(lyrics));
+      if (!seeded.length) {
+        notify("The source has no editable lyric lines.", true);
+        return;
+      }
+      history.current.past = [...history.current.past.slice(-HISTORY_LIMIT), {
+        lines: draft.lines, draft: { text: draft.text, metadata: draft.metadata, appleOriginal: draft.appleOriginal },
+      }];
+      history.current.future = [];
+      editedFor.current = track.uri;
+      replaceLines(seeded);
+      setText(toText(seeded));
+      setMetadata(undefined);
+      setAppleOriginal(lyrics.appleOriginal);
+      setCursor(cursorAt(seeded, read()));
+      setGroup([]);
+      setSpaces([]);
+      setPicked(new Set());
+      notify(`Reset to ${lyrics.source}. ${MODIFIER}+Z restores the previous draft.`);
+    } catch {
+      if (root.isConnected && current.current.uri === draft.uri) notify("Couldn’t load source lyrics. Try again.", true);
+    } finally {
+      if (root.isConnected) setResettingSource(false);
+    }
   };
 
   const tap = useCallback(
@@ -2209,7 +2261,7 @@ export function TtmlCreator({
           </span>
           <button
             onClick={() => void submit()}
-            disabled={!done || !submittable || submitting}
+            disabled={!done || !submittable || submitting || resettingSource}
             aria-busy={submitting}
             title={
               submittable
@@ -2424,6 +2476,15 @@ export function TtmlCreator({
               >
                 <RotateCcw size={15} />
               </button>
+              {!reviewing && <button
+                onClick={() => void resetToSource()}
+                disabled={!here || resettingSource || submitting}
+                aria-busy={resettingSource}
+                title="Replace this draft with the best available lyric source"
+              >
+                <FileInput size={15} />
+                {resettingSource ? "Finding source…" : "Reset to source"}
+              </button>}
             </div>
           )}
           {writing && (

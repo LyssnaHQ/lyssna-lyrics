@@ -531,6 +531,14 @@ export function CreatorSurface({ host, view: owner, settings, close, reviewSelec
           onClose={close}
           reviewSelection={reviewSelection}
           onCloseReview={closeReview}
+          onResetToSource={async (song) => {
+            if (track?.id !== song.id || host.track()?.id !== song.id) return;
+            const sources = enabledSources(settings).filter(source => source !== "local");
+            const lyrics = await currentCreatorLyrics(host, track, duration, sources);
+            if (!lyrics) return;
+            const seeded = await seedTimings(host, lyrics, duration, song.id).catch(() => lyrics);
+            if (host.track()?.id === song.id) return seeded;
+          }}
           onParse={async (filename, text, song) => {
             const ms = song?.duration_ms ?? 0;
             const lyrics = /\.lrc$/i.test(filename)
