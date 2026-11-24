@@ -128,22 +128,19 @@ export function startLocalPlaylistPlayback(host: Host) {
       : skipTo.uri ? row.original.uri === skipTo.uri
       : skipTo.index !== undefined && row.index === skipTo.index);
     if (start === -1 && (skipTo?.uid || skipTo?.uri || skipTo?.index !== undefined)) return;
-    let offset: StartAt | undefined;
-    if (start !== undefined && start >= 0) {
-      const { uid } = rows[start].item;
-      offset = uid ? { uid } : { index: start };
-    }
-    return { items: rows.map(row => row.item), skipTo: offset };
+    const selected = start !== undefined && start >= 0 ? rows[start].item : undefined;
+    return {
+      items: rows.map(row => row.item),
+      skipTo: selected ? { uri: selected.uri, uid: selected.uid } : undefined,
+    };
   }
 
   function playAdapted(receiver: Player, uri: string, playback: NonNullable<ReturnType<typeof adaptedPlayback>>,
     origin: Record<string, unknown>, options: PlayOptions) {
     const repeat = { off: 0, context: 1, track: 2 }[host.repeat()];
     return nativePlay.call(receiver, {
-      uri,
-      // Spotify routes a playlist URI with no URL through its playlist
-      // service. The explicit URL keeps our supplied context pages in use.
-      url: `context://${uri}`,
+      // A playlist URI can reload Spotify's original tracks and drop local substitutions.
+      uri: `spotify:trackset:Lyssna ${uri.split(":")[2]}`,
       pages: [{ items: playback.items }],
     }, origin, { ...options, skipTo: playback.skipTo, shuffle: options.shuffle ?? host.shuffle(), repeat: options.repeat ?? repeat });
   }
@@ -159,6 +156,8 @@ export function startLocalPlaylistPlayback(host: Host) {
         try { return await playAdapted(this, source.uri, playback, origin, options); }
         catch (error) {
           if (!active || request !== generation) return;
+          const local = playback.skipTo?.uri;
+          if (local && localSongTags(local)) return host.playTrack(local);
           console.warn("[Lyssna Lyrics] Could not start the playlist with local files:", error);
         }
       }
@@ -246,9 +245,15 @@ export function startLocalPlaylistPlayback(host: Host) {
     if (!playback) return;
     event.preventDefault();
     event.stopImmediatePropagation();
-    ++generation;
+    const request = ++generation;
+    const local = shown.data.replacements.get(target.uri)?.uri;
     void playAdapted(player!, uri, playback, { featureIdentifier: "playlist" }, {})
-      .catch(() => { if (active) host.notifyError("Spotify couldn’t play the matched local file."); });
+      .catch(() => {
+        if (active && request === generation && local) return host.playTrack(local);
+      })
+      .catch(() => {
+        if (active && request === generation) host.notifyError("Spotify couldn’t play the matched local file.");
+      });
   }
 
   const observer = new MutationObserver(records => {

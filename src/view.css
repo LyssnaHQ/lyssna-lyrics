@@ -2741,12 +2741,14 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   color: var(--encore-text-base, var(--spice-text, #fff));
 }
 
-.main-trackList-rowSectionIndex:has(> [data-lyssna-play-local]) .main-trackList-rowMarker {
+[data-lyssna-local-match]:hover .main-trackList-rowSectionIndex:has(> [data-lyssna-play-local]) .main-trackList-rowMarker,
+.main-trackList-rowSectionIndex:has(> [data-lyssna-play-local]:focus-visible) .main-trackList-rowMarker {
   visibility: hidden;
 }
 
 [data-lyssna-play-local] {
   position: absolute;
+  inset-inline-end: -4px;
   display: grid;
   place-items: center;
   width: 24px;
@@ -2757,6 +2759,14 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   color: var(--spice-text, #fff);
   background: transparent;
   cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+}
+
+[data-lyssna-local-match]:hover [data-lyssna-play-local],
+[data-lyssna-play-local]:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 [data-lyssna-play-local]::before {
