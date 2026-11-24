@@ -82,7 +82,9 @@ async function hiddenRelease(key, signal) {
 }
 
 async function readCatalog(url, signal, timeout) {
-  const response = await fetch(url, {
+  const fresh = new URL(url);
+  fresh.searchParams.set("t", String(Date.now()));
+  const response = await fetch(fresh, {
     credentials: "omit", cache: "no-store", signal: AbortSignal.any([signal, AbortSignal.timeout(timeout)]),
   });
   if (!response.ok) throw new Error(`Build channels HTTP ${response.status}`);
@@ -100,7 +102,6 @@ async function readTestChannels(signal) {
     }));
   } catch (error) {
     if (!signal.aborted) console.warn("[Lyssna Lyrics] Beta and Canary catalog unavailable:", error);
-    return { beta: null, canary: null };
   }
 }
 
@@ -112,24 +113,52 @@ async function importWebsiteBuild(url, signal) {
   return importBundle(await response.arrayBuffer(), signal);
 }
 
-export async function start(signal) {
+export async function start(signal, catalog) {
   await ready(signal);
   let stopLoading;
   const timer = setTimeout(() => { stopLoading = showLoading(); }, 400);
   try {
-    return await startBuild(signal);
+    return await startBuild(signal, catalog);
   } finally {
     clearTimeout(timer);
     stopLoading?.();
   }
 }
 
-async function startBuild(signal) {
+async function startBuild(signal, initialCatalog) {
   const saved = localStorage.getItem(channelKey);
   const channels = { stable: null, beta: null, canary: null };
-  const testChannels = readTestChannels(signal).then((available) => Object.assign(channels, available));
-  const catalog = await readCatalog(stableCatalogUrl, signal, 8_000);
-  const stable = await readStableRelease(signal, catalog);
+  let activeOptions;
+  let activeVersion;
+  let testRequest;
+
+  function availableChoices(channel, version, hidden) {
+    return Object.fromEntries(names.flatMap((name) => {
+      const available = name === channel && !hidden ? version : channels[name];
+      return available ? [[name, available]] : [];
+    }));
+  }
+
+  function updateChannels(available) {
+    if (!available || signal.aborted ||
+        !Object.keys(available).some((name) => available[name] !== channels[name])) return;
+    Object.assign(channels, available);
+    if (activeOptions) {
+      activeOptions.channels = availableChoices(activeOptions.channel, activeVersion, activeOptions.hiddenVersion);
+      // Existing builds read the loader options again on the settings event.
+      window.dispatchEvent(new Event("lyssna-lyrics:settings"));
+    }
+  }
+
+  function refreshTestChannels() {
+    return testRequest ??= readTestChannels(signal).then(updateChannels).finally(() => {
+      testRequest = undefined;
+    });
+  }
+
+  const testChannels = refreshTestChannels();
+  const catalog = initialCatalog ?? await readCatalog(stableCatalogUrl, signal, 8_000);
+  let stable = await readStableRelease(signal, catalog);
   channels.stable = stable?.version ?? null;
   // Stable can start while the optional test-channel request is still pending.
   if (!stable || saved === "beta" || saved === "canary") await testChannels;
@@ -165,19 +194,33 @@ async function startBuild(signal) {
   function stop() {
     current?.dispose();
     current = undefined;
+    activeOptions = undefined;
   }
   signal.addEventListener("abort", stop, { once: true });
+
+  function refreshOnManage(event) {
+    if (!event.composedPath().some((element) => element.id === "lyssna-open-builds")) return;
+    void refreshTestChannels();
+    void readCatalog(stableCatalogUrl, signal, 8_000).then((latest) => readStableRelease(signal, latest)).then((release) => {
+      if (signal.aborted) return;
+      stable = release;
+      updateChannels({ stable: stable?.version ?? null });
+    }).catch((error) => {
+      if (!signal.aborted) console.warn("[Lyssna Lyrics] Stable catalog unavailable:", error);
+    });
+  }
 
   async function load(channel, reopen, hidden) {
     switching = true;
     try {
       let build;
-      const importPublic = (name) => name === "stable" ? importStableRelease(stable, signal)
-        : importWebsiteBuild(new URL(`builds/lyssna-lyrics@${channels[name]}.mjs`, website), signal);
+      let version = hidden?.version ?? channels[channel];
+      const importPublic = (name, publicVersion) => name === "stable" ? importStableRelease(stable, signal)
+        : importWebsiteBuild(new URL(`builds/lyssna-lyrics@${publicVersion}.mjs`, website), signal);
       if (hidden) build = await importWebsiteBuild(hidden.url, signal);
       else {
         try {
-          build = await importPublic(channel);
+          build = await importPublic(channel, version);
         } catch (error) {
           signal.throwIfAborted();
           if (!reopen && channel === "stable") await testChannels;
@@ -185,26 +228,30 @@ async function startBuild(signal) {
           const fallback = !reopen && names.find((name) => name !== channel && channels[name]);
           if (!fallback) throw error;
           console.warn(`[Lyssna Lyrics] ${channel} unavailable. Loading ${fallback}.`, error);
-          build = await importPublic(fallback);
+          version = channels[fallback];
+          build = await importPublic(fallback, version);
           channel = fallback;
         }
       }
       signal.throwIfAborted();
-      const next = build.default({
-        channel, channels, selectChannel, lyssnaSignIn: catalog.lyssnaSignIn === true,
+      const options = {
+        channel, channels: availableChoices(channel, version, hidden), selectChannel, lyssnaSignIn: catalog.lyssnaSignIn === true,
         hiddenVersion: hidden?.version, selectHiddenBuild,
         clearHiddenBuild: savedHiddenKey ? clearHiddenBuild : undefined,
         patchNotesUrl: new URL(".change_notes/PATCH_NOTES.md", repository).href,
         latestVersion: async (checkSignal) => {
           const check = AbortSignal.any([signal, checkSignal]);
-          if (channel !== "stable") return (await readTestChannels(check))[channel];
+          if (channel !== "stable") return (await readTestChannels(check))?.[channel] ?? null;
           const latest = await readCatalog(stableCatalogUrl, check, 8_000);
           return (await readStableRelease(check, latest))?.version ?? null;
         },
         showLoading,
-      });
+      };
+      const next = build.default(options);
       stop();
       current = next;
+      activeOptions = options;
+      activeVersion = version;
       if (reopen) {
         localStorage.setItem(channelKey, channel);
         current.open();
@@ -224,12 +271,14 @@ async function startBuild(signal) {
       }
     }
     if (!current) await load(selected, false);
+    document.addEventListener("click", refreshOnManage, { capture: true, signal });
   } catch (error) {
     signal.removeEventListener("abort", stop);
     stop();
     throw error;
   }
   return () => {
+    document.removeEventListener("click", refreshOnManage, true);
     signal.removeEventListener("abort", stop);
     stop();
   };

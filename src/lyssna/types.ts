@@ -38,6 +38,8 @@ export interface AppleOriginal {
 export interface Lyrics {
   appleOriginal?: AppleOriginal;
   lyssna?: { songId: string; revisionId?: string; contributors: LyssnaContributor[] };
+  /** Where lyrics from outside Lyssna come from, to count their plays. */
+  external?: { source: "apple_music"; id: string };
   songwriters?: string[];
   attribution?: { uploader?: Contributor; maker?: Contributor };
   lines: Line[];

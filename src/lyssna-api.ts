@@ -164,13 +164,23 @@ export async function lyssnaRequest(path: string, options: RequestOptions = {}) 
 export const lyssnaRetryAt = () => retryAfter;
 
 let playClient: string | undefined;
-export function sendLyssnaPlay(songId: string, accessToken?: string) {
-  if (!install && !saved(installKey)) return;
+function listener() {
   if (!playClient) {
     playClient = saved(clientKey) || crypto.randomUUID();
     save(clientKey, playClient);
   }
-  void lyssnaRequest(`/v1/songs/${songId}/play`, { body: { client_id: playClient }, accessToken }).catch(() => {});
+  return playClient;
+}
+
+/** Lyrics from a source outside Lyssna (Apple Music) have no song, so the play is counted for the install. */
+export function sendLyssnaExternalPlay(source: "apple_music", id: string) {
+  if (!install && !saved(installKey)) return;
+  void lyssnaRequest(`/v1/external/${source}/${id}/play`, { body: { client_id: listener() } }).catch(() => {});
+}
+
+export function sendLyssnaPlay(songId: string, accessToken?: string) {
+  if (!install && !saved(installKey)) return;
+  void lyssnaRequest(`/v1/songs/${songId}/play`, { body: { client_id: listener() }, accessToken }).catch(() => {});
   // Counted once per install per song a day, for the views on lyssna.org/stats.
   void lyssnaRequest(`/v1/songs/${songId}/views`, { body: { client: "plugin" } }).catch(() => {});
 }

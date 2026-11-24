@@ -1,3 +1,4 @@
+import { clearActAs } from "./lyssna-act-as";
 import { lyssnaRequest, prepareLyssnaInstall } from "./lyssna-api";
 
 const clientId = "01a1f5b3-37b0-7d27-9434-efb756ccd7dd";
@@ -155,6 +156,7 @@ export async function readLyssnaProfile(): Promise<LyssnaProfile | undefined> {
 export async function lyssnaSignOut() {
   await serialize(async () => {
     const previous = readTokens();
+    clearActAs();
     saveTokens();
     if (previous) await lyssnaRequest("/v1/auth/logout", { body: {}, accessToken: previous.access_token }).catch(() => {});
   });

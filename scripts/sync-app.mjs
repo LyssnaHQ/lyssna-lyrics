@@ -34,6 +34,13 @@ const types = slice(read("frontend/types.ts"), "export interface Word {", "expor
   username?: string;
   avatar_url?: string;
   share: number;
+  original?: boolean;
+}
+export interface AppleOriginal {
+  apple_id: string;
+  sha256: string;
+  isrc: string;
+  timing_kind?: "word";
 }
 export interface AppleOriginal {
   apple_id: string;
@@ -45,7 +52,8 @@ export interface Lyrics {
   appleOriginal?: AppleOriginal;
   /** Timing advertised by the lyrics provider. */
   timing_kind?: "word" | "line" | "static";
-  lyssna?: { songId: string; contributors: LyssnaContributor[] };`);
+  external?: { source: "apple_music"; id: string };
+  lyssna?: { songId: string; revisionId?: string; contributors: LyssnaContributor[] };`);
 const lyrics = [
   slice(styles, "\n.lyric-end-credits {", "\n.credit-avatar {"),
   slice(styles, "\n.ambience {", "\n.lyrics-page {"),

@@ -1,4 +1,5 @@
 import type { Host, Track } from "./host";
+import { withActAs } from "./lyssna-act-as";
 import { hasLyssnaSession, lyssnaAccountRequest } from "./lyssna-account";
 import { lyssnaRetryAt } from "./lyssna-api";
 import { readLyssnaLyrics } from "./lyssna-provider";
@@ -49,7 +50,7 @@ export async function submitLyssnaTtml(file: File, track: Track, host: Host, con
   const links = validIsrc ? [{ platform: "isrc", external_id: validIsrc }] : [];
   links.push({ platform: "spotify", external_id: track.id });
   const artists = track.artistLinks?.map(({ name }) => name).filter(Boolean);
-  const response = await lyssnaAccountRequest("/v1/submissions", {
+  const response = await lyssnaAccountRequest(withActAs("/v1/submissions"), {
     ttml, links, title: track.title,
     ...(original && { apple_original: { apple_id: original.apple_id, sha256: original.sha256 } }),
     artists: artists?.length ? artists : [track.artists || track.artist].filter(Boolean),

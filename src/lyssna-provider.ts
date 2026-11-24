@@ -321,6 +321,7 @@ export async function readLyssnaLyrics(track: Track, lookupIsrc: Host["lookupIsr
     synced: value.timing_kind !== "static" && lyrics.synced,
     lines: offset ? lyrics.lines.map(timed) : lyrics.lines,
     lyssna: attribution,
+    external: apple && value.apple_id ? { source: "apple_music", id: value.apple_id } : undefined,
   };
   parsed.set(value, result);
   return result;

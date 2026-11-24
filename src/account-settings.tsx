@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ExternalLink, LogOut } from "lucide-react";
 import { accountChanged, beginLyssnaSignIn, finishLyssnaSignIn, hasLyssnaSession, lyssnaSignOut, readLyssnaProfile, type LyssnaProfile, type SignIn } from "./lyssna-account";
+import { ActAsSettings } from "./lyssna-act-as-settings";
 import { SettingRow } from "./lyssna/setting-row";
 
 export function AccountSettings({ ready }: { ready: boolean }) {
@@ -52,7 +53,7 @@ export function AccountSettings({ ready }: { ready: boolean }) {
     : profile === null ? "Signed in. Couldn’t load account details." : "Checking…")
     : pending ? "Approve on Lyssna, then paste the sign-in result here within one minute."
     : ready ? "Connect your Lyssna account to Spotify." : "Sign-in is awaiting setup on Lyssna.org.";
-  return <SettingRow label={account ? `Lyssna Account · ${account.username}` : "Lyssna account"} help={help}
+  return <><SettingRow label={account ? `Lyssna Account · ${account.username}` : "Lyssna account"} help={help}
     keywords="lyssna account profile login sign in sign out reputation tier email" stacked={!!pending}>
     {signedIn ? <div className="settings-actions lyssna-account-actions">
       {account && <a className="pill outline" href={`https://lyssna.org/u/${encodeURIComponent(account.username)}`}
@@ -82,5 +83,6 @@ export function AccountSettings({ ready }: { ready: boolean }) {
       </form> : <button type="button" className="pill outline" disabled={busy}
         onClick={() => void run(async () => setPending(await beginLyssnaSignIn()))}>Sign in</button>)}
     {error && <p className="settings-alert" role="alert">{error}</p>}
-  </SettingRow>;
+  </SettingRow>
+  {account?.role === "admin" && <ActAsSettings />}</>;
 }
