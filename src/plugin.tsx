@@ -46,7 +46,7 @@ import { lyssnaApiNotice, lyssnaInstallReady } from "./lyssna-api";
 import { accountChanged, hasLyssnaSession, readLyssnaProfile } from "./lyssna-account";
 import { markLyssnaInstrumental, revalidateLyssnaSong, resumeLyssnaRequests } from "./lyssna-provider";
 import { submitLyssnaTtml } from "./lyssna-submission";
-import { matchLocalTrackIsrc, useLocalTrackIsrc } from "./local-track-isrc";
+import { useLocalTrackIsrc } from "./local-track-isrc";
 import { useFirstUploadNotice } from "./first-upload-notice";
 import { CreatorSurface, type CreatorPlayback } from "./creator/surface";
 import { reviewTopbar } from "./creator/review-topbar";
@@ -998,8 +998,8 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
       {!showSettings && notice && <div className="lyssna-popout-error" role="status">{notice}</div>}
       {!artworkDock && playback}
     </section>}
-    {!showCreator && showTtml && <LoadTtml song={track ? track.title || "Unknown song" : undefined} unmatchedLocalSong={track?.local && !localIsrc}
-      onMatchLocalSong={track?.local ? (value) => matchLocalTrackIsrc(track, duration, value) : undefined}
+    {!showCreator && showTtml && <LoadTtml song={track ? track.title || "Unknown song" : undefined}
+      localRecording={track?.local ? { track, duration, isrc: localIsrc } : undefined}
       glass={settings.liquid_glass} style={fonts}
       reviewer={preferences.ttml_reviewer} onReviewer={(ttml_reviewer) => change({ ttml_reviewer })}
       onSubmit={async (file) => {

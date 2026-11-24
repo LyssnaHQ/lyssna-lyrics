@@ -501,7 +501,7 @@
 /* Every control shares one height, radius, fill and type size; fields and
    selects also share one width so their right edges line up. */
 .lyrics-settings .pill,
-.lyrics-settings .settings-select,
+:is(.lyrics-settings, .load-ttml-reviewer) .settings-select,
 .lyrics-settings .number-field {
   height: 32px;
   font-size: 13px;
@@ -521,18 +521,18 @@
   border-color: light-dark(#000000a6, #ffffffa6);
   background: light-dark(#00000014, #ffffff14);
 }
-.lyrics-settings .settings-select,
+:is(.lyrics-settings, .load-ttml-reviewer) .settings-select,
 .lyrics-settings .number-field {
   border: 1px solid light-dark(#0000001a, #ffffff1a);
   border-radius: 8px;
   background-color: light-dark(#00000012, #ffffff12);
 }
-.lyrics-settings .settings-select {
+:is(.lyrics-settings, .load-ttml-reviewer) .settings-select {
   width: 220px;
   min-width: 0;
   max-width: none;
 }
-.lyrics-settings .settings-select:hover {
+:is(.lyrics-settings, .load-ttml-reviewer) .settings-select:hover {
   background-color: light-dark(#0000001c, #ffffff1c);
 }
 .lyrics-settings .font-control {

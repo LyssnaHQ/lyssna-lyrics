@@ -22,7 +22,7 @@ function metadata(track: Track, duration: number) {
     comparable(name) === comparable(title) &&
     !!artists?.some(name => comparable(name) === comparable(artist)) &&
     typeof ms === "number" && Math.abs(ms - length) <= 2000;
-  return { title, artist, album, key, fits };
+  return { title, artist, album, key, length, fits };
 }
 
 type CatalogueTrack = {
@@ -37,6 +37,52 @@ async function resolveCatalogue(query: string) {
   return Array.isArray(result.tracks) ? result.tracks : [];
 }
 
+export type LocalTrackSuggestion = {
+  title: string;
+  artists: string[];
+  album?: string;
+  duration: number;
+  isrc: string;
+};
+
+export async function suggestLocalTrack(track: Track, duration: number): Promise<LocalTrackSuggestion | undefined> {
+  const details = metadata(track, duration);
+  if (!details) return;
+  const results = await resolveCatalogue(`${details.title} ${details.artist}`);
+  const tokens = (value: string) => comparable(value).match(/[\p{L}\p{N}]+/gu) ?? [];
+  const titleWords = [...new Set(tokens(details.title))];
+  const ranked = results.flatMap(item => {
+    const { title, artists, album, duration_ms: length } = item;
+    const isrcs = [...new Set(item.isrcs?.map(normalizeIsrc).filter(Boolean))];
+    const isrc = isrcs[0];
+    if (!title || !artists?.length || !length || !isrc || isrcs.length !== 1) return [];
+    const words = new Set(tokens(title));
+    const shared = titleWords.filter(word => words.has(word)).length;
+    const sameArtist = artists.some(name => comparable(name) === comparable(details.artist));
+    const sameTitle = comparable(title) === comparable(details.title);
+    if (!sameTitle && !sameArtist && !shared) return [];
+    const sameAlbum = !!details.album && albumName(album) === details.album;
+    const gap = Math.abs(length - details.length);
+    const titleOverlap = shared / Math.max(words.size, titleWords.length, 1);
+    const score = Number(sameTitle) * 4 + Number(sameArtist) * 4 + Number(sameAlbum)
+      + titleOverlap * 3 + Math.max(0, 1 - gap / 30_000);
+    return [{ suggestion: { title, artists, album, duration: length, isrc }, score, gap }];
+  });
+  return ranked.sort((left, right) => right.score - left.score || left.gap - right.gap)[0]?.suggestion;
+}
+
+function saveLocalTrackMatch(track: Track, key: string, isrc: string) {
+  localStorage.setItem(matchStorageKey(track.id), JSON.stringify({ key, isrc }));
+  window.dispatchEvent(new CustomEvent(lyricsChanged, { detail: [track.id] }));
+}
+
+export function confirmLocalTrackIsrc(track: Track, duration: number, code: string) {
+  const details = metadata(track, duration);
+  const isrc = normalizeIsrc(code);
+  if (!track.local || !details || !isrc) throw new Error("Couldn’t save this recording match.");
+  saveLocalTrackMatch(track, details.key, isrc);
+}
+
 export async function matchLocalTrackIsrc(track: Track, duration: number, value: string) {
   const details = metadata(track, duration);
   if (!track.local || !details) throw new Error("The local file needs a title, artist, and duration to verify a match.");
@@ -48,9 +94,9 @@ export async function matchLocalTrackIsrc(track: Track, duration: number, value:
   const codes = new Set(results.filter(item => details.fits(item.title, item.artists, item.duration_ms))
     .flatMap(item => (item.isrcs ?? []).map(normalizeIsrc)).filter(Boolean));
   const match = isrc ? codes.has(isrc) && isrc : codes.size === 1 && [...codes][0];
+  if (!match && isrc) return { unverifiedIsrc: isrc };
   if (!match) throw new Error("Couldn’t verify a single ISRC for this title, artist, and duration.");
-  localStorage.setItem(matchStorageKey(track.id), JSON.stringify({ key: details.key, isrc: match }));
-  window.dispatchEvent(new CustomEvent(lyricsChanged, { detail: [track.id] }));
+  saveLocalTrackMatch(track, details.key, match);
 }
 
 export function localTrackIsrc(track: Track, duration: number, host: Host) {
