@@ -1,6 +1,6 @@
 /**
- * Admins can upload as a reserved Lyssna account (one made for someone who has not signed up yet). The choice is
- * kept for a few hours, never longer, and is dropped on sign-out; the API only honours it for admins and reserved accounts.
+ * Admins can upload on behalf of another Lyssna account. The choice expires after four hours or on sign-out.
+ * The API decides whether the signed-in admin can upload on behalf of the selected account.
  */
 const key = "lyssna-lyrics.api.act-as";
 export const actAsChanged = "lyssna-lyrics:act-as";
