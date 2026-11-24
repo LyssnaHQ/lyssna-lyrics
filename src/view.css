@@ -39,6 +39,7 @@ html.lyssna-optimize-volume .main-nowPlayingBar-volumeBar .playback-progressbar-
   position: absolute;
   inset: 0;
   z-index: 10000;
+  container-name: lyssna-view;
   container-type: inline-size;
   isolation: isolate;
   overflow: hidden;
@@ -555,7 +556,7 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
 
 .lyssna-lyrics-view .lyrics-media > .cover {
   display: block;
-  width: var(--lyrics-art);
+  width: 100%;
   aspect-ratio: 1;
   object-fit: cover;
   margin-inline: auto;
@@ -2169,9 +2170,13 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   background: #282828;
   box-shadow: 0 2px 14px #0009;
 }
+.lyssna-lyrics-view .lyrics-page {
+  --draft-banner-bottom: 16px;
+}
+
 .lyssna-lyrics-view .ttml-draft-banner {
   position: absolute;
-  bottom: 16px;
+  bottom: var(--draft-banner-bottom);
   left: 50%;
   z-index: 10;
   display: flex;
@@ -2220,12 +2225,29 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   color: light-dark(#fff, #181818);
 }
 
-.lyssna-lyrics-view .toolbar-bottom > .ttml-draft-banner {
-  bottom: 64px;
+.lyssna-lyrics-view .lyrics-page.toolbar-bottom {
+  --draft-banner-bottom: 64px;
 }
 
-.lyssna-lyrics-view.immersive :is(.no-artwork, .canvas-lyrics):has(> .lyrics-fullscreen-controls) > .ttml-draft-banner {
-  bottom: calc(110px + var(--canvas-toolbar-offset, 0px));
+.lyssna-lyrics-view.immersive :is(.no-artwork, .canvas-lyrics):has(> .lyrics-fullscreen-controls) {
+  --draft-banner-bottom: calc(110px + var(--canvas-toolbar-offset, 0px));
+}
+
+.lyssna-cinema-window .lyrics-page.narrow:has(> .lyrics-fullscreen-controls) {
+  --draft-banner-bottom: 144px;
+}
+
+.lyssna-cinema-window .lyrics-page:has(> .ttml-draft-banner) .lyrics-body {
+  box-sizing: border-box;
+  padding-bottom: calc(var(--draft-banner-bottom) + 48px);
+}
+
+.lyssna-cinema-window .lyrics-page:has(> .ttml-draft-banner):is(.narrow, .no-artwork):has(> .lyrics-fullscreen-controls) .lyrics-body {
+  margin-bottom: 0;
+}
+
+.lyssna-cinema-window .lyrics-page.narrow:has(> .ttml-draft-banner) .lyrics-body {
+  padding-bottom: calc(var(--draft-banner-bottom) + 72px);
 }
 
 .lyssna-lyrics-view :is(.lyssna-account-form, .lyssna-build-key-form) input {
@@ -2560,10 +2582,6 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   max-width: calc(100% - 100px);
 }
 
-.lyssna-lyrics-view .lyrics-page.no-lyrics .lyrics-media > .cover {
-  width: 100%;
-}
-
 .lyssna-lyrics-view.immersive .lyrics-media > .lyrics-toolbar {
   flex-wrap: nowrap;
   justify-content: flex-start;
@@ -2573,7 +2591,7 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   height: 60%;
 }
 
-@container (width < 650px) {
+@container lyssna-view (width < 650px) {
   .lyssna-lyrics-view .lyrics-page {
     grid-template-columns: 1fr;
     grid-template-rows: auto minmax(0, 1fr);
@@ -2602,16 +2620,12 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
     margin: 0 2px;
   }
 
-  .lyssna-lyrics-view .lyrics-media > .cover {
-    width: min(100%, 24vh);
-  }
-
   .lyssna-lyrics-view .lyric-scroll {
     --lead-top: 15vh;
   }
 }
 
-@container (width < 470px) {
+@container lyssna-view (width < 470px) {
   .lyssna-lyrics-view .lyrics-toolbar-actions {
     gap: 1px;
   }
