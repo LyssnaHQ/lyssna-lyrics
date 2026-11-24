@@ -1,6 +1,6 @@
 import type { Host } from "../host";
 import { spotifySongUri } from "../spotify-song";
-import { VISUALISER_BARS } from "../lyssna/visualiser-frame";
+import { spectrumBars, VISUALISER_BARS } from "../lyssna/visualiser-frame";
 import { spectrumFrequency } from "./audio";
 import { spotifyWindowMarker } from "./spotify-window";
 import { createCapturedReplay, isRecordingComplete, recordedCoverage, savedAudioCleared, type ReplayPacket } from "./captured-replay";
@@ -338,14 +338,7 @@ export function createSpotifyCapture(host: Host, view: Window & typeof globalThi
       const writeFrame = (uri: string, duration: number, frame: number, levels: Uint16Array, before?: Uint16Array, weight = 1) => {
         if (frame < 0 || frame * LIVE_SAMPLE_MS >= duration) return;
         if (!before) {
-          // The existing worklet bands are logarithmic, ordered high to low.
-          for (let bar = 0; bar < spectrum.length; bar++) {
-            const start = LIVE_ROWS - Math.floor((bar + 1) * LIVE_ROWS / spectrum.length);
-            const end = LIVE_ROWS - Math.floor(bar * LIVE_ROWS / spectrum.length);
-            let peak = 0;
-            for (let row = start; row < end; row++) peak = Math.max(peak, levels[row]);
-            spectrum[bar] = Math.round(peak * 255 / 5400);
-          }
+          spectrumBars(spectrum, levels, 1, 0);
           spectrumTrack = uri;
           spectrumAt = view.performance.now();
         }

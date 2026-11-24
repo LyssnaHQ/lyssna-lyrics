@@ -3,6 +3,18 @@ import type { Body, Rect } from "./space-gravity";
 export const VISUALISER_BARS = 48;
 export const VISUALISER_BAR_FILL = 0.62;
 
+export function spectrumBars(bars: Uint8Array, levels: Uint16Array, columns: number, column: number) {
+  const rows = levels.length / columns;
+  for (let bar = 0; bar < bars.length; bar++) {
+    const first = rows - Math.floor((bar + 1) * rows / bars.length);
+    const last = rows - Math.floor(bar * rows / bars.length);
+    let peak = 0;
+    for (let row = first; row < last; row++) peak = Math.max(peak, levels[row * columns + column]);
+    bars[bar] = Math.min(255, Math.round(peak * 255 / 5400));
+  }
+  return bars;
+}
+
 export type VisualiserFrame = {
   canvas: HTMLCanvasElement;
   heights: Float32Array;

@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { CanvasInfo, Host } from "./host";
 import { LyricsVisualiser } from "./lyssna/lyrics-visualiser";
-import { VISUALISER_BARS, type VisualiserFrame } from "./lyssna/visualiser-frame";
+import { spectrumBars, VISUALISER_BARS, type VisualiserFrame } from "./lyssna/visualiser-frame";
 import { playCanvasMedia } from "./canvas-media";
 import type { SpotifyCapture } from "./creator/spotify-capture";
+import { LIVE_TILE_MS, liveSpectrumCleared, readLiveTiles, type LiveTile } from "./creator/spectrum-storage";
+import { spotifySongUri } from "./spotify-song";
 
 export function useCanvas(host: Host, trackId: string | undefined, enabled: boolean) {
   const [canvas, setCanvas] = useState<{ trackId: string; info: CanvasInfo }>();
@@ -100,23 +102,55 @@ export function SpotifyVisualiser({ host, trackId, playing, opacity, capture, mo
   motion: RefObject<VisualiserFrame | null>; read?: () => number;
 }) {
   const [analysis, setAnalysis] = useState<Awaited<ReturnType<Host["analysis"]>>>();
+  const saved = useRef<{ index: number; tile?: LiveTile }>(undefined);
   useEffect(() => {
     let active = true;
     void host.analysis(trackId)?.then((result) => { if (active) setAnalysis(result); }).catch(() => {});
     return () => { active = false; };
   }, [host, trackId]);
+  useEffect(() => {
+    const clear = (event: Event) => {
+      const uri = (event as CustomEvent<string | undefined>).detail;
+      if (!uri || uri === spotifySongUri(trackId)) saved.current = undefined;
+    };
+    window.addEventListener(liveSpectrumCleared, clear);
+    return () => {
+      saved.current = undefined;
+      window.removeEventListener(liveSpectrumCleared, clear);
+    };
+  }, [trackId]);
 
   const spectrum = useMemo(() => {
     const bars = new Uint8Array(VISUALISER_BARS);
     return () => {
-      const time = (read?.() ?? host.position()) / 1000;
-      const beat = preceding(analysis?.beats ?? [], time);
-      const beatLevel = beat ? Math.max(0, 1 - (time - beat.start) / 0.14) : 0;
+      const position = read?.() ?? host.position();
+      if (!Number.isFinite(position) || position < 0) return;
       const captured = capture.spectrum(trackId);
       if (captured) return captured;
+      const time = position / 1000;
+      const beat = preceding(analysis?.beats ?? [], time);
+      const beatLevel = beat ? Math.max(0, 1 - (time - beat.start) / 0.14) : 0;
       const segment = preceding(analysis?.segments ?? [], time);
-      if (!segment?.pitches?.length) return;
-      const level = Math.max(0, Math.min(1, (segment.loudness_max + 32) / 32));
+      if (!segment?.pitches?.length) {
+        const index = Math.floor(position / LIVE_TILE_MS);
+        if (saved.current?.index !== index) {
+          const request = { index, tile: undefined as LiveTile | undefined };
+          saved.current = request;
+          void readLiveTiles(spotifySongUri(trackId), index, index).then(([tile]) => { request.tile = tile; }).catch(() => {});
+        }
+        const tile = saved.current.tile;
+        if (tile) {
+          const columns = tile.filled.length;
+          const column = Math.floor((position % LIVE_TILE_MS) * columns / LIVE_TILE_MS);
+          if (tile.filled[column]) return spectrumBars(bars, tile.levels, columns, column);
+        }
+        if (!beatLevel) return;
+        for (let bar = 0; bar < bars.length; bar++) {
+          bars[bar] = Math.round(beatLevel * 180 * (1 - bar / bars.length));
+        }
+        return bars;
+      }
+      const level = Math.max(0, Math.min(1, ((segment.loudness_max ?? -32) + 32) / 32));
       // Spotify's analysis is pitch-class data. Interpolate it for display
       // without presenting it as an actual frequency spectrum.
       for (let bar = 0; bar < bars.length; bar++) {
