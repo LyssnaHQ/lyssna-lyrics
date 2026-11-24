@@ -171,10 +171,10 @@ function coolDown(path: string) {
 export function resumeLyssnaRequests() { cooling.clear(); }
 
 function validAnswer(value: LyricsView) {
-  if (typeof value.ttml !== "string" || !Number.isFinite(value.offset_ms)) return false;
-  if (value.source === "apple_music") return /^\d{1,15}$/.test(value.apple_id ?? "");
   // a recording a reviewer marked instrumental counts as synced and has no song
   if (value.instrumental === true && !value.song) return value.source === "lyssna" && !!normalizeIsrc(value.isrc);
+  if (typeof value.ttml !== "string" || !Number.isFinite(value.offset_ms)) return false;
+  if (value.source === "apple_music") return /^\d{1,15}$/.test(value.apple_id ?? "");
   return uuid.test(value.song?.id ?? "");
 }
 
@@ -184,7 +184,9 @@ async function lookup(path: string, current: () => boolean, revalidate: boolean)
   if (!revalidate && cached && Date.now() < cached.freshUntil) return cached.value;
   if (Date.now() < (cooling.get(path) ?? 0)) return cached?.value ?? undefined;
   try {
-    const response = await lyssnaRequest(path, { etag: cached?.etag, revalidate: revalidate && !cached?.etag });
+    // Edge caches can keep a previous miss even after Apple has indexed the song.
+    const requestPath = revalidate && cached?.value === null ? `${path}&fresh=${Date.now()}` : path;
+    const response = await lyssnaRequest(requestPath, { etag: cached?.etag, revalidate: revalidate && !cached?.etag });
     if (!current()) return;
     if (!response || response.status === 429 || response.status >= 500) {
       coolDown(path);
@@ -286,7 +288,14 @@ export async function readLyssnaLyrics(track: Track, lookupIsrc: Host["lookupIsr
   if (!track.local && !/^[A-Za-z0-9]{22}$/.test(track.id)) return;
   const isrc = await trackCode(track, lookupIsrc);
   if (!isrc && (track.local || source === "apple_music")) return null;
-  const value = await read(track.id, isrc, isrc ? source : "lyssna");
+  let value = await read(track.id, isrc, isrc ? source : "lyssna");
+  // Apple-only and combined requests have independent negative caches.
+  // Try the other route after a miss, and accept only Apple from that retry.
+  if (value === null && isrc && source !== "lyssna") {
+    const alternate = await read(track.id, isrc, source === "apple_music" ? "lyssna,apple_music" : "apple_music");
+    if (alternate?.source === "apple_music") value = alternate;
+    else if (alternate === undefined) return;
+  }
   if (!value) return value;
   if ((source === "apple_music" && value.source !== "apple_music") ||
       (source === "lyssna" && value.source === "apple_music")) return;
