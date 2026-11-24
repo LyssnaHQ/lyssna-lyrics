@@ -55,7 +55,7 @@ function creatorTrack(track: SpotifyTrack, duration: number): Track {
 async function seedTimings(host: Host, lyrics: Lyrics, duration: number, trackId?: string) {
   if (!lyrics.synced || !needsWordSync(lyrics, duration)) return lyrics;
   const analysis = trackId ? await within(Promise.resolve().then(() => host.analysis(trackId)), 1500) : undefined;
-  return displayLyrics(lyrics, true, false, duration, analysis ? {
+  return displayLyrics(lyrics, true, duration, analysis ? {
     track: analysis.track, segments: analysis.segments ?? [], beats: analysis.beats ?? [],
   } : undefined) ?? lyrics;
 }
@@ -456,7 +456,11 @@ export function CreatorSurface({ host, view: owner, settings, close, reviewSelec
   }, [audioForSong, returnToSpotify]);
 
   const state: CreatorState = {
-    settings: { lyric_offset_ms: settings.lyric_offset_ms + (track ? settings.lyric_song_offsets[track.id] ?? 0 : 0), reduce_motion: settings.reduce_motion },
+    settings: {
+      lyric_offset_ms: settings.lyric_offset_ms + (track ? settings.lyric_song_offsets[track.id] ?? 0 : 0),
+      reduce_motion: settings.reduce_motion,
+      romaji_as_written: settings.romaji_as_written,
+    },
     playback: { item: current, is_playing: isPlaying, volume: volume * 100 },
     playback_rate: audioForSong ? rate : 1, speedEnabled: !!audioForSong,
     lyrics: seed?.uri === current?.uri ? seed?.lyrics : undefined, lyrics_uri: seed?.uri,

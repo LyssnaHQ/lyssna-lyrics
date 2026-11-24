@@ -1,5 +1,4 @@
 import { ConvertLineLyricsToExperimentalWordSync, ConvertStaticLyricsToExperimentalWordSync, ExtractBracketBackgroundVocals, RepairAppleMusicWordSync, type AudioAnalysisData } from "./experimental-word-sync";
-import { romanizedLyrics, withReadings, type RomanizeOptions } from "./lyssna/romanization";
 import type { Line, Lyrics, Word } from "./lyssna/types";
 
 type Syllable = { Text: string; StartTime: number; EndTime: number; IsPartOfWord: boolean; TransliteratedText?: string; estimated?: boolean };
@@ -57,8 +56,7 @@ function normalizedOutput(result: TimingResult, lyrics: Lyrics) {
   ]).filter((line) => line.text) ?? [];
 }
 
-export function displayLyrics(lyrics: Lyrics | undefined, wordSync: boolean, romanized: false | RomanizeOptions,
-  duration: number, analysis?: AudioAnalysisData) {
+export function displayLyrics(lyrics: Lyrics | undefined, wordSync: boolean, duration: number, analysis?: AudioAnalysisData) {
   if (!lyrics) return;
   const estimate = wordSync && needsWordSync(lyrics, duration);
   const apple = lyrics.source.startsWith("Apple Music");
@@ -77,7 +75,5 @@ export function displayLyrics(lyrics: Lyrics | undefined, wordSync: boolean, rom
           lyrics.lines.reduce((sum, line) => sum + line.words.length, 0) };
     }
   }
-  if (!romanized) return lyrics;
-  const read = romanizedLyrics(lyrics, romanized);
-  return romanized.below ? withReadings(lyrics, read) : read;
+  return lyrics;
 }

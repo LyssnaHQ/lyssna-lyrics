@@ -117,7 +117,7 @@ import {
   unitVoice,
   unknownSections,
 } from "./ttml-creator-model";
-import { romanizeCreatorLyrics } from "./romanize";
+import { romanizeLyrics } from "../lyssna/romanization";
 import { MetadataDialog } from "./ttml-metadata";
 import { CreatorPlay, CreatorSpectrogramToggle, CreatorSpeed, TtmlBar } from "./ttml-bar";
 import type { CreatorPlaybarSlots } from "./playbar";
@@ -894,9 +894,19 @@ export function TtmlCreator({
   const [syncRoman, setSyncRoman] = useState(
     () => readStorage(SYNC_ROMAN_KEY) === "1",
   );
-  const autoRomanize = () => {
+  const autoRomanize = async () => {
+    const source = current.current.uri;
     const request = romanizeRequest(lines);
-    const result = romanizeCreatorLyrics(request);
+    setRomanNote("Romanizing…");
+    const result = await romanizeLyrics(request, state.settings.romaji_as_written).catch(() => null);
+    if (source !== current.current.uri) {
+      setRomanNote("");
+      return;
+    }
+    if (!result) {
+      setRomanNote("Couldn’t romanize these lyrics. Try again.");
+      return;
+    }
     const found = result.lines.some((line, lineIndex) =>
       line.words.some(
         (word, index) =>

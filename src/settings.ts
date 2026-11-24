@@ -25,6 +25,7 @@ export const defaults = {
   glass_seek: true,
   romanized: false,
   romanization_below: true,
+  romaji_as_written: true,
   lyrics_translations: false,
   ttml_creator: false,
   auto_record: false,

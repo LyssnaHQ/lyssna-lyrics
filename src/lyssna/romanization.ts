@@ -1,28 +1,152 @@
+import { useEffect, useState } from "react";
 import { transliterate } from "transliteration";
-import type { Lyrics } from "./types";
+import asset from "./romanization-asset.json";
+import workerSource from "./romanization-worker.js?raw";
+import type { Lyrics, Word } from "./types";
 
-export type RomanizeOptions = { below?: boolean };
+type RomanizedWord = Pick<Word, "text" | "start_ms" | "end_ms"> & { from: number | null; estimated: boolean };
+type RomanizedLine = { text: string; words: RomanizedWord[] } | null;
+type Request = {
+  lines: { text: string; romanization: string; words: Pick<Word, "text" | "start_ms" | "end_ms">[] }[];
+  options: { romaji_as_written: boolean };
+};
 
-const nonLatin = /[\p{Script=Cyrillic}\p{Script=Greek}\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\p{Script=Arabic}\p{Script=Hebrew}\p{Script=Devanagari}\p{Script=Thai}]/u;
-const readText = (text: string) => nonLatin.test(text) ? transliterate(text).trim() || text : text;
+const needsReading = /(?!\p{Script=Latin})\p{L}/u;
+const pending = new Map<number, (lines: RomanizedLine[] | null) => void>();
+let worker: Worker | undefined;
+let timeout: ReturnType<typeof setTimeout> | undefined;
+let requestId = 0;
 
-export function romanizedLyrics(lyrics: Lyrics, _options: RomanizeOptions) {
-  if (!lyrics.lines.some((line) => line.romanization || nonLatin.test(line.text) || line.words.some((word) => word.romanization))) return lyrics;
-  return {
-    ...lyrics,
-    lines: lyrics.lines.map((line) => {
-      const timed = line.words.some((word) => word.romanization);
-      const words = timed ? line.words.map((word) => ({ ...word, text: word.romanization || word.text })) : [];
-      const text = line.romanization || (timed ? words.map((word) => word.text).join("") : readText(line.text));
-      if (text === line.text && !timed) return line;
-      return text ? { ...line, text, words } : line;
-    }),
-  };
+function closeWorker() {
+  worker?.terminate();
+  worker = undefined;
+  clearTimeout(timeout);
+  for (const complete of pending.values()) complete(null);
+  pending.clear();
 }
 
-export function withReadings(lyrics: Lyrics, read: Lyrics): Lyrics {
-  return read === lyrics ? lyrics : {
-    ...lyrics,
-    lines: lyrics.lines.map((line, index) => read.lines[index].text === line.text ? line : { ...line, reading: read.lines[index] }),
-  };
+function requestReadings(request: Request): Promise<RomanizedLine[] | null> {
+  return new Promise(resolve => {
+    try {
+      if (!worker) {
+        const url = URL.createObjectURL(new Blob([workerSource], { type: "text/javascript" }));
+        try { worker = new Worker(url); }
+        finally { URL.revokeObjectURL(url); }
+        worker.onmessage = ({ data }: MessageEvent<{ id: number; lines: RomanizedLine[] | null }>) => {
+          if (!data.lines) return closeWorker();
+          const complete = pending.get(data.id);
+          pending.delete(data.id);
+          complete?.(data.lines);
+          if (!pending.size) {
+            clearTimeout(timeout);
+            timeout = setTimeout(closeWorker, 120_000);
+          }
+        };
+        worker.onerror = closeWorker;
+        worker.onmessageerror = closeWorker;
+      }
+      const id = ++requestId;
+      pending.set(id, resolve);
+      clearTimeout(timeout);
+      timeout = setTimeout(closeWorker, 90_000);
+      worker.postMessage({ id, request, asset });
+    } catch {
+      closeWorker();
+      resolve(null);
+    }
+  });
+}
+
+function automaticFallback(text: string) {
+  if (!needsReading.test(text)) return text;
+  return text.replace(/\S(?:[\s\S]*\S)?/u, content => transliterate(content).trim() || content);
+}
+
+function suppliedWord(word: Word, text: string) {
+  const reading = word.romanization;
+  return reading?.trim() ? reading : text;
+}
+
+export async function romanizeLyrics(lyrics: Lyrics, romajiAsWritten = true): Promise<Lyrics> {
+  if (!lyrics.lines.some(line => line.romanization || needsReading.test(line.text) ||
+      line.words.some(word => word.romanization || needsReading.test(word.text)))) return lyrics;
+
+  const readings = await requestReadings({
+    lines: lyrics.lines.map(line => ({
+      text: line.text,
+      romanization: line.words.some(word => word.romanization?.trim()) ? "" : line.romanization,
+      words: line.words.map(({ text, start_ms, end_ms }) => ({ text, start_ms, end_ms })),
+    })),
+    options: { romaji_as_written: romajiAsWritten },
+  });
+  let changed = false;
+  let estimated = !!lyrics.estimated_words;
+  const lines = lyrics.lines.map((line, index) => {
+    const converted = readings?.[index];
+    const authoredWords = line.words.some(word => word.romanization?.trim());
+    if (!converted && !authoredWords && readings) return line;
+
+    const convertedWords = converted?.words.map(({ text, start_ms, end_ms, from, estimated: guess }): Word => {
+      const source = from === null ? undefined : line.words[from];
+      estimated ||= guess;
+      return {
+        ...source,
+        text: source ? suppliedWord(source, text) : text,
+        start_ms,
+        end_ms,
+        ...(guess ? { estimated: true } : {}),
+      };
+    });
+    const words = convertedWords ?? (
+      !readings && line.romanization && !authoredWords ? [] :
+      line.words.map(word => ({ ...word, text: suppliedWord(word, readings ? word.text : automaticFallback(word.text)) }))
+    );
+    const text = words.length ? words.map(word => word.text).join("") :
+      converted?.text ?? (line.romanization || automaticFallback(line.text));
+    if (!text.trim() || (text === line.text && words.length === line.words.length &&
+        words.every((word, i) => word.text === line.words[i].text))) return line;
+    changed = true;
+    return { ...line, text, words, romanization: "" };
+  });
+  return changed ? { ...lyrics, lines, estimated_words: estimated } : lyrics;
+}
+
+const cache = [new WeakMap<Lyrics, Promise<Lyrics>>(), new WeakMap<Lyrics, Promise<Lyrics>>()];
+const readings = new WeakMap<Lyrics, Lyrics>();
+const letters = (text: string) => text.normalize("NFKD").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+
+function withReadings(lyrics: Lyrics, romanized: Lyrics) {
+  if (lyrics === romanized) return lyrics;
+  let result = readings.get(romanized);
+  if (!result) {
+    result = {
+      ...lyrics,
+      lines: lyrics.lines.map((line, index) => {
+        const reading = romanized.lines[index];
+        return reading && letters(line.text) !== letters(reading.text) ? { ...line, reading } : line;
+      }),
+    };
+    readings.set(romanized, result);
+  }
+  return result;
+}
+
+export function useRomanizedLyrics(lyrics: Lyrics | undefined, enabled: boolean, below: boolean, romajiAsWritten: boolean) {
+  const [ready, setReady] = useState<{ source: Lyrics; romajiAsWritten: boolean; result: Lyrics }>();
+  useEffect(() => {
+    if (!enabled || !lyrics) return;
+    let active = true;
+    const slot = cache[romajiAsWritten ? 0 : 1];
+    let result = slot.get(lyrics);
+    if (!result) {
+      result = romanizeLyrics(lyrics, romajiAsWritten);
+      slot.set(lyrics, result);
+    }
+    void result.then(result => {
+      if (active) setReady({ source: lyrics, romajiAsWritten, result });
+    }).catch(() => slot.delete(lyrics));
+    return () => { active = false; };
+  }, [lyrics, enabled, romajiAsWritten]);
+  if (!enabled || !lyrics || ready?.source !== lyrics || ready.romajiAsWritten !== romajiAsWritten) return lyrics;
+  return below ? withReadings(lyrics, ready.result) : ready.result;
 }

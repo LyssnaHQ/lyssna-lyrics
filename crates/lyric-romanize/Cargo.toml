@@ -1,0 +1,22 @@
+[package]
+name = "lyric-romanize"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+deunicode = "1.6.2"
+lindera = { version = "7.0.0", features = ["embed-ipadic"] }
+pinyin-converter = "0.1.0"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+unicode-normalization = "0.1"
+unicode-script = "0.5"
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true

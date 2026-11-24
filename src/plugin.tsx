@@ -11,6 +11,7 @@ import { SpaceGravityLyrics } from "./lyssna/space-gravity-lyrics";
 import type { VisualiserFrame } from "./lyssna/visualiser-frame";
 import { CompactIcon, FullScreenIcon, HideArtworkIcon, RetryIcon, SwapSidesIcon, TranslateIcon, UploadIcon, WordSyncIcon } from "./lyssna/toolbar-icons";
 import type { Lyrics } from "./lyssna/types";
+import { useRomanizedLyrics } from "./lyssna/romanization";
 import { setWindowActivity, setWindowPosition } from "./lyssna/window-activity";
 import { filterWords } from "./lyssna/word-filter";
 import { displayLyrics, needsWordSync } from "./word-sync";
@@ -229,9 +230,11 @@ function TrackLyrics({ track, host, playing, settings, compact = false, view = w
     });
     return () => { active = false; };
   }, [host, track.id, analyse]);
-  const rendered = useMemo(() => filterWords(displayLyrics(lyrics, estimateTiming,
-    settings.romanized && { below: settings.romanization_below && !gravity }, duration, analysis), settings.lyrics_word_filter),
-  [lyrics, duration, estimateTiming, settings.romanized, settings.romanization_below, gravity, settings.lyrics_word_filter, analysis]);
+  const timedLyrics = useMemo(() => displayLyrics(lyrics, estimateTiming, duration, analysis),
+    [lyrics, estimateTiming, duration, analysis]);
+  const romanized = useRomanizedLyrics(timedLyrics, settings.romanized,
+    settings.romanization_below && !gravity, settings.romaji_as_written);
+  const rendered = filterWords(romanized, settings.lyrics_word_filter);
   const defaultFont = useDefaultLyricsFont(selectedFont(settings, "lyric_font"), rendered, view.document);
   const fontClass = defaultFont ? "lyssna-default-lyrics-font" : undefined;
   const upcoming = fullView && settings.lyrics_up_next && duration > 0 && position >= duration - 30_000 ? host.upcoming() : undefined;
