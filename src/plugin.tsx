@@ -859,12 +859,9 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
     return () => view.document.removeEventListener("keydown", keyboard);
   });
 
-  const coverAmbience = artwork && (background === "animated" || background === "static");
-  const localArtwork = artwork?.startsWith("spotify:local:");
-  const hasAmbience = coverAmbience && !localArtwork;
+  const hasAmbience = artwork && (background === "animated" || background === "static");
   const banner = background === "artist" && artistHeader?.uri === artistUri ? artistHeader?.url : undefined;
-  const backgroundImage = background === "cover" || background === "artist" || (coverAmbience && localArtwork)
-    ? banner || artwork : undefined;
+  const backgroundImage = background === "cover" || background === "artist" ? banner || artwork : undefined;
   const compact = !coverOnly && (narrow || settings.lyrics_compact);
   const className = `lyrics-page ${narrating ? "dj-narration" : ""} ${canvas ? "canvas-lyrics" : ""} ${compact ? "narrow" : ""}
     ${hideArtwork ? "no-artwork" : ""} ${settings.lyrics_artwork_right && !coverOnly ? "artwork-right" : ""} ${coverOnly ? "no-lyrics" : ""}

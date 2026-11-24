@@ -133,12 +133,18 @@ type Source = "lyssna" | "apple_music" | "lyssna,apple_music";
 export const lyssnaAppleSource = "Apple Music (via Lyssna)";
 const communitySources = ["lyssna", "lyssna,apple_music"] as const;
 const lyricsPath = (trackId: string, isrc: string | undefined, source: Source) =>
-  `/v1/lyrics/spotify/${trackId}?${isrc ? `isrc=${isrc}&` : ""}source=${source}`;
+  trackId.startsWith("spotify:local:") && isrc
+    ? `/v1/lyrics/isrc/${isrc}?source=${source}`
+    : `/v1/lyrics/spotify/${trackId}?${isrc ? `isrc=${isrc}&` : ""}source=${source}`;
 
 export function revalidateLyssnaSong(trackId: string, isrc?: string, approved?: ApprovedUpload) {
   const normalizedIsrc = normalizeIsrc(isrc) ?? trackIsrc.get(trackId);
+  const local = trackId.startsWith("spotify:local:");
+  if (local && !normalizedIsrc) return;
   // The address a lookup used depends on whether the ISRC was known then, so both are refreshed.
-  const paths = communitySources.flatMap((source) => normalizedIsrc
+  const paths = communitySources.flatMap((source) => local
+    ? [lyricsPath(trackId, normalizedIsrc, source)]
+    : normalizedIsrc
     ? [lyricsPath(trackId, normalizedIsrc, source), lyricsPath(trackId, undefined, source)]
     : [lyricsPath(trackId, undefined, source)]);
   if (normalizedIsrc) paths.push(lyricsPath(trackId, normalizedIsrc, "apple_music"));
@@ -266,7 +272,8 @@ function read(trackId: string, isrc: string | undefined, source: Source) {
 }
 
 async function trackCode(track: Track, lookupIsrc: Host["lookupIsrc"]) {
-  const isrc = normalizeIsrc(track.isrc) ?? trackIsrc.get(track.id) ?? normalizeIsrc(await lookupIsrc(track.id).catch(() => undefined));
+  const isrc = normalizeIsrc(track.isrc) ?? (track.local ? undefined : trackIsrc.get(track.id))
+    ?? normalizeIsrc(await lookupIsrc(track.id).catch(() => undefined));
   if (isrc) {
     trackIsrc.set(track.id, isrc);
     if (trackIsrc.size > cacheLimit) trackIsrc.delete(trackIsrc.keys().next().value!);
@@ -276,9 +283,9 @@ async function trackCode(track: Track, lookupIsrc: Host["lookupIsrc"]) {
 
 // A definitive miss is null. An unavailable lookup is undefined.
 export async function readLyssnaLyrics(track: Track, lookupIsrc: Host["lookupIsrc"], source: Source = "lyssna"): Promise<Lyrics | null | undefined> {
-  if (!/^[A-Za-z0-9]{22}$/.test(track.id)) return;
+  if (!track.local && !/^[A-Za-z0-9]{22}$/.test(track.id)) return;
   const isrc = await trackCode(track, lookupIsrc);
-  if (!isrc && source === "apple_music") return null;
+  if (!isrc && (track.local || source === "apple_music")) return null;
   const value = await read(track.id, isrc, isrc ? source : "lyssna");
   if (!value) return value;
   if ((source === "apple_music" && value.source !== "apple_music") ||

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { drawLocalArtwork, isLocalArtwork } from "./local-artwork";
 
 type Rgb = [number, number, number];
 
@@ -81,6 +82,18 @@ export function useArtworkColor(url?: string) {
     if (known) return setColor(known);
     setColor(undefined);
     let live = true;
+    function publish(pixels: Uint8ClampedArray) {
+      const rgb = headerColor(pixels);
+      const value = `rgb(${rgb.join(" ")})`;
+      cache.set(url!, value);
+      if (live) setColor(value);
+    }
+    if (isLocalArtwork(url)) {
+      void drawLocalArtwork(url, document, 24, true).then(drawn => {
+        if (drawn) publish(drawn.context.getImageData(0, 0, 24, 24).data);
+      }).catch(() => {});
+      return () => { live = false; };
+    }
     const image = new Image();
     image.crossOrigin = "anonymous";
     image.decoding = "async";
@@ -91,10 +104,7 @@ export function useArtworkColor(url?: string) {
         const context = canvas.getContext("2d", { willReadFrequently: true });
         if (!context) return;
         context.drawImage(image, 0, 0, 24, 24);
-        const rgb = headerColor(context.getImageData(0, 0, 24, 24).data);
-        const value = `rgb(${rgb.join(" ")})`;
-        cache.set(url, value);
-        if (live) setColor(value);
+        publish(context.getImageData(0, 0, 24, 24).data);
       } catch {
         // Artwork without CORS headers cannot be sampled; keep the default.
       }

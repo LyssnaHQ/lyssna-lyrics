@@ -5,6 +5,7 @@ import { readLrcLib, readLrcRed, readNetease } from "./remote-lyrics";
 import type { Settings } from "./settings";
 import { readSpicyLyrics, spicyAppleSource, spicyCommunitySource } from "./spicy";
 import { clearLyssnaCache, lyssnaAppleSource, readLyssnaLyrics, revalidateLyssnaSong } from "./lyssna-provider";
+import { localTrackIsrc } from "./local-track-isrc";
 
 export const lyricSources = {
   local: { name: "Imported TTML", help: "Lyrics you loaded for the playing song." },
@@ -42,7 +43,7 @@ export function refreshLyrics(track?: Track, action: Settings["lyrics_cache_acti
     if (action === "song") cache.delete(trackId);
     else for (const entry of cache.get(trackId)?.values() ?? []) entry.expires = 0;
   }
-  if (track && !track.local) revalidateLyssnaSong(track.id, track.isrc);
+  if (track) revalidateLyssnaSong(track.id, track.isrc);
   window.dispatchEvent(trackId && action !== "all" ? new CustomEvent(lyricsChanged, { detail: [trackId] }) : new Event(lyricsChanged));
 }
 
@@ -72,11 +73,13 @@ function hasWordTiming(lyrics: Lyrics) {
 }
 
 export async function readLyrics(track: Track, duration: number, sources: LyricSource[], host: Host) {
-  if (track.local) sources = sources.filter(id => id === "local" || id === "lrclib" || id === "netease" || id === "lrcred");
+  if (track.local) sources = sources.filter(id => id !== "spicy");
+  let isrcLookup: Promise<string | undefined> | undefined;
+  const lookupIsrc = track.local ? () => isrcLookup ??= localTrackIsrc(track, duration, host) : host.lookupIsrc;
   const appleEnabled = sources.includes("apple");
   const spicyEnabled = sources.includes("spicy");
   let appleLookup: Promise<Lyrics | null | undefined> | undefined;
-  const readApple = () => appleLookup ??= readLyssnaLyrics(track, host.lookupIsrc, "apple_music").catch(() => undefined);
+  const readApple = () => appleLookup ??= readLyssnaLyrics(track, lookupIsrc, "apple_music").catch(() => undefined);
   const readSpicy = () => readCached(track.id, "spicy", () => readSpicyLyrics(track.id), 60_000, 5 * 60_000);
 
   async function preferWordTiming(apple: Lyrics) {
@@ -92,7 +95,7 @@ export async function readLyrics(track: Track, duration: number, sources: LyricS
       if (lyrics) return lyrics;
     } else if (id === "lyssna") {
       const combined = sources[index + 1] === "apple";
-      const lyrics = await readLyssnaLyrics(track, host.lookupIsrc, combined ? "lyssna,apple_music" : "lyssna").catch(() => undefined);
+      const lyrics = await readLyssnaLyrics(track, lookupIsrc, combined ? "lyssna,apple_music" : "lyssna").catch(() => undefined);
       if (lyrics) return lyrics.source === lyssnaAppleSource ? preferWordTiming(lyrics) : lyrics;
       if (combined) index++;
     } else if (id === "apple") {
@@ -113,7 +116,10 @@ export async function readLyrics(track: Track, duration: number, sources: LyricS
       if (preferred) return preferred;
       if (preferred === undefined) return lyrics;
     } else {
-      const lyrics = await readCached(track.id, id, () => remoteReaders[id](track, duration, AbortSignal.timeout(7_000)), 30_000);
+      const sourceTrack = id === "lrcred" && track.local ? { ...track, isrc: await lookupIsrc(track.id, track.isrc) } : track;
+      if (id === "lrcred" && !sourceTrack.isrc) continue;
+      const key = id === "lrcred" ? `lrcred:${sourceTrack.isrc}` : id;
+      const lyrics = await readCached(track.id, key, () => remoteReaders[id](sourceTrack, duration, AbortSignal.timeout(7_000)), 30_000);
       if (lyrics) return lyrics;
     }
   }

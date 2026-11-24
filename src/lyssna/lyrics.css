@@ -39,6 +39,15 @@
   background-position: center;
   /* Kawarp blurs a small source texture; avoid full-panel CSS filters. */
 }
+.ambient-local-cover {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: blur(42px) brightness(calc(0.5 * var(--ambience-brightness, 1)));
+  transform: scale(1.12);
+}
 .ambient-shade {
   position: absolute;
   inset: 0;
