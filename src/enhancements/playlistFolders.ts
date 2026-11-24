@@ -1,4 +1,5 @@
 import { Spicetify } from "./compat";
+import { normalizeText } from "./dom";
 import {
   setCachedPlaylistFolders,
   type PlaylistFolderEntry,
@@ -95,6 +96,34 @@ function collectDirectPlaylistCandidates(
   }
 
   return target;
+}
+
+let playlistNames: { expires: number; value: Promise<Map<string, string | null>> } | undefined;
+
+export async function lookupPlaylistUriByName(name: string) {
+  if (!playlistNames || playlistNames.expires <= Date.now()) {
+    playlistNames = {
+      expires: Date.now() + 30_000,
+      value: (async () => {
+        const names = new Map<string, string | null>();
+        const root = Spicetify.Platform?.RootlistAPI;
+        const data = await (root?.getContents?.() ?? root?.getRootContents?.());
+        function visit(value: unknown) {
+          if (!value || typeof value !== "object") return;
+          const node = value as Record<string, unknown>;
+          for (const { name, uri } of collectDirectPlaylistCandidates(node)) {
+            if (!/^spotify:playlist:[A-Za-z0-9]+$/.test(uri)) continue;
+            const label = normalizeText(name);
+            names.set(label, names.has(label) && names.get(label) !== uri ? null : uri);
+          }
+          for (const child of collectChildren(node)) visit(child);
+        }
+        visit(data);
+        return names;
+      })().catch(() => new Map<string, string | null>()),
+    };
+  }
+  return (await playlistNames.value).get(normalizeText(name)) ?? null;
 }
 
 async function filterAddablePlaylists(candidates: PlaylistCandidate[]) {
@@ -286,6 +315,7 @@ function scanPlaylistFoldersFromSidebar(): PlaylistFolderEntry[] {
 }
 
 export async function refreshPlaylistFolderCache() {
+  playlistNames = undefined;
   const apiFolders = await scanPlaylistFoldersFromApi();
   const folders = apiFolders.length > 0 ? apiFolders : scanPlaylistFoldersFromSidebar();
   setCachedPlaylistFolders(folders);

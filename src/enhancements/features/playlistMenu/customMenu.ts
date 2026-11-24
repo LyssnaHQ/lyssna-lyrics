@@ -1,5 +1,6 @@
 import { Spicetify } from "../../compat";
 import { getSetting, type PlaylistFolderEntry } from "../../config";
+import { encoreMenu, encoreMenuRow, useVisibleEncoreMenuOrder } from "../../dom";
 import {
   ACTION_TRIGGER_DEBOUNCE_MS,
   CUSTOM_CONTAINER_CLASS,
@@ -87,7 +88,9 @@ function buildMenuNodes(state: CustomMenuState) {
   const dividerTemplate = getFirstDividerTemplate(state.sourceContainer);
   const fallbackTemplate = newPlaylistRow?.cloneNode(true) as HTMLElement | undefined;
   fallbackTemplate
-    ?.querySelector(":scope > [role='menuitem'] > div:has([data-encore-id='icon'])")
+    ?.querySelector(fallbackTemplate.matches(encoreMenuRow)
+      ? ":scope > div > [data-encore-id='icon']"
+      : ":scope > [role='menuitem'] > div:has([data-encore-id='icon'])")
     ?.remove();
   const playlists = state.nativeFoldersLoaded
     ? state.folderSources.flatMap((source) =>
@@ -193,18 +196,23 @@ function insertPlaylistImage(row: HTMLElement, source: string) {
   if (!row.isConnected || row.querySelector(".spotify-plus-playlist-menu-image")) return;
 
   const button = getMenuItemButton(row);
-  const label = button?.querySelector<HTMLElement>(":scope > div");
-  if (!button || !label || button.querySelector(".spotify-plus-playlist-menu-image")) return;
+  if (!button) return;
+  const label = [...button.children].find(child =>
+    child.querySelector(".main-contextMenu-menuItemLabel, [data-encore-id='text'], [data-encore-id='type']"));
+  const encore = button.matches(encoreMenuRow);
+  const leading = encore ? label?.previousElementSibling : null;
 
   const imageSlot = document.createElement("div");
-  imageSlot.className = "djsDgqLgMea1jkvv2gAS spotify-plus-playlist-menu-image-slot";
+  imageSlot.className = "spotify-plus-playlist-menu-image-slot";
+  if (!encore) imageSlot.classList.add("djsDgqLgMea1jkvv2gAS");
   const image = document.createElement("img");
   image.className = "spotify-plus-playlist-menu-image";
   image.src = source;
   image.alt = "";
   image.setAttribute("aria-hidden", "true");
   imageSlot.appendChild(image);
-  button.insertBefore(imageSlot, label);
+  if (leading) leading.appendChild(imageSlot);
+  else button.insertBefore(imageSlot, label ?? button.firstChild);
 }
 
 export function addPlaylistImage(row: HTMLElement, uri: string | null) {
@@ -321,7 +329,7 @@ async function triggerNativeAction(state: CustomMenuState, node: ActionMenuNode)
   }
 
   const playlistApi = Spicetify.Platform?.PlaylistAPI;
-  if (node.playlistUri && playlistApi?.add) {
+  if (!state.rootMenu.matches(encoreMenu) && node.playlistUri && playlistApi?.add) {
     const selectedTrackUris = getSelectedTrackUrisFromContextMenu(state.rootMenu);
     if (selectedTrackUris.length > 0) {
       try {
@@ -390,6 +398,7 @@ async function triggerNativeAction(state: CustomMenuState, node: ActionMenuNode)
 
 function renderCustomMenu(state: CustomMenuState) {
   clearCustomContainer(state);
+  const encore = state.rootMenu.matches(encoreMenu);
 
   for (const node of state.nodes) {
     if (node.kind === "divider") {
@@ -413,11 +422,24 @@ function renderCustomMenu(state: CustomMenuState) {
         }
 
         button.dataset.spotifyPlusTriggeredAt = String(now);
-        closeContextMenu(state.rootMenu);
-        void triggerNativeAction(state, node);
+        if (encore) {
+          state.rootMenu.setAttribute("data-lyssna-routing-playlist", "");
+          void triggerNativeAction(state, node).finally(() => {
+            if (customMenuStates.get(state.rootMenu) !== state) return;
+            state.rootMenu.removeAttribute("data-lyssna-routing-playlist");
+          });
+        } else {
+          closeContextMenu(state.rootMenu);
+          void triggerNativeAction(state, node);
+        }
       };
 
-      button.addEventListener("pointerdown", triggerAction);
+      if (encore) {
+        button.addEventListener("click", triggerAction);
+        button.addEventListener("keydown", event => {
+          if (event.key === "Enter" || event.key === " ") triggerAction(event);
+        });
+      } else button.addEventListener("pointerdown", triggerAction);
     }
 
     state.customContainer.appendChild(row);
@@ -432,6 +454,11 @@ function renderCustomMenu(state: CustomMenuState) {
       emptyButton.setAttribute("aria-disabled", "true");
     }
     state.customContainer.appendChild(emptyRow);
+  }
+  if (encore) {
+    state.customContainer.style.setProperty("--context-menu-submenu-length", String(state.customContainer.childElementCount));
+    state.customContainer.style.setProperty("--context-menu-submenu-divider-count",
+      String(state.customContainer.querySelectorAll(":scope > [role='separator']").length));
   }
 }
 
@@ -501,6 +528,9 @@ export function releaseCustomMenuState(rootMenu: HTMLElement) {
   state.rootMenu.classList.remove(CUSTOM_ROOT_CLASS);
   state.sourceContainer.classList.remove(CUSTOM_SOURCE_CLASS);
   state.customContainer.remove();
+  state.cleanupSearch?.();
+  rootMenu.removeAttribute("data-lyssna-native-playlists");
+  rootMenu.removeAttribute("data-lyssna-routing-playlist");
   delete state.rootMenu.dataset.spotifyPlusCustomFolders;
 
   customMenuStates.delete(rootMenu);
@@ -539,6 +569,8 @@ export function ensureCustomMenuState(rootMenu: HTMLElement, folders: PlaylistFo
   }
 
   const sourceContainer = getMenuContentContainer(rootMenu);
+  const encore = rootMenu.matches(encoreMenu);
+  if (encore && sourceContainer === rootMenu) return null;
   const folderSources = folders.map((folder) => getFolderSource(folder));
 
   if (folderSources.length === 0) {
@@ -569,6 +601,18 @@ export function ensureCustomMenuState(rootMenu: HTMLElement, folders: PlaylistFo
   customMenuStates.set(rootMenu, state);
 
   renderCustomMenu(state);
-  void loadNativePlaylistsForState(state);
+  if (encore) {
+    useVisibleEncoreMenuOrder(rootMenu, () => rootMenu.classList.contains(CUSTOM_ROOT_CLASS) &&
+      !rootMenu.matches("[data-lyssna-native-playlists], [data-lyssna-routing-playlist]"));
+    const search = rootMenu.closest("[data-encore-id='popover']")?.querySelector<HTMLInputElement>(
+      "[data-context-menu-submenu-header] input[role='searchbox']"
+    );
+    if (search) {
+      const syncSearch = () => rootMenu.toggleAttribute("data-lyssna-native-playlists", !!search.value.trim());
+      search.addEventListener("input", syncSearch);
+      state.cleanupSearch = () => search.removeEventListener("input", syncSearch);
+      syncSearch();
+    }
+  } else void loadNativePlaylistsForState(state);
   return state;
 }

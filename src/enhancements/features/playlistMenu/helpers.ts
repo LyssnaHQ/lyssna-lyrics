@@ -1,4 +1,4 @@
-import { normalizeText } from "../../dom";
+import { encoreMenu, encoreMenuRow, getMenuRowAction, menuActionLabel, normalizeText } from "../../dom";
 
 export const CUSTOM_ROOT_CLASS = "spotify-plus-custom-playlist-root";
 export const CUSTOM_SOURCE_CLASS = "spotify-plus-custom-playlist-source";
@@ -58,6 +58,7 @@ export type CustomMenuState = {
   nativePlaylistsByFolder: Map<string, NativePlaylistEntry[]>;
   nativeFoldersLoaded: boolean;
   nativeLoadPromise: Promise<void> | null;
+  cleanupSearch?: () => void;
 };
 
 export type PlaylistLookupDebugDetails = {
@@ -118,18 +119,24 @@ export function getMenuDepth(menu: HTMLElement) {
 }
 
 export function getMenuContentContainer(menu: HTMLElement) {
+  if (menu.matches(encoreMenu)) {
+    return menu.querySelector<HTMLElement>(":scope > [data-encore-id='menuSection']") ?? menu;
+  }
   return menu.querySelector<HTMLElement>(":scope > div") ?? menu;
 }
 
 export function getMenuItemButton(item: HTMLElement) {
   return (
-    item.querySelector<HTMLElement>(":scope > .main-contextMenu-menuItemButton") ??
-    item.querySelector<HTMLElement>(":scope > [role='menuitem']") ??
+    getMenuRowAction(item) ??
     item.querySelector<HTMLElement>(".main-contextMenu-menuItemButton, [role='menuitem']")
   );
 }
 
 export function getMenuItems(scope: ParentNode) {
+  if (scope instanceof HTMLElement &&
+      scope.matches(`${encoreMenu}, [data-encore-id='menuSection']`)) {
+    return getMenuChildren(getMenuContentContainer(scope)).filter(row => row.matches(encoreMenuRow));
+  }
   return Array.from(
     scope.querySelectorAll<HTMLElement>(".main-contextMenu-menuItem, [role='presentation']")
   ).filter((item) => getMenuItemButton(item) !== null);
@@ -142,11 +149,7 @@ export function getMenuChildren(target: HTMLElement) {
 }
 
 export function getItemLabel(item: HTMLElement) {
-  const button = getMenuItemButton(item) ?? item;
-  const labelElement = button.querySelector<HTMLElement>(
-    ".main-contextMenu-menuItemLabel, [data-encore-id='text'], [data-encore-id='type'], .TypeElement-type-mesto"
-  );
-  return normalizeText(labelElement?.textContent);
+  return menuActionLabel(getMenuItemButton(item) ?? item);
 }
 
 export function isSearchRow(item: HTMLElement) {
@@ -159,6 +162,7 @@ export function isSearchRow(item: HTMLElement) {
 
 export function isDivider(item: HTMLElement) {
   return (
+    item.matches("[role='separator'], [data-encore-id='menuDivider']") ||
     item.classList.contains("main-contextMenu-dividerAfter") ||
     item.classList.contains("main-contextMenu-dividerBefore") ||
     (item.tagName === "DIV" && getMenuItemButton(item) === null)
@@ -226,15 +230,14 @@ export function scrubClonedNode(node: HTMLElement | null | undefined) {
     nestedMenu.remove();
   }
 
-  const attributedNodes = [
-    node,
-    ...node.querySelectorAll<HTMLElement>("[aria-describedby], [data-context-menu-open], [id]"),
-  ];
+  const attributedNodes = [node, ...node.querySelectorAll<HTMLElement>("*")];
 
   for (const element of attributedNodes) {
     element.removeAttribute("aria-describedby");
     element.removeAttribute("data-context-menu-open");
     element.removeAttribute("id");
+    for (const attribute of ["data-key", "data-collection", "data-react-aria-pressable", "data-focused",
+      "data-focus-visible", "data-hovered", "data-pressed", "aria-controls"]) element.removeAttribute(attribute);
   }
 
   const button = getMenuItemButton(node);

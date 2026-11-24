@@ -8,7 +8,7 @@ html.ll-enhancements-hideMiniplayerButton :is(button[data-testid="pip-toggle-but
 }
 
 .main-contextMenu-menu.spotify-plus-custom-playlist-root > .spotify-plus-custom-playlist-source,
-[role="menu"].spotify-plus-custom-playlist-root > .spotify-plus-custom-playlist-source {
+[role="menu"]:not([data-encore-id="menu"]).spotify-plus-custom-playlist-root > .spotify-plus-custom-playlist-source {
   position: absolute !important;
   inset: 0 !important;
   width: 0 !important;
@@ -23,7 +23,7 @@ html.ll-enhancements-hideMiniplayerButton :is(button[data-testid="pip-toggle-but
 }
 
 .main-contextMenu-menu.spotify-plus-custom-playlist-root > .spotify-plus-custom-playlist-source *,
-[role="menu"].spotify-plus-custom-playlist-root > .spotify-plus-custom-playlist-source * {
+[role="menu"]:not([data-encore-id="menu"]).spotify-plus-custom-playlist-root > .spotify-plus-custom-playlist-source * {
   pointer-events: none !important;
 }
 
@@ -32,8 +32,25 @@ html.ll-enhancements-hideMiniplayerButton :is(button[data-testid="pip-toggle-but
   position: relative !important;
 }
 
-[role="menu"].spotify-plus-custom-playlist-root > :not(.spotify-plus-custom-playlist-container) {
+[role="menu"]:not([data-encore-id="menu"]).spotify-plus-custom-playlist-root > :not(.spotify-plus-custom-playlist-container),
+[data-encore-id="menu"].spotify-plus-custom-playlist-root:not([data-lyssna-native-playlists], [data-lyssna-routing-playlist]) > .spotify-plus-custom-playlist-source,
+[data-encore-id="menu"].spotify-plus-custom-playlist-root:is([data-lyssna-native-playlists], [data-lyssna-routing-playlist]) > .spotify-plus-custom-playlist-container {
   display: none !important;
+}
+
+[data-encore-id="menuRow"] > div:has(> .spotify-plus-playlist-menu-image-slot) {
+  display: flex !important;
+  align-items: center;
+  margin-inline-end: 8px;
+}
+
+[data-encore-id="menuRow"]:has(> svg[class$="menu-row__submenu-icon"]) > div svg:has(> path[d="M14 10 8 4l-6 6z"]) {
+  display: none;
+}
+
+[data-encore-id="menu"] > [data-lyssna-share-divider] {
+  border-block-start: 1px solid var(--essential-subdued, #535353);
+  margin-block: 4px;
 }
 
 .spotify-plus-playlist-menu-image {

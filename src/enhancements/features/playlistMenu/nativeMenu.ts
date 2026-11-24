@@ -1,5 +1,5 @@
 import { Spicetify } from "../../compat";
-import { normalizeText } from "../../dom";
+import { encoreMenuRow, getEncoreSubmenu, normalizeText, openEncoreSubmenu } from "../../dom";
 import {
   ACTION_MATCH_MAX_ATTEMPTS,
   ACTION_MATCH_RETRY_DELAY_MS,
@@ -164,26 +164,27 @@ export async function getPlaylistTrackUriSet(playlistUri: string) {
   return pending;
 }
 
-function findPlaylistUriInValue(value: unknown): string | null {
+function findPlaylistUriInValue(value: unknown, seen = new Set<object>()): string | null {
   if (typeof value === "string" && value.includes("spotify:playlist:")) {
     const match = value.match(/spotify:playlist:[A-Za-z0-9]+/);
     return match?.[0] ?? null;
   }
 
-  if (!value || typeof value !== "object") {
+  if (!value || typeof value !== "object" || seen.has(value)) {
     return null;
   }
+  seen.add(value);
 
   if (Array.isArray(value)) {
     for (const item of value) {
-      const uri = findPlaylistUriInValue(item);
+      const uri = findPlaylistUriInValue(item, seen);
       if (uri) return uri;
     }
     return null;
   }
 
   for (const nestedValue of Object.values(value as Record<string, unknown>)) {
-    const uri = findPlaylistUriInValue(nestedValue);
+    const uri = findPlaylistUriInValue(nestedValue, seen);
     if (uri) return uri;
   }
 
@@ -267,6 +268,12 @@ export function getNestedPopup(parentItem: HTMLElement | null | undefined) {
     return null;
   }
 
+  if (parentItem.matches(encoreMenuRow)) {
+    const popupMenu = getEncoreSubmenu(parentItem);
+    const popupRoot = popupMenu?.closest<HTMLElement>("[data-trigger='ContextMenuSubmenu'], [data-encore-id='popover']");
+    return popupMenu && popupRoot ? { popupMenu, popupRoot } : null;
+  }
+
   const popupMenu = Array.from(
     parentItem.querySelectorAll<HTMLElement>(".main-contextMenu-menu, [role='menu']")
   ).find((menu) => Number(menu.getAttribute("data-depth") ?? "0") >= 2);
@@ -319,12 +326,17 @@ export async function ensureNestedPopupReady(parentItem: HTMLElement, button: HT
     return existingPopup;
   }
 
+  const encore = button.matches(encoreMenuRow);
   for (let attempt = 0; attempt <= FOLDER_OPEN_MAX_ATTEMPTS; attempt += 1) {
     if (!isConnectedElement(parentItem) || !isConnectedElement(button)) {
       return null;
     }
 
-    dispatchFolderOpenEvents(parentItem, button, attempt);
+    if (encore) {
+      if (attempt === 0) openEncoreSubmenu(button);
+    } else {
+      dispatchFolderOpenEvents(parentItem, button, attempt);
+    }
 
     const popup = getNestedPopup(parentItem);
     if (popup) {

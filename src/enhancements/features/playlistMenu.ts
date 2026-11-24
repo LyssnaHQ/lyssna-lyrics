@@ -4,8 +4,9 @@ import {
   getSettings,
   type PlaylistFolderEntry,
 } from "../config";
-import { isElementVisible } from "../dom";
+import { encoreMenu, getEncoreSubmenuTrigger, isElementVisible } from "../dom";
 import { observeMenus } from "../observeMenus";
+import { lookupPlaylistUriByName } from "../playlistFolders";
 import {
   addPlaylistImage,
   cleanupDetachedStates,
@@ -56,10 +57,22 @@ function isAddToPlaylistRootMenu(menu: HTMLElement) {
     return false;
   }
 
-  const hostItem = menu.closest<HTMLElement>(".main-contextMenu-menuItem, [role='presentation']");
+  const hostItem = getEncoreSubmenuTrigger(menu) ??
+    menu.closest<HTMLElement>(".main-contextMenu-menuItem, [role='presentation']");
   if (!hostItem) return false;
 
   return normalizePlaylistMatchText(getItemLabel(hostItem)) === "add to playlist";
+}
+
+function isEncorePlaylistSubmenu(menu: HTMLElement) {
+  let trigger = getEncoreSubmenuTrigger(menu);
+  while (trigger) {
+    if (normalizePlaylistMatchText(getItemLabel(trigger)) === "add to playlist") return true;
+    const parent = trigger.closest<HTMLElement>(encoreMenu);
+    if (!parent || parent === menu) break;
+    trigger = getEncoreSubmenuTrigger(parent);
+  }
+  return false;
 }
 
 function isTrackedRootMenu(menu: HTMLElement) {
@@ -75,7 +88,7 @@ function syncNativePlaylistCoverArt(rootMenus: HTMLElement[]) {
   if (!getSettings().showPlaylistMenuCoverArt) return;
 
   for (const menu of rootMenus) {
-    if (menu.classList.contains(CUSTOM_ROOT_CLASS)) continue;
+    if (menu.classList.contains(CUSTOM_ROOT_CLASS) && !menu.hasAttribute("data-lyssna-native-playlists")) continue;
 
     for (const row of getMenuChildren(getMenuContentContainer(menu))) {
       const button = getMenuItemButton(row);
@@ -83,18 +96,28 @@ function syncNativePlaylistCoverArt(rootMenus: HTMLElement[]) {
       if (normalizePlaylistMatchText(getItemLabel(row)) === "new playlist") continue;
       if (button.getAttribute("aria-haspopup") === "menu") continue;
 
-      addPlaylistImage(row, getPlaylistUriFromRow(row));
+      const uri = getPlaylistUriFromRow(row);
+      if (uri) addPlaylistImage(row, uri);
+      else if (menu.matches(encoreMenu)) {
+        const label = getItemLabel(row);
+        const pending = lookupPlaylistUriByName(label);
+        void pending.then(found => {
+          if (row.isConnected && getItemLabel(row) === label) addPlaylistImage(row, found);
+        });
+      }
     }
   }
 }
 
 function applyPlaylistMenuCleanup() {
   const folders = getSelectedFolders();
-  const rootMenus = Array.from(
+  const menus = Array.from(
     document.querySelectorAll<HTMLElement>(".main-contextMenu-menu, [role='menu']")
-  ).filter((menu) => isTrackedRootMenu(menu));
+  );
+  const rootMenus = menus.filter(isTrackedRootMenu);
 
-  syncNativePlaylistCoverArt(rootMenus);
+  syncNativePlaylistCoverArt(menus.filter(menu =>
+    rootMenus.includes(menu) || (isElementVisible(menu) && isEncorePlaylistSubmenu(menu))));
 
   if (folders.length === 0 || rootMenus.length === 0) {
     if (hasAppliedCleanup || customMenuStates.size > 0) {
@@ -106,6 +129,10 @@ function applyPlaylistMenuCleanup() {
   cleanupDetachedStates(rootMenus);
 
   for (const menu of rootMenus) {
+    if (menu.matches(encoreMenu) && !folders.some(folder => folder.playlists.length)) {
+      releaseCustomMenuState(menu);
+      continue;
+    }
     ensureCustomMenuState(menu, folders);
   }
 

@@ -1,7 +1,10 @@
 import type { Host } from "../../host";
 import { Spicetify } from "../compat";
 import { getSetting, SETTINGS_CHANGED_EVENT } from "../config";
-import { isElementVisible, normalizeText, toggleElementDisplay } from "../dom";
+import {
+  encoreMenu, encoreMenuRow, getEncoreSubmenu, getMenuRowAction, isElementVisible,
+  menuActionLabel, normalizeText, openEncoreSubmenu, rootMenuSelector, toggleElementDisplay, useVisibleEncoreMenuOrder,
+} from "../dom";
 import { observeMenus } from "../observeMenus";
 import { createContextMenuItem, createContextMenuSubMenu, resetMenuContext } from "./contextMenu";
 
@@ -11,6 +14,7 @@ const copyLabel = "Copy\u2063";
 const nativeShareAttribute = "data-lyssna-native-share";
 const dividerAttribute = "data-lyssna-share-divider";
 const boundEmbedButtons = new WeakSet<HTMLElement>();
+const openingEmbed = new WeakSet<HTMLElement>();
 const shareTypes = new Set(["track", "album", "artist", "playlist", "show", "episode", "audiobook", "user", "concert", "venue"]);
 const noEmbed = new Set(["user", "concert", "venue"]);
 
@@ -55,24 +59,17 @@ async function copyText(value: string, notice: string) {
   }
 }
 
-function menuButton(item: HTMLElement) {
-  return item.querySelector<HTMLElement>(":scope > :is(button, a, [role='menuitem'])");
-}
-
 function itemLabel(item: HTMLElement) {
-  const button = menuButton(item);
-  const label = button?.querySelector(".main-contextMenu-menuItemLabel, [data-encore-id='text'], [data-encore-id='type']");
-  return normalizeText(label?.textContent || button?.textContent);
+  return menuActionLabel(getMenuRowAction(item));
 }
-
-const rootSelector = "[role='menu'][data-depth='0']";
 
 function rootMenu() {
-  return Array.from(document.querySelectorAll<HTMLElement>(rootSelector)).find(isElementVisible);
+  return Array.from(document.querySelectorAll<HTMLElement>(rootMenuSelector))
+    .find(menu => isElementVisible(menu) && nativeShareItem(menuItems(menu)));
 }
 
 function menuItems(menu: HTMLElement) {
-  return Array.from(menu.children).filter((node): node is HTMLElement => node instanceof HTMLElement && !!menuButton(node));
+  return Array.from(menu.children).filter((node): node is HTMLElement => node instanceof HTMLElement && !!getMenuRowAction(node));
 }
 
 function nativeShareItem(items: HTMLElement[]) {
@@ -81,11 +78,13 @@ function nativeShareItem(items: HTMLElement[]) {
 }
 
 async function openEmbed(native?: HTMLElement) {
-  const button = native && menuButton(native);
+  const button = native && getMenuRowAction(native);
   if (native && button) {
-    const submenu = button.hasAttribute("aria-expanded");
+    const encore = button.matches(encoreMenuRow);
+    const submenu = button.hasAttribute("aria-expanded") || button.getAttribute("aria-haspopup") === "menu";
     if (submenu && button.getAttribute("aria-expanded") !== "true") {
-      button.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+      if (encore) openEncoreSubmenu(button, false);
+      else button.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
     }
     if (!submenu) button.click();
     const labels = [
@@ -94,15 +93,17 @@ async function openEmbed(native?: HTMLElement) {
       Spicetify.Locale?.get?.("share-dialog.destination.embed-code"),
     ].map(normalizeText).filter(Boolean);
     const matches = (element: HTMLElement) => {
-      const label = normalizeText(element.getAttribute("aria-label") ?? element.textContent);
+      const label = normalizeText(element.getAttribute("aria-label")) || menuActionLabel(element);
       return labels.some((text) => label === text || label.startsWith(text + " "));
     };
     const deadline = Date.now() + 2000;
     let clicked = !submenu;
-    while (Date.now() < deadline) {
-      const embed = Array.from(native.querySelectorAll<HTMLElement>("[role='menu'] :is(button, a)")).find(matches)
+    while (button.isConnected && Date.now() < deadline) {
+      const embed = encore && submenu
+        ? [...(getEncoreSubmenu(button)?.querySelectorAll<HTMLElement>(encoreMenuRow) ?? [])].find(matches)
+        : Array.from(native.querySelectorAll<HTMLElement>("[role='menu'] :is(button, a)")).find(matches)
         ?? Array.from(document.querySelectorAll<HTMLElement>(
-          ":is([role='dialog'], [role='menu'][data-depth]:not([data-depth='0'])) :is(button, a)"
+          `:is([role='dialog'], [role='menu'][data-depth]:not([data-depth='0'])) :is(button, a, ${encoreMenuRow})`
         )).find((element) => isElementVisible(element) && matches(element));
       if (embed) {
         embed.click();
@@ -110,7 +111,10 @@ async function openEmbed(native?: HTMLElement) {
       }
       if (!clicked && Date.now() >= deadline - 1400) {
         clicked = true;
-        if (button.isConnected && button.getAttribute("aria-expanded") !== "true") button.click();
+        if (button.getAttribute("aria-expanded") !== "true") {
+          if (encore) openEncoreSubmenu(button, false);
+          else button.click();
+        }
       }
       await new Promise((resolve) => window.setTimeout(resolve, 50));
     }
@@ -119,34 +123,41 @@ async function openEmbed(native?: HTMLElement) {
 }
 
 function forwardEmbed(event: Event) {
-  const menu = (event.currentTarget as HTMLElement).closest<HTMLElement>(rootSelector);
+  const button = event.currentTarget as HTMLElement;
+  const menu = button.closest<HTMLElement>(rootMenuSelector);
   const native = menu && nativeShareItem(menuItems(menu));
   if (!native) return;
   // Keep the menu mounted until Spotify has rendered its native Embed action.
   event.preventDefault();
   event.stopImmediatePropagation();
-  void openEmbed(native);
+  if (openingEmbed.has(button)) return;
+  openingEmbed.add(button);
+  void openEmbed(native).finally(() => openingEmbed.delete(button));
 }
 
-function syncMenus() {
-  const menu = rootMenu();
-  if (!menu) return;
+function syncMenu(menu: HTMLElement) {
   const items = menuItems(menu);
   const copy = items.find((item) => itemLabel(item) === normalizeText(copyLabel));
   const native = nativeShareItem(items);
   const clean = items.find((item) => itemLabel(item) === normalizeText(cleanLabel));
   const embed = items.find((item) => itemLabel(item) === normalizeText(embedLabel));
+  if (!copy && !native && !clean && !embed) return;
   const refined = getSetting("restoreOldShareMenu") && !!clean;
-  const embedButton = embed && menuButton(embed);
+  const embedButton = embed && getMenuRowAction(embed);
   if (embedButton && !boundEmbedButtons.has(embedButton)) {
     embedButton.addEventListener("click", forwardEmbed, true);
+    if (embedButton.matches(encoreMenuRow)) {
+      embedButton.addEventListener("keydown", event => {
+        if (event.key === "Enter" || event.key === " ") forwardEmbed(event);
+      }, true);
+    }
     boundEmbedButtons.add(embedButton);
   }
 
   let first = native ?? null;
   for (const item of [refined ? embed : undefined, refined ? clean : undefined, copy]) {
     if (!item) continue;
-    const button = menuButton(item);
+    const button = getMenuRowAction(item);
     if (!button?.hasAttribute("role")) button?.setAttribute("role", "menuitem");
     if (item.nextElementSibling !== first) menu.insertBefore(item, first);
     first = item;
@@ -165,6 +176,27 @@ function syncMenus() {
   if (native) {
     native.toggleAttribute(nativeShareAttribute, refined);
     toggleElementDisplay(native, refined);
+  }
+  if (refined || copy) useVisibleEncoreMenuOrder(menu);
+  if (menu.matches(encoreMenu) && native && !menu.dataset.lyssnaShareShortcut) {
+    menu.dataset.lyssnaShareShortcut = "true";
+    menu.addEventListener("keydown", event => {
+      const hidden = menu.querySelector<HTMLElement>(`:scope > [${nativeShareAttribute}]`);
+      if (hidden?.getAttribute("aria-keyshortcuts")?.toLowerCase() !== event.key.toLowerCase() ||
+          event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      const clean = menuItems(menu).find(item => itemLabel(item) === normalizeText(cleanLabel));
+      const action = clean && getMenuRowAction(clean);
+      if (!action) return;
+      event.preventDefault();
+      event.stopPropagation();
+      action.click();
+    }, true);
+  }
+}
+
+function syncMenus() {
+  for (const menu of document.querySelectorAll<HTMLElement>(rootMenuSelector)) {
+    if (isElementVisible(menu)) syncMenu(menu);
   }
 }
 
