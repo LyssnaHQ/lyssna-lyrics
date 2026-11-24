@@ -3,7 +3,7 @@ import { hasSavedLocalTrackMatches, savedLocalTrackIsrc } from "../../local-trac
 import { lyricsChanged } from "../../local-lyrics";
 import { localSongTags, spotifySongKey } from "../../spotify-song";
 import { normalizeIsrc } from "../../spotify-track-metadata";
-import { unavailableTrack } from "./unavailableTrackMenu";
+import { readTrackRow, spotifyProps, trackRowSelector } from "./unavailableTrackMenu";
 
 type PlaylistTrack = {
   uri?: string;
@@ -27,6 +27,7 @@ type PlaySource = {
 };
 type PlayOptions = { skipTo?: StartAt; shuffle?: boolean; repeat?: number } & Record<string, unknown>;
 type Player = {
+  _state?: { item?: StartAt } | null;
   play(source: PlaySource, origin: Record<string, unknown>, options?: PlayOptions): Promise<unknown>;
 };
 type PlaylistAPI = {
@@ -39,7 +40,21 @@ const playlistUri = /^spotify:playlist:[A-Za-z0-9]{22}$/;
 const catalogueUri = /^spotify:track:[A-Za-z0-9]{22}$/;
 const matchedRow = "[data-lyssna-local-match]";
 const playButton = "[data-lyssna-play-local]";
-const rowSelector = ".main-trackList-trackListRow, [data-testid='tracklist-row']";
+const activeRow = "[data-lyssna-playlist-current]";
+const playlistButton = '[data-testid="action-bar-row"] button[data-encore-id="buttonPrimary"]';
+const playlistButtonState = "data-lyssna-playlist-playback";
+const tracksetPrefix = "spotify:trackset:Lyssna ";
+
+function playlistQuery(row?: Element) {
+  if (!row) return {};
+  for (const { sortState } of spotifyProps(row, 42)) {
+    const sort = sortState as { column?: string; order?: number | string } | undefined;
+    if (sort?.column && [1, 2, "ASC", "DESC"].includes(sort.order ?? "")) {
+      return { sort: { field: sort.column, order: sort.order === 2 || sort.order === "DESC" ? "DESC" : "ASC" } };
+    }
+  }
+  return {};
+}
 
 function matchedFiles(tracks: PlaylistTrack[]) {
   const files = new Map<string, PlaybackTrack[]>();
@@ -75,6 +90,7 @@ export function startLocalPlaylistPlayback(host: Host) {
   let active = true;
   let scanFrame = 0;
   let matchRevision = 0;
+  let lastPlayback = "";
   const handlers = new AbortController();
 
   async function prepare(uri: string, query: Record<string, unknown>): Promise<Playlist> {
@@ -140,7 +156,7 @@ export function startLocalPlaylistPlayback(host: Host) {
     const repeat = { off: 0, context: 1, track: 2 }[host.repeat()];
     return nativePlay.call(receiver, {
       // A playlist URI can reload Spotify's original tracks and drop local substitutions.
-      uri: `spotify:trackset:Lyssna ${uri.split(":")[2]}`,
+      uri: `${tracksetPrefix}${uri.split(":")[2]}`,
       pages: [{ items: playback.items }],
     }, origin, { ...options, skipTo: playback.skipTo, shuffle: options.shuffle ?? host.shuffle(), repeat: options.repeat ?? repeat });
   }
@@ -171,8 +187,58 @@ export function startLocalPlaylistPlayback(host: Host) {
     if (id) return `spotify:playlist:${id}`;
   }
   function rowTarget(element: Element, context: string) {
-    const target = unavailableTrack(element);
-    if (target && !target.restricted && (!target.contextUri || target.contextUri === context)) return target;
+    const target = readTrackRow(element);
+    if (target?.unavailable && !target.restricted && (!target.contextUri || target.contextUri === context)) return target;
+  }
+  const labels = new Map<HTMLButtonElement, { original: string | null; written?: string }>();
+  function clearActivePlaylist(buttonToKeep?: HTMLButtonElement) {
+    for (const [button, label] of labels) {
+      if (button === buttonToKeep) continue;
+      button.removeAttribute(playlistButtonState);
+      if (button.getAttribute("aria-label") === label.written) {
+        if (label.original === null) button.removeAttribute("aria-label");
+        else button.setAttribute("aria-label", label.original);
+      }
+      labels.delete(button);
+    }
+  }
+
+  function syncActivePlaylist(uri?: string, data?: Playlist) {
+    const adapted = !!uri && host.playbackContextUri() === `${tracksetPrefix}${uri.split(":")[2]}`;
+    const playing = adapted && host.playing();
+    const button = adapted ? host.mainView()?.querySelector<HTMLButtonElement>(playlistButton) : null;
+    const props = button && Array.from(spotifyProps(button)).find(props => props.uri === uri);
+    clearActivePlaylist(button && props ? button : undefined);
+    if (button && props) {
+      const currentLabel = button.getAttribute("aria-label");
+      const labelsBefore = labels.get(button);
+      const savedLabel = labelsBefore?.written === currentLabel ? labelsBefore! : { original: currentLabel };
+      labels.set(button, savedLabel);
+      const state = playing ? "playing" : "paused";
+      if (button.getAttribute(playlistButtonState) !== state) button.setAttribute(playlistButtonState, state);
+      const label = playing ? props.ariaPauseLabel : props.ariaPlayLabel;
+      if (typeof label === "string" && currentLabel !== label) {
+        button.setAttribute("aria-label", label);
+        savedLabel.written = label;
+      }
+    }
+
+    const current = adapted ? player!._state?.item : undefined;
+    const original = current?.uid && data?.tracks.find(track => track.uid === current.uid);
+    const uriInPlaylist = original ? original.uri : current?.uri;
+    const matchingRows = uriInPlaylist && Array.from(document.querySelectorAll(trackRowSelector))
+      .map(readTrackRow).filter(row => row?.uri === uriInPlaylist && (!row.contextUri || row.contextUri === uri));
+    const selected = matchingRows ? matchingRows.find(row => {
+      const source = row?.index === undefined ? undefined : data?.tracks[row.index];
+      return source && source.uid === current?.uid && source.uri === uriInPlaylist;
+    }) ?? (matchingRows.length === 1 ? matchingRows[0] : undefined) : undefined;
+    for (const row of document.querySelectorAll(activeRow)) {
+      if (row !== selected?.row) row.removeAttribute("data-lyssna-playlist-current");
+    }
+    const state = playing ? "playing" : "paused";
+    if (selected && selected.row.getAttribute("data-lyssna-playlist-current") !== state) {
+      selected.row.setAttribute("data-lyssna-playlist-current", state);
+    }
   }
   let shown: { uri: string; data: Playlist } | undefined;
   function clearMatchedRows() {
@@ -188,9 +254,10 @@ export function startLocalPlaylistPlayback(host: Host) {
       shown = undefined;
       clearMatchedRows();
     }
+    syncActivePlaylist(uri, shown?.data);
     if (!uri || !hasSavedLocalTrackMatches()) return;
     const revision = matchRevision;
-    const rows = Array.from(document.querySelectorAll(rowSelector));
+    const rows = Array.from(document.querySelectorAll(trackRowSelector));
     let hasUnavailableRows = false;
     for (const row of rows) {
       const target = rowTarget(row, uri);
@@ -200,11 +267,13 @@ export function startLocalPlaylistPlayback(host: Host) {
         row.querySelector(playButton)?.remove();
       }
     }
-    if (!hasUnavailableRows) return;
-    const data = await readPlaylist(uri).catch(() => undefined);
+    const adapted = host.playbackContextUri() === `${tracksetPrefix}${uri.split(":")[2]}`;
+    if (!hasUnavailableRows && (!adapted || shown)) return;
+    const data = await readPlaylist(uri, playlistQuery(rows[0])).catch(() => undefined);
     if (!active || !data || visiblePlaylist() !== uri || matchRevision !== revision) return;
     shown = { uri, data };
-    for (const row of document.querySelectorAll(rowSelector)) {
+    syncActivePlaylist(uri, data);
+    for (const row of document.querySelectorAll(trackRowSelector)) {
       const target = rowTarget(row, uri);
       const button = row.querySelector<HTMLButtonElement>(playButton);
       if (!target || !data.replacements.has(target.uri)) {
@@ -225,7 +294,7 @@ export function startLocalPlaylistPlayback(host: Host) {
     }
   }
   function scheduleScan() {
-    if (scanFrame || (!shown && !visiblePlaylist())) return;
+    if (scanFrame || (!shown && !labels.size && !visiblePlaylist())) return;
     scanFrame = window.requestAnimationFrame(() => {
       scanFrame = 0;
       void scan();
@@ -234,34 +303,44 @@ export function startLocalPlaylistPlayback(host: Host) {
 
   function activate(event: MouseEvent | KeyboardEvent) {
     if (!(event.target instanceof Element)) return;
+    if (event.type === "click" && event.target.closest(`[${playlistButtonState}]`)) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      host.toggle();
+      return;
+    }
     if (event.type === "click" && !event.target.closest(playButton)) return;
     if (event.type === "dblclick" && event.target.closest("a,button,input")) return;
     if (event instanceof KeyboardEvent && (event.key !== "Enter" || event.target.closest("a,button,input"))) return;
     const uri = visiblePlaylist();
     const target = uri && rowTarget(event.target, uri);
     if (!target || !uri || shown?.uri !== uri || !shown.data.replacements.has(target.uri)) return;
-    const row = shown.data.tracks[target.index ?? -1];
-    const playback = adaptedPlayback(shown.data, row?.uri === target.uri && row.uid ? { uid: row.uid } : { uri: target.uri });
-    if (!playback) return;
     event.preventDefault();
     event.stopImmediatePropagation();
+    if (target.row.matches(activeRow)) {
+      host.toggle();
+      return;
+    }
     const request = ++generation;
-    const local = shown.data.replacements.get(target.uri)?.uri;
-    void playAdapted(player!, uri, playback, { featureIdentifier: "playlist" }, {})
-      .catch(() => {
-        if (active && request === generation && local) return host.playTrack(local);
-      })
+    void readPlaylist(uri, playlistQuery(target.row)).then(data => {
+      if (!active || request !== generation) return;
+      const row = data.tracks[target.index ?? -1];
+      const playback = adaptedPlayback(data, row?.uri === target.uri && row.uid ? { uid: row.uid } : { uri: target.uri });
+      if (!playback?.skipTo?.uri || !localSongTags(playback.skipTo.uri)) throw new Error("Local match is unavailable.");
+      return playAdapted(player!, uri, playback, { featureIdentifier: "playlist" }, {});
+    })
       .catch(() => {
         if (active && request === generation) host.notifyError("Spotify couldn’t play the matched local file.");
       });
   }
 
   const observer = new MutationObserver(records => {
-    if (records.some(record => (record.target instanceof Element && !!record.target.closest(rowSelector) &&
+    if (records.some(record => (record.target instanceof Element && !!record.target.closest(trackRowSelector) &&
         (record.type === "attributes" || ![...record.addedNodes, ...record.removedNodes].every(node =>
           node instanceof Element && node.matches(playButton)))) ||
       Array.from(record.addedNodes).some(node =>
-        node instanceof Element && (node.matches(rowSelector) || node.querySelector(rowSelector))))) scheduleScan();
+        node instanceof Element && (node.matches(`${trackRowSelector}, ${playlistButton}`) ||
+          node.querySelector(`${trackRowSelector}, ${playlistButton}`))))) scheduleScan();
   });
   observer.observe(document.body, {
     childList: true, subtree: true, attributes: true, attributeFilter: ["aria-disabled", "aria-rowindex", "data-uri"],
@@ -277,13 +356,24 @@ export function startLocalPlaylistPlayback(host: Host) {
   for (const event of ["click", "dblclick", "keydown"] as const) {
     document.addEventListener(event, activate, { capture: true, signal: handlers.signal });
   }
+  const stopWatchingPlayback = host.watchControls(() => {
+    const current = player._state?.item;
+    const key = JSON.stringify([host.playbackContextUri(), current?.uri, current?.uid, host.playing()]);
+    if (key === lastPlayback) return;
+    lastPlayback = key;
+    scheduleScan();
+  });
+  const stopWatchingRoute = host.watchViewSwitch(source => { if (source === "route") scheduleScan(); });
   scheduleScan();
   return () => {
     active = false;
     handlers.abort();
     observer.disconnect();
+    stopWatchingPlayback();
+    stopWatchingRoute();
     cancelAnimationFrame(scanFrame);
     clearMatchedRows();
+    syncActivePlaylist();
     if (player.play === wrappedPlay) player.play = nativePlay;
   };
 }
