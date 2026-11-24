@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } fr
 import { createPortal } from "../host-dom";
 import { AudioLines, Square, X } from "lucide-react";
 import type { Host } from "../host";
+import { spotifySongUri } from "../spotify-song";
 import { usePlayback } from "../playback";
 import { recordedAudioSaved, type SpotifyCapture } from "./spotify-capture";
 import { couldBeComplete, isRecordingComplete, recordedCoverage, recordingPercent, savedAudioCleared, type RecordingCoverage } from "./captured-replay";
@@ -15,7 +16,7 @@ function PlaybarRecordingMeter({ host, capture, message, start, stop, playback, 
   playback?: CreatorPlayback; manageStoredData(trigger: HTMLElement | null): void;
 }) {
   const { track, narrating } = usePlayback(host, true);
-  const uri = track && `spotify:track:${track.id}`;
+  const uri = track && spotifySongUri(track.id);
   const duration = host.duration();
   const [coverage, setCoverage] = useState<RecordingCoverage>();
   const [complete, setComplete] = useState<{ uri: string; duration: number }>();

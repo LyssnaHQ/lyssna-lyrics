@@ -42,7 +42,7 @@ export function refreshLyrics(track?: Track, action: Settings["lyrics_cache_acti
     if (action === "song") cache.delete(trackId);
     else for (const entry of cache.get(trackId)?.values() ?? []) entry.expires = 0;
   }
-  if (track) revalidateLyssnaSong(track.id, track.isrc);
+  if (track && !track.local) revalidateLyssnaSong(track.id, track.isrc);
   window.dispatchEvent(trackId && action !== "all" ? new CustomEvent(lyricsChanged, { detail: [trackId] }) : new Event(lyricsChanged));
 }
 
@@ -72,6 +72,7 @@ function hasWordTiming(lyrics: Lyrics) {
 }
 
 export async function readLyrics(track: Track, duration: number, sources: LyricSource[], host: Host) {
+  if (track.local) sources = sources.filter(id => id === "local" || id === "lrclib" || id === "netease" || id === "lrcred");
   const appleEnabled = sources.includes("apple");
   const spicyEnabled = sources.includes("spicy");
   let appleLookup: Promise<Lyrics | null | undefined> | undefined;

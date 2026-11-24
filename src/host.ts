@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { hosts } from "./host-react";
 import { normalizeIsrc, spotifyTrackMetadata } from "./spotify-track-metadata";
+import { localSongTags, spotifySongKey } from "./spotify-song";
 
 type Removal = () => void;
 type RepeatMode = "off" | "context" | "track";
@@ -156,7 +157,7 @@ type SpotiKit = {
 
 export type Root = { render(node: ReactNode): void; unmount(): void };
 export type Track = { id: string; title: string; artists: string; artist?: string; artistUri?: string; cover: string;
-  artistLinks?: { name: string; uri?: string }[]; album?: string; albumUri?: string; albumUpc?: string; year?: string; isrc?: string };
+  artistLinks?: { name: string; uri?: string }[]; album?: string; albumUri?: string; albumUpc?: string; year?: string; isrc?: string; local?: true };
 type CatalogueAlbum = {
   uri?: string;
   name?: string;
@@ -345,6 +346,7 @@ export function getHost() {
     };
   }
   function trackCanvas(trackId: string) {
+    if (trackId.startsWith("spotify:local:")) return null;
     const trackUri = `spotify:track:${trackId}`;
     const item = currentTrack();
     const metadata = item?.uri === trackUri ? item.metadata : undefined;
@@ -452,9 +454,10 @@ export function getHost() {
       else console.warn(`[Lyssna Lyrics] ${message}`);
     },
     track(): Track | null {
-      const track = kit ? kit.Player.track : spice?.Player.data?.item;
-      const id = /^spotify:track:([A-Za-z0-9]+)$/.exec(track?.uri ?? "")?.[1];
+      const track = kit?.Player.track ?? currentTrack();
+      const id = spotifySongKey(track?.uri);
       if (!id || !track) return null;
+      const local = localSongTags(id);
       const artist = track.artists?.[0];
       const artistUri = [artist?.uri, track.metadata?.artist_uri, artist?.id && `spotify:artist:${artist.id}`]
         .find((uri) => uri && /^spotify:artist:[A-Za-z0-9]{22}$/.test(uri));
@@ -463,12 +466,13 @@ export function getHost() {
       }] : []);
       return {
         id,
-        title: track.name ?? track.metadata?.title ?? "",
-        artists: track.artists?.map((artist) => artist.name).filter(Boolean).join(", ") || track.metadata?.artist_name || "",
+        ...(local && { local: true }),
+        title: track.name || track.metadata?.title || local?.title || "",
+        artists: track.artists?.map((artist) => artist.name).filter(Boolean).join(", ") || track.metadata?.artist_name || local?.artist || "",
         artistUri,
         artistLinks,
-        artist: artist?.name || track.metadata?.artist_name,
-        album: track.album?.name ?? track.metadata?.album_title,
+        artist: artist?.name || track.metadata?.artist_name || local?.artist,
+        album: track.album?.name || track.metadata?.album_title || local?.album,
         albumUri: track.album?.uri || track.metadata?.album_uri,
         albumUpc: track.album?.upc ?? track.metadata?.album_upc,
         isrc: normalizeIsrc(track.metadata?.isrc),
@@ -565,6 +569,7 @@ export function getHost() {
       if (title) return { title, artist: track?.metadata?.artist_name ?? "", image: artwork(track?.metadata?.image_url ?? "") };
     },
     analysis: (trackId: string) => {
+      if (trackId.startsWith("spotify:local:")) return;
       const cached = analyses.get(trackId);
       if (cached) return cached;
       const uri = `spotify:track:${trackId}`;

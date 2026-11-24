@@ -2,9 +2,9 @@ import type { Line, Lyrics, Word } from "./lyssna/types";
 import type { TransferLyrics } from "./lyssna/transfer-format";
 import { fromLrc } from "./lrc";
 import { voicesOf } from "./creator/song-parts";
+import { spotifySongKey, spotifySongUri } from "./spotify-song";
 
 export const lyricsChanged = "lyssna-lyrics:lyrics";
-const trackUri = /^spotify:track:[A-Za-z0-9]{22}$/;
 export type LoadMode = "persistent" | "temporary" | "session";
 const session = new Map<string, TransferLyrics>();
 let temporary: TransferLyrics | undefined;
@@ -213,33 +213,33 @@ function readImport(entry: TransferLyrics, duration: number) {
 }
 
 export async function readLocalLyrics(trackId: string, duration: number) {
-  const uri = `spotify:track:${trackId}`;
+  const uri = spotifySongUri(trackId);
   const entry = (temporary?.uri === uri ? temporary : session.get(uri)) ??
     await read<TransferLyrics | undefined>((store) => store.get(uri));
   return entry && readImport(entry, duration);
 }
 
 export function hasTemporaryTtml(trackId?: string) {
-  return temporary?.kind === "ttml" && temporary.uri === `spotify:track:${trackId}`;
+  return !!trackId && temporary?.kind === "ttml" && temporary.uri === spotifySongUri(trackId);
 }
 
 function validateImport(entry: TransferLyrics) {
-  if (!trackUri.test(entry.uri) || new TextEncoder().encode(entry.text).length > 2_000_000) {
+  if (!spotifySongKey(entry.uri) || new TextEncoder().encode(entry.text).length > 2_000_000) {
     throw new Error("Choose a TTML or LRC file under 2 MB for a Spotify track.");
   }
   readImport(entry, 0);
 }
 
 const notify = (uris: string[]) => window.dispatchEvent(new CustomEvent(lyricsChanged, {
-  detail: uris.map((uri) => uri.slice("spotify:track:".length)),
+  detail: uris.map(spotifySongKey),
 }));
 
 export function clearTemporaryLyrics(trackId?: string) {
-  if (!trackId || temporary?.uri === `spotify:track:${trackId}`) temporary = undefined;
+  if (!trackId || temporary?.uri === spotifySongUri(trackId)) temporary = undefined;
 }
 
 export function keepTemporaryLyricsFor(trackId?: string) {
-  if (temporary && temporary.uri !== `spotify:track:${trackId}`) temporary = undefined;
+  if (temporary && (!trackId || temporary.uri !== spotifySongUri(trackId))) temporary = undefined;
 }
 
 export async function saveLocalLyrics(entries: TransferLyrics[]) {

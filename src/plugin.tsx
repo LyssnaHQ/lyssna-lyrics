@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactElement, type ReactNode, type RefObject } from "react";
 import { ChevronUp, Disc3, FilePenLine, FoldVertical, MessagesSquare, MicVocal, Music2, PanelLeftOpen, Settings as GearIcon, UnfoldVertical, X } from "lucide-react";
 import { getHost, type CanvasInfo, type Host, type Root, type Track } from "./host";
+import { spotifySongUri } from "./spotify-song";
 import { useArtworkColor } from "./lyssna/artwork-color";
 import { Ambience } from "./lyssna/ambience";
 import { setFrameCap } from "./lyssna/frame-cap";
@@ -192,7 +193,7 @@ function MissingLyrics({ track, host, openCreator, searchAgain, openTtml }: {
       <button type="button" onClick={searchAgain}>Search again</button>
       <span aria-hidden="true">·</span>
       <button type="button" aria-haspopup="dialog" onClick={(event) => openTtml(event.currentTarget)}>Import a lyric file</button>
-      {reviewer && <>
+      {reviewer && !track.local && <>
         <span aria-hidden="true">·</span>
         <button type="button" onClick={() => void mark()} disabled={marking || !!markNotice && !markNotice.error}>
           {marking ? "Marking instrumental…" : "Mark as instrumental"}
@@ -375,7 +376,7 @@ type DetachedPreview = { playback?: CreatorPlayback };
 
 function PopoutView({ host, view, close, preview }: { host: Host; view: Window; close: () => void; preview?: DetachedPreview }) {
   const { track, playing: spotifyPlaying, narrating } = usePlayback(host, true);
-  const draft = useDraftPreview(preview && track ? `spotify:track:${track.id}` : undefined, true);
+  const draft = useDraftPreview(preview && track ? spotifySongUri(track.id) : undefined, true);
   const localPlayback = preview?.playback?.trackId === track?.id ? preview?.playback : undefined;
   const playing = localPlayback?.playing ?? spotifyPlaying;
   const preferences = useLiveSettings();
@@ -567,7 +568,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
   const [creatorTrackId, setCreatorTrackId] = useState<string>();
   const [creatorPlayback, setCreatorPlayback] = useState<CreatorPlayback>();
   const [originalDraftUri, setOriginalDraftUri] = useState<string>();
-  const draftUri = trackId && !showCreator ? `spotify:track:${trackId}` : undefined;
+  const draftUri = trackId && !showCreator ? spotifySongUri(trackId) : undefined;
   const draft = useDraftPreview(detachedPreview && originalDraftUri === draftUri ? undefined : draftUri, !!detachedPreview);
   const [reviewerOverride, setReviewerOverride] = useState<boolean>();
   const draftReviewer = draft ? reviewerOverride ?? (preferences.ttml_reviewer !== "off") : undefined;
@@ -857,9 +858,12 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
     return () => view.document.removeEventListener("keydown", keyboard);
   });
 
-  const hasAmbience = artwork && (background === "animated" || background === "static");
+  const coverAmbience = artwork && (background === "animated" || background === "static");
+  const localArtwork = artwork?.startsWith("spotify:local:");
+  const hasAmbience = coverAmbience && !localArtwork;
   const banner = background === "artist" && artistHeader?.uri === artistUri ? artistHeader?.url : undefined;
-  const backgroundImage = background === "cover" || background === "artist" ? banner || artwork : undefined;
+  const backgroundImage = background === "cover" || background === "artist" || (coverAmbience && localArtwork)
+    ? banner || artwork : undefined;
   const compact = !coverOnly && (narrow || settings.lyrics_compact);
   const className = `lyrics-page ${narrating ? "dj-narration" : ""} ${canvas ? "canvas-lyrics" : ""} ${compact ? "narrow" : ""}
     ${hideArtwork ? "no-artwork" : ""} ${settings.lyrics_artwork_right && !coverOnly ? "artwork-right" : ""} ${coverOnly ? "no-lyrics" : ""}
@@ -994,7 +998,8 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
       {!showSettings && notice && <div className="lyssna-popout-error" role="status">{notice}</div>}
       {!artworkDock && playback}
     </section>}
-    {!showCreator && showTtml && <LoadTtml song={track ? track.title || "Unknown song" : undefined} glass={settings.liquid_glass} style={fonts}
+    {!showCreator && showTtml && <LoadTtml song={track ? track.title || "Unknown song" : undefined} localSong={track?.local}
+      glass={settings.liquid_glass} style={fonts}
       reviewer={preferences.ttml_reviewer} onReviewer={(ttml_reviewer) => change({ ttml_reviewer })}
       onSubmit={async (file) => {
         if (!track) throw new Error("Play the song you want to submit lyrics for.");
@@ -1015,7 +1020,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
       }}
       onReset={async () => {
         if (!track) return;
-        await removeLocalLyrics(`spotify:track:${track.id}`, true);
+        await removeLocalLyrics(spotifySongUri(track.id), true);
         closeTtml();
         setNotice("Imported lyrics cleared for this song.");
       }}

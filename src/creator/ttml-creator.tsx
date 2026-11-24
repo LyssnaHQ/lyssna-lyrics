@@ -234,7 +234,7 @@ const meta = (track: Track): SongMeta => ({
   name: track.name,
   artists: track.artists.map((artist) => artist.name),
   album: track.album?.name,
-  spotifyId: track.id,
+  spotifyId: track.is_local ? undefined : track.id,
   durationMs: track.duration_ms,
   songwriters: track.songwriters,
 });

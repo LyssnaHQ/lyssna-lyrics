@@ -1,4 +1,5 @@
 import type { Host } from "../host";
+import { spotifySongKey } from "../spotify-song";
 
 const fftSize = 2048;
 const analysisLevel = (db = -60) => Math.min(1, Math.max(0, (db + 55) / 55));
@@ -26,7 +27,8 @@ export async function creatorWaveform(host: Host, uri: string, buckets: number, 
     }
     return peaks;
   }
-  const analysis = await host.analysis(uri.slice("spotify:track:".length));
+  const key = spotifySongKey(uri);
+  const analysis = key ? await host.analysis(key) : undefined;
   const duration = analysis?.track?.duration ?? 0;
   if (!duration) return new Uint8Array();
   for (const segment of analysis?.segments ?? []) {
@@ -39,7 +41,8 @@ export async function creatorWaveform(host: Host, uri: string, buckets: number, 
 }
 
 export async function creatorPitchSpectrum(host: Host, uri: string, fromMs: number, toMs: number, columns: number, signal: AbortSignal) {
-  const analysis = await host.analysis(uri.slice("spotify:track:".length));
+  const key = spotifySongKey(uri);
+  const analysis = key ? await host.analysis(key) : undefined;
   signal.throwIfAborted();
   const segments = analysis?.segments;
   if (!segments?.some((segment) => segment.pitches?.length === pitchBands)) {

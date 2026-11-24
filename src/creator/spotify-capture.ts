@@ -1,4 +1,5 @@
 import type { Host } from "../host";
+import { spotifySongUri } from "../spotify-song";
 import { VISUALISER_BARS } from "../lyssna/visualiser-frame";
 import { spectrumFrequency } from "./audio";
 import { spotifyWindowMarker } from "./spotify-window";
@@ -259,7 +260,7 @@ export function createSpotifyCapture(host: Host, view: Window & typeof globalThi
         if (usingLocalAudio || !host.playing() || host.djNarrating()) return;
         const track = host.track();
         if (!track) return;
-        const uri = `spotify:track:${track.id}`;
+        const uri = spotifySongUri(track.id);
         if (scope === "auto" || scope === uri) return uri;
       }
       const captureClock = () => {
@@ -510,7 +511,7 @@ export function createSpotifyCapture(host: Host, view: Window & typeof globalThi
     },
     state: () => state,
     spectrum(trackId: string) {
-      if (spectrumAt && spectrumTrack === `spotify:track:${trackId}` && view.performance.now() - spectrumAt < 180) return spectrum;
+      if (spectrumAt && spectrumTrack === spotifySongUri(trackId) && view.performance.now() - spectrumAt < 180) return spectrum;
     },
     subscribe(listener: () => void) {
       listeners.add(listener);

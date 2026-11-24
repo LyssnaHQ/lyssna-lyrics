@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { X } from "lucide-react";
 import type { Host, Track as SpotifyTrack } from "../host";
+import { spotifySongUri } from "../spotify-song";
 import type { Settings } from "../settings";
 import { usePlayback } from "../playback";
 import { enabledSources, type LyricSource } from "../lyric-sources";
@@ -47,7 +48,7 @@ export type CreatorPlayback = {
 };
 
 function creatorTrack(track: SpotifyTrack, duration: number): Track {
-  return { id: track.id, uri: `spotify:track:${track.id}`, name: track.title,
+  return { id: track.id, uri: spotifySongUri(track.id), name: track.title, is_local: track.local,
     artists: track.artistLinks?.length ? track.artistLinks : track.artists ? [{ name: track.artists }] : [],
     album: { name: track.album, images: track.cover ? [{ url: track.cover }] : [] }, duration_ms: duration, spotify: track };
 }
@@ -159,7 +160,7 @@ export function CreatorSurface({ host, view: owner, settings, close, reviewSelec
       if (request !== generation) return;
       const skeleton = lyrics && await seedTimings(host, lyrics, duration, track.id).catch(() => lyrics);
       if (request !== generation) return;
-      setSeed({ uri: `spotify:track:${track.id}`, lyrics: skeleton });
+      setSeed({ uri: spotifySongUri(track.id), lyrics: skeleton });
     }
     setSeed(undefined);
     const reload = (event: Event) => { void load(event); };
@@ -317,7 +318,8 @@ export function CreatorSurface({ host, view: owner, settings, close, reviewSelec
   }, [current?.uri, player, previewing, read, view]);
   const returnToSpotify = useCallback(() => {
     const element = audioElement.current;
-    const uri = `spotify:track:${host.track()?.id}`;
+    const track = host.track();
+    const uri = track && spotifySongUri(track.id);
     if (element?.hasAttribute("data-captured-replay") && !element.hasAttribute("data-full-recording")) {
       element.pause();
     } else if (element?.dataset.trackUri === uri) {
@@ -366,7 +368,7 @@ export function CreatorSurface({ host, view: owner, settings, close, reviewSelec
   useEffect(() => {
     const uri = current?.uri;
     if (previewing || !uri || !fullRecording || spotifyOnly === uri || audioForSong || deletingRecording ||
-      activeUri.current !== uri || uri !== `spotify:track:${host.track()?.id}`) return;
+      activeUri.current !== uri || current.id !== host.track()?.id) return;
     const position = host.position();
     const resume = host.playing() && position < fullRecording.endMs - 100;
     activateRecording(uri, fullRecording, 1, resume, position);

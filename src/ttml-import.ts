@@ -1,6 +1,7 @@
 import type { Host, TtmlTrack, Track } from "./host";
 import { loadLocalLyrics, saveLocalLyrics, type LoadMode } from "./local-lyrics";
 import type { TransferLyrics } from "./lyssna/transfer-format";
+import { spotifySongUri } from "./spotify-song";
 
 export type BulkFile = { filename: string; file: File };
 export type BulkLyric = { filename: string; song: TtmlTrack | null; query: string; error: string | null; invalid?: boolean };
@@ -20,7 +21,7 @@ async function readFile(file: File) {
 export async function importLyricFile(file: File, song: Track, mode: LoadMode, currentSong: () => string | undefined) {
   const input = await readFile(file);
   if (mode === "temporary" && currentSong() !== song.id) throw new Error("The song changed before the lyrics loaded.");
-  await loadLocalLyrics({ ...input, uri: `spotify:track:${song.id}`, name: song.title, artists: song.artists, image: song.cover }, mode);
+  await loadLocalLyrics({ ...input, uri: spotifySongUri(song.id), name: song.title, artists: song.artists, image: song.cover }, mode);
 }
 
 function readTtmlDocument(text: string) {

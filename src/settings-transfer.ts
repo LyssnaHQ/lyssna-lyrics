@@ -3,9 +3,10 @@ import { orderedSources } from "./lyric-sources";
 import { cleanAnimatorValues, cleanSavedPresets } from "./lyssna/animator-tuning";
 import { downloadTransfer, isRecord, parseTransfer, pluginPreferences, standalonePreferences, TRANSFER_LIMIT, type SettingsTransfer } from "./lyssna/transfer-format";
 import { defaults, type Settings } from "./settings";
+import { spotifySongKey, spotifySongUri } from "./spotify-song";
 
 export async function exportSettings(settings: Settings) {
-  const offsets = Object.fromEntries(Object.entries(settings.lyric_song_offsets).map(([id, offset]) => [`spotify:track:${id}`, offset]));
+  const offsets = Object.fromEntries(Object.entries(settings.lyric_song_offsets).map(([id, offset]) => [spotifySongUri(id), offset]));
   const { sync_other_plugin_preferences: _sync, ...preferences } = settings;
   const file: SettingsTransfer = {
     format: "lyssna-settings", version: 1, source: "standalone", exportedAt: new Date().toISOString(),
@@ -52,7 +53,7 @@ export function validatePreferences(input: Record<string, unknown>) {
   if (Array.isArray(patch.lyrics_source_order)) patch.lyrics_source_order = orderedSources(patch.lyrics_source_order);
   if (isRecord(patch.lyric_song_offsets)) {
     patch.lyric_song_offsets = Object.fromEntries(Object.entries(patch.lyric_song_offsets).flatMap(([uri, offset]) => {
-      const id = /^(?:spotify:track:)?([A-Za-z0-9]{22})$/.exec(uri)?.[1];
+      const id = spotifySongKey(uri) ?? /^[A-Za-z0-9]{22}$/.exec(uri)?.[0];
       return id && typeof offset === "number" && Number.isFinite(offset) && Math.abs(offset) <= 10_000 ? [[id, offset]] : [];
     }));
   }
@@ -71,7 +72,7 @@ export async function importSettings(file: File) {
   if (file.size > TRANSFER_LIMIT) throw new Error("Settings files must be under 100 MB.");
   const transfer = parseTransfer(await file.text());
   const patch = validatePreferences(standalonePreferences(transfer));
-  const ttml = transfer.lyrics.filter((entry) => entry.kind !== "json" && /^spotify:track:[A-Za-z0-9]{22}$/.test(entry.uri));
+  const ttml = transfer.lyrics.filter((entry) => entry.kind !== "json" && spotifySongKey(entry.uri));
   if (ttml.length) await saveLocalLyrics(ttml);
   return { patch, skipped: transfer.lyrics.length - ttml.length };
 }

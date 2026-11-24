@@ -7,6 +7,7 @@ import { accountChanged, hasLyssnaSession, readLyssnaProfile } from "../lyssna-a
 import { publishingRoles } from "../lyssna-submission";
 import { importError, type BulkFile, type BulkLyric } from "../ttml-import";
 import type { TransferLyrics } from "./transfer-format";
+import { spotifySongKey } from "../spotify-song";
 import {
   BookOpen,
   Files,
@@ -54,6 +55,7 @@ const MODES: { mode: LoadMode; title: string; detail: string }[] = [
  */
 export function LoadTtml({
   song,
+  localSong,
   reviewer,
   onReviewer,
   onLoad,
@@ -76,6 +78,7 @@ export function LoadTtml({
   attachSong: (file: BulkFile, songs: TtmlTrack[]) => Promise<void>;
   onSubmit: (file: File) => Promise<void>;
   song?: string;
+  localSong?: boolean;
   reviewer: Settings["ttml_reviewer"];
   onReviewer: (mode: Settings["ttml_reviewer"]) => void;
   onLoad: (file: File, mode: LoadMode) => Promise<void>;
@@ -96,7 +99,8 @@ export function LoadTtml({
   const [busy, setBusy] = useState(false);
   const signInRequired = "Sign in to Lyssna in Settings to submit lyrics";
   const [submitBlock, setSubmitBlock] = useState<string | null>(() => hasLyssnaSession() ? "Checking your Lyssna account…" : signInRequired);
-  const submitBlocked = submitBlock ?? (song ? null : "Play the song you want to submit lyrics for");
+  const submitBlocked = localSong ? "Lyrics for local tracks can be saved on this device" :
+    submitBlock ?? (song ? null : "Play the song you want to submit lyrics for");
   const [saved, setSaved] = useState<TransferLyrics[] | null>(null);
   const [error, setError] = useState("");
   const batch = useRef<AbortController>(null);
@@ -363,7 +367,7 @@ export function LoadTtml({
                         <button
                           aria-label={`Play ${name}`}
                           title="Play"
-                          disabled={busy || !item.uri.startsWith("spotify:track:")}
+                          disabled={busy || !spotifySongKey(item.uri)}
                           onClick={() => act(() => onPlay(item.uri))}
                         >
                           <Play size={14} fill="currentColor" />
