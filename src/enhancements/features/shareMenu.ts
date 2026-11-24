@@ -7,6 +7,7 @@ import {
 } from "../dom";
 import { observeMenus } from "../observeMenus";
 import { createContextMenuItem, createContextMenuSubMenu, resetMenuContext } from "./contextMenu";
+import { startUnavailableTrackMenu } from "./unavailableTrackMenu";
 
 const cleanLabel = "Copy Clean URL";
 const embedLabel = "Embed";
@@ -237,17 +238,22 @@ export function startShareMenuController(host: Host) {
     else Spicetify.showNotification?.("Song details unavailable", true);
   }
 
-  const copyItems = [
-    createContextMenuItem("Copy ID", (uris) => {
-      const id = trackId(uris);
+  const actions = [
+    { label: "Copy ID", icon: idIcon, copy: (uri: string) => {
+      const id = trackId([uri]);
       if (id) void copyText(id, "Spotify ID copied");
-    }, showCopy, idIcon),
-    createContextMenuItem("Copy Song Name & Artist", (uris) => void copyTrackMetadata(uris, "song"), showCopy, artistIcon),
-    createContextMenuItem("Copy ISRC", (uris) => void copyTrackMetadata(uris, "isrc"), showCopy, albumIcon),
+    } },
+    { label: "Copy Song Name & Artist", icon: artistIcon, copy: (uri: string) => void copyTrackMetadata([uri], "song") },
+    { label: "Copy ISRC", icon: albumIcon, copy: (uri: string) => void copyTrackMetadata([uri], "isrc") },
   ];
+  const copyItems = actions.map(({ label, copy, icon }) => createContextMenuItem(label, (uris) => {
+    if (trackId(uris)) copy(uris[0]);
+  }, showCopy, icon));
   createContextMenuSubMenu(copyLabel, copyItems, showCopy, copySubmenuIcon).register();
 
   document.addEventListener("contextmenu", resetMenuContext, true);
-  observeMenus(syncMenus);
-  window.addEventListener(SETTINGS_CHANGED_EVENT, syncMenus);
+  const syncUnavailableMenu = startUnavailableTrackMenu(actions);
+  const sync = () => { syncMenus(); syncUnavailableMenu(); };
+  observeMenus(sync);
+  window.addEventListener(SETTINGS_CHANGED_EVENT, sync);
 }

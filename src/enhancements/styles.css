@@ -2,6 +2,35 @@ html.ll-enhancements-hideLyricsButton button[data-testid="lyrics-button"] { disp
 html.ll-enhancements-hideFriendActivityButton [data-restore-focus-key="buddy_feed"], html.ll-enhancements-hideFriendActivityButton button[aria-label="Friend Activity" i] { display: none !important; }
 html.ll-enhancements-hideMiniplayerButton :is(button[data-testid="pip-toggle-button"], [data-restore-focus-key="miniplayer"], button[aria-label*="miniplayer" i]) { display: none !important; }
 
+.lyssna-unavailable-track-menu {
+  position: fixed;
+  z-index: 10000;
+  display: grid;
+  gap: 2px;
+  min-inline-size: 176px;
+  max-inline-size: calc(100vw - 8px);
+  padding: 5px;
+  border: 1px solid var(--essential-subdued, #535353);
+  border-radius: 8px;
+  background: var(--background-elevated-base, #242424);
+  color: var(--text-base, #fff);
+  box-shadow: 0 6px 22px #0008;
+}
+
+.lyssna-unavailable-track-menu button {
+  padding: 9px 12px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+}
+
+.lyssna-unavailable-track-menu button:is(:hover, :focus-visible) {
+  background: var(--background-elevated-highlight, #333);
+}
+
 /* Keep freshly mounted profile menus out of view until their rows and dividers are filtered. */
 html.ll-enhancements-profile-cleanup :is(
   [role="menu"]:not([data-lyssna-profile-ready]):has(> a[href="/preferences"], > li > a[href="/preferences"]),
