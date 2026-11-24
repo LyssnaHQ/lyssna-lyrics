@@ -4,7 +4,7 @@ import { useCreatorEnvironment } from "./environment";
 import { pitchBands, spectrumFrequency, spectrumFrequencyPosition } from "./audio";
 import { useLiveSpectrum } from "./live-spectrum";
 import { useAnchoredPopover } from "../anchored-popover";
-import { LIVE_COLUMNS, LIVE_ROWS, LIVE_TILE_MS } from "./spectrum-storage";
+import { LIVE_TILE_MS } from "./spectrum-storage";
 import { COLOR_STOPS_KEY, colourIndex, DEFAULT_STOPS, MAX_STOPS, PALETTES, PALETTE_KEY,
   paletteGradient, paletteStops, paletteTable, validColorStops, validPalette, type ColorStop, type Palette } from "./spectrum-palette";
 import {
@@ -250,7 +250,7 @@ export function TtmlSpectrogram({
   const liveCapture = !localAudio && (liveSpectrum.hasSaved || liveSpectrum.status === "live");
   const pitch = !localAudio && !liveCapture;
   const spectrumKey = liveCapture ? "live" : pitch ? "spotify-pitch" : audioKey;
-  const rows = liveCapture ? LIVE_ROWS : pitch ? pitchBands : ROWS;
+  const rows = pitch ? pitchBands : ROWS;
   const asked = useRef(new Map<string, AbortController>());
   useEffect(() => {
     const requests = asked.current;
@@ -425,11 +425,14 @@ export function TtmlSpectrogram({
     tileCount - 1,
     Math.ceil((scroll + width) / tilePx) + 1,
   );
-  const visible: { index: number; data: Uint16Array; columns: number; revision?: number }[] = [];
+  const visible: { index: number; data: Uint16Array; columns: number; rows: number; revision?: number }[] = [];
   for (let index = firstTile; width && index <= lastTile; index++) {
     if (liveCapture) {
       const captured = liveSpectrum.tiles.get(index);
-      if (captured) visible.push({ index, data: captured.tile.levels, columns: LIVE_COLUMNS, revision: captured.revision });
+      if (captured) {
+        const { levels, filled } = captured.tile;
+        visible.push({ index, data: levels, columns: filled.length, rows: levels.length / filled.length, revision: captured.revision });
+      }
       continue;
     }
     const key = `${spectrumKey}|${uri}|${index}|${detail}`;
@@ -444,7 +447,7 @@ export function TtmlSpectrogram({
           break;
         }
       }
-    if (data) visible.push({ index, data, columns });
+    if (data) visible.push({ index, data, columns, rows });
   }
   const loadLiveTiles = liveSpectrum.load;
   useEffect(() => {
@@ -750,7 +753,7 @@ export function TtmlSpectrogram({
                 key={`${spectrumKey}:${tile.index}`}
                 data={tile.data}
                 columns={tile.columns}
-                rows={rows}
+                rows={tile.rows}
                 left={tile.index * tilePx}
                 width={tilePx}
                 table={table}
