@@ -130,12 +130,16 @@ function lyricLine(element: Element, start: number, end: number, background: boo
   };
 }
 
-export function parseLocalTtml(text: string): Lyrics {
+export function parseLocalTtml(text: string, recordingDuration?: number): Lyrics {
   if (/<!DOCTYPE/i.test(text)) throw new Error("TTML document types are unsupported.");
   const xml = new DOMParser().parseFromString(text, "application/xml");
   const body = xml.getElementsByTagNameNS("*", "body")[0];
   if (xml.documentElement.localName !== "tt" || !body || xml.querySelector("parsererror")) {
     throw new Error("Choose a valid TTML lyrics file.");
+  }
+  const bodyDuration = recordingDuration ? timestamp(body.getAttribute("dur")) : undefined;
+  if (recordingDuration && bodyDuration !== undefined && Math.abs(bodyDuration - recordingDuration) > 10_000) {
+    throw new RangeError("This TTML is timed to a different recording.");
   }
   const paragraphs = Array.from(body.getElementsByTagNameNS("*", "p"));
   const agents = Array.from(xml.getElementsByTagNameNS("*", "agent"));

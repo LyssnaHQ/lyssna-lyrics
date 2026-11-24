@@ -3,7 +3,8 @@ import { fetchSpotifyMedia } from "./spotify-media";
 
 const alphabet = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const decoder = new TextDecoder();
-const cache = new Map<string, Promise<Partial<TtmlTrack> | undefined>>();
+type TrackMetadata = Partial<TtmlTrack> & { isrcs: string[] };
+const cache = new Map<string, Promise<TrackMetadata | undefined>>();
 
 export function normalizeIsrc(value?: string) {
   const isrc = value?.trim().replaceAll("-", "").toUpperCase();
@@ -18,6 +19,7 @@ type NativeTrack = {
   duration?: number;
   explicit?: boolean;
   external_id?: { type: string; id: string }[];
+  alternative?: { external_id?: NativeTrack["external_id"] }[];
   album?: {
     name?: string;
     artist?: { name: string }[];
@@ -64,9 +66,13 @@ function* fields(bytes: Uint8Array): Generator<[number, Uint8Array | number]> {
 const fieldText = (field: Uint8Array | number | undefined) => field instanceof Uint8Array ? decoder.decode(field) : "";
 const signed = (field: Uint8Array | number) => typeof field === "number" ? (field >>> 1) ^ -(field & 1) : undefined;
 
+function readExternalId(bytes: Uint8Array) {
+  const fieldsByNumber = new Map(fields(bytes));
+  return { type: fieldText(fieldsByNumber.get(1)), id: fieldText(fieldsByNumber.get(2)) };
+}
+
 function fromProtobuf(bytes: Uint8Array): NativeTrack {
-  const track: NativeTrack = { external_id: [], artist: [] };
-  // spotify.metadata.Track uses field 10 for repeated ExternalId messages.
+  const track: NativeTrack = { external_id: [], artist: [], alternative: [] };
   for (const [number, field] of fields(bytes)) {
     if (number === 2) track.name = fieldText(field);
     if (number === 4 && field instanceof Uint8Array) {
@@ -78,24 +84,38 @@ function fromProtobuf(bytes: Uint8Array): NativeTrack {
     if (number === 7) track.duration = signed(field);
     if (number === 9) track.explicit = field === 1;
     if (number === 10 && field instanceof Uint8Array) {
-      const external = new Map(fields(field));
-      track.external_id!.push({ type: fieldText(external.get(1)), id: fieldText(external.get(2)) });
+      track.external_id!.push(readExternalId(field));
+    }
+    if (number === 13 && field instanceof Uint8Array) {
+      const externalIds = [];
+      for (const [tag, value] of fields(field)) {
+        if (tag === 10 && value instanceof Uint8Array) externalIds.push(readExternalId(value));
+      }
+      track.alternative!.push({ external_id: externalIds });
     }
   }
   return track;
 }
 
-function normalize(raw: NativeTrack, id: string): Partial<TtmlTrack> {
+function normalize(raw: NativeTrack, id: string): TrackMetadata {
   const album = raw.album;
   const date = album?.date;
   const release = date?.year && [date.year, date.month, date.month ? date.day : undefined]
     .filter(Boolean).map((part) => String(part).padStart(2, "0")).join("-");
   const albumId = (type: string) => album?.external_id?.find((entry) => entry.type?.toLowerCase() === type)?.id;
+  const codes = (tracks: Pick<NativeTrack, "external_id">[]) => tracks.flatMap(track =>
+    (track.external_id ?? []).flatMap(({ type, id }) => {
+      const isrc = type?.toLowerCase() === "isrc" && normalizeIsrc(id);
+      return isrc ? [isrc] : [];
+    }),
+  );
+  const primary = codes([raw]);
+  const isrcs = [...new Set([...primary, ...codes(raw.alternative ?? [])])];
   return {
     uri: `spotify:track:${id}`, name: raw.name, artists: raw.artist?.filter(({ name }) => !!name),
     duration_ms: raw.duration,
     track_number: raw.number, disc_number: raw.disc_number, explicit: raw.explicit,
-    external_ids: { isrc: normalizeIsrc(raw.external_id?.find(({ type }) => type?.toLowerCase() === "isrc")?.id) },
+    external_ids: { isrc: primary[0] }, isrcs,
     album: album && {
       name: album.name, album_type: album.type?.toLowerCase(), label: album.label, release_date: release || undefined,
       artists: album.artist?.filter(({ name }) => !!name), copyrights: album.copyright,
