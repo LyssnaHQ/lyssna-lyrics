@@ -1,4 +1,4 @@
-export const isLocalArtwork = (url?: string) => url?.startsWith("spotify:local:") ?? false;
+export const isLocalArtwork = (url?: string) => /^spotify:(?:localfileimage|local):/.test(url ?? "");
 
 export async function drawLocalArtwork(url: string, page: Document, size: number, square = false) {
   const image = page.createElement("img");
