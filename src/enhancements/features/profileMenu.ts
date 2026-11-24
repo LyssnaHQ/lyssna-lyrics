@@ -9,6 +9,20 @@ const items = new Map<string, EnhancementKey>([
 ]);
 
 const profileMenuReady = "data-lyssna-profile-ready";
+const updatesLoading = ".iAxHD0JbcUYn64OFhgtJ";
+
+function isUpdatesRow(row: HTMLElement, action: HTMLElement | null) {
+  // The initial notification spinner is a standalone row with no section header.
+  if (row.querySelector(updatesLoading)) return true;
+  if ((!action || action.matches("[aria-disabled='true'], [data-disabled], :disabled")) &&
+      row.querySelector("[role='progressbar']")) return true;
+  if (action) return false;
+
+  const header = row.querySelector(":scope > [data-encore-id='menuSectionHeader']");
+  if (header) return normalizeText(header.textContent) === "your updates";
+  return [...row.querySelectorAll("[data-encore-id='text'], h2, h3")]
+    .some(node => normalizeText(node.textContent) === "your updates");
+}
 
 function apply() {
   const settings = getSettings();
@@ -38,16 +52,9 @@ function apply() {
         const hidden = settings[setting] === true;
         toggleElementDisplay(row, hidden);
         modified ||= hidden;
-      } else if (!action) {
-        const sectionHeader = row.querySelector(":scope > [data-encore-id='menuSectionHeader']");
-        const updates = sectionHeader
-          ? normalizeText(sectionHeader.textContent) === "your updates"
-          : [...row.querySelectorAll("[data-encore-id='text'], h2, h3")]
-            .some(node => normalizeText(node.textContent) === "your updates");
-        if (updates) {
-          toggleElementDisplay(row, settings.hideYourUpdatesSection);
-          modified ||= settings.hideYourUpdatesSection;
-        }
+      } else if (isUpdatesRow(row, action)) {
+        toggleElementDisplay(row, settings.hideYourUpdatesSection);
+        modified ||= settings.hideYourUpdatesSection;
       }
     }
     menu.toggleAttribute("data-lyssna-profile-tweaks", modified);
