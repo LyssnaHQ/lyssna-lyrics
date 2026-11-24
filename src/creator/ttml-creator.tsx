@@ -1370,6 +1370,8 @@ export function TtmlCreator({
   const stateRef = useRef({ lines, cursor });
   stateRef.current = { lines, cursor };
   const wordField = useRef<HTMLInputElement>(null);
+  const scrolledAt = useRef(0);
+  const revealTimingWord = useRef(false);
   const editable = !draftPreview && !textMode && lines.length > 0 && !previewing;
   useEffect(() => {
     if (!track || draftPreview || textMode || previewing) return;
@@ -1573,12 +1575,13 @@ export function TtmlCreator({
         } else if (event.repeat && timing) handled = true;
         else if (action === "start")
           setLines(markStart(lines, cursor, tap(event.timeStamp)));
-        else if (action === "next") {
-          const result = markNext(lines, cursor, tap(event.timeStamp));
-          setLines(result.lines);
-          setCursor(result.cursor);
-        } else if (action === "end") {
-          const result = markEnd(lines, cursor, tap(event.timeStamp));
+        else if (action === "next" || action === "end") {
+          const mark = action === "next" ? markNext : markEnd;
+          const result = mark(lines, cursor, tap(event.timeStamp));
+          if (result.lines !== lines) {
+            scrolledAt.current = Date.now();
+            revealTimingWord.current = true;
+          }
           setLines(result.lines);
           setCursor(result.cursor);
         } else if (action === "replay") {
@@ -1660,9 +1663,23 @@ export function TtmlCreator({
       clickedLine.current = false;
       return;
     }
-    if (touringRef.current) return;
+    if (touringRef.current || revealTimingWord.current) return;
     centre(cursor.line);
   }, [cursor.line, centre]);
+  useEffect(() => {
+    if (!revealTimingWord.current) return;
+    revealTimingWord.current = false;
+    cancelAnimationFrame(glide.current);
+    if (touringRef.current) return;
+    const container = list.current;
+    const word = container?.querySelector(".ttml-unit[aria-current='true']");
+    if (!container || !word) return;
+    const viewport = container.getBoundingClientRect();
+    const selection = word.getBoundingClientRect();
+    if (selection.top < viewport.top || selection.bottom > viewport.bottom) {
+      container.scrollTop += (selection.top + selection.bottom - viewport.top - viewport.bottom) / 2;
+    }
+  }, [lines, cursor]);
 
   const shownWord = useRef<(Cursor & { start: number }) | null>(null);
   const liveWord = useMemo(() => {
@@ -1742,7 +1759,6 @@ export function TtmlCreator({
   const selectPlaying = () => {
     if (playingLine >= 0) setCursor(cursorAt(lines, read()));
   };
-  const scrolledAt = useRef(0);
   const typingInCreator = () => {
     const box = focused();
     return (
@@ -3074,6 +3090,7 @@ export function TtmlCreator({
                             key={unitIndex}
                             className={`ttml-unit${unit.joined ? " joined" : ""}${timed(unit) ? " timed" : unit.start !== undefined ? " started" : ""}${selected ? " selected" : ""}${live ? " live" : ""}${inGroup(at) ? " chosen" : ""}${drag?.kind === "word" && ((drag.at.line === lineIndex && drag.at.unit === unitIndex) || (drag.group && inGroup(at))) ? " dragging" : ""}${dropClass(`unit:${lineIndex}:${unitIndex}`)}`}
                             aria-label={unit.text}
+                            aria-current={selected || undefined}
                             title={`Double-click to edit, or to replay while playing, right-click for word options, ${IS_MAC ? "Cmd+E" : "F2"} to edit, drag to move`}
                             draggable
                             onDragStart={(event) => dragWords(event, at)}
