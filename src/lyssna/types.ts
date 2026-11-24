@@ -27,6 +27,8 @@ export interface LyssnaContributor {
   username?: string;
   avatar_url?: string;
   share: number;
+  text_share?: number;
+  timing_share?: number;
   original?: boolean;
 }
 export interface AppleOriginal {

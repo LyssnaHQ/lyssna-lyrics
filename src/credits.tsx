@@ -81,7 +81,9 @@ function LyssnaContributors({ attribution }: { attribution: NonNullable<Lyrics["
   const apple = revisionId !== undefined && appleCredit?.revisionId === revisionId && appleCredit.credited;
   const ranked = attribution.contributors.toSorted((left, right) => right.share - left.share);
   const contributors = ranked.slice(0, apple ? 4 : 5);
-  const named = contributors.slice(0, 2).filter(({ share }, index) => share >= 30 || (index === 0 && !apple));
+  const named = contributors.filter(({ share, text_share, timing_share }, index) =>
+    (index === 0 && !apple) || Math.max(share, text_share ?? 0, timing_share ?? 0) >= 30,
+  ).slice(0, 2);
   return (apple || contributors.length > 0) && <div className="lyssna-community-credits lyssna-contributors">
     <span>Contributors:</span>
     <span className="lyssna-contributor-avatars">
