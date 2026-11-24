@@ -116,8 +116,12 @@ function applyPlaylistMenuCleanup() {
   );
   const rootMenus = menus.filter(isTrackedRootMenu);
 
-  syncNativePlaylistCoverArt(menus.filter(menu =>
-    rootMenus.includes(menu) || (isElementVisible(menu) && isEncorePlaylistSubmenu(menu))));
+  const playlistMenus = menus.filter(menu =>
+    rootMenus.includes(menu) || (isElementVisible(menu) && isEncorePlaylistSubmenu(menu)));
+  for (const menu of playlistMenus) {
+    if (menu.matches(encoreMenu)) menu.setAttribute("data-lyssna-playlist-menu", "");
+  }
+  syncNativePlaylistCoverArt(playlistMenus);
 
   if (folders.length === 0 || rootMenus.length === 0) {
     if (hasAppliedCleanup || customMenuStates.size > 0) {
@@ -165,6 +169,9 @@ function refreshPlaylistMenuController() {
 
   observer?.disconnect();
   observer = null;
+  document.querySelectorAll("[data-lyssna-playlist-menu]").forEach(menu => {
+    menu.removeAttribute("data-lyssna-playlist-menu");
+  });
 
   if (hasAppliedCleanup || customMenuStates.size > 0) {
     resetPlaylistMenuCleanup();

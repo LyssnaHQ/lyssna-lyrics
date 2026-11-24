@@ -44,8 +44,34 @@ html.ll-enhancements-hideMiniplayerButton :is(button[data-testid="pip-toggle-but
   margin-inline-end: 8px;
 }
 
-[data-encore-id="menuRow"]:has(> svg[class$="menu-row__submenu-icon"]) > div svg:has(> path[d="M14 10 8 4l-6 6z"]) {
+[data-encore-id="menuRow"][aria-haspopup="menu"]:has(> div svg > path[d="M14 10 8 4l-6 6z"]) > svg[class$="menu-row__submenu-icon"] {
   display: none;
+}
+
+[data-encore-id="menuRow"][aria-haspopup="menu"] > div svg:has(> path[d="M14 10 8 4l-6 6z"]) {
+  display: block;
+}
+
+[data-encore-id="menuRow"][aria-haspopup="menu"]:not(:has(> div svg > path[d="M14 10 8 4l-6 6z"])) > svg[class$="menu-row__submenu-icon"] {
+  display: block;
+  flex-shrink: 0;
+}
+
+[data-encore-id="popover"]:has(> [data-lyssna-playlist-menu]),
+[data-lyssna-playlist-menu],
+[data-lyssna-playlist-menu] > :is([data-encore-id="menuSection"], .spotify-plus-custom-playlist-container) {
+  overflow-x: hidden;
+}
+
+[data-lyssna-playlist-menu] > :is([data-encore-id="menuSection"], .spotify-plus-custom-playlist-container),
+[data-lyssna-playlist-menu] [data-encore-id="menuRow"] {
+  box-sizing: border-box;
+  min-inline-size: 0;
+  max-inline-size: 100%;
+}
+
+[data-lyssna-playlist-menu] [data-encore-id="menuRow"] > div:has(> [data-encore-id="text"]) {
+  min-inline-size: 0;
 }
 
 [data-encore-id="menu"] > [data-lyssna-share-divider] {
