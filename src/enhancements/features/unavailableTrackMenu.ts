@@ -2,34 +2,46 @@ import { getSetting } from "../config";
 import { isElementVisible, rootMenuSelector } from "../dom";
 
 type CopyAction = { label: string; copy(uri: string): void };
-type TrackRowProps = { uri?: string; isPlayable?: boolean; item?: { uri?: string } };
-type Fiber = { memoizedProps?: TrackRowProps; return?: Fiber };
-const rowSelector = ".main-trackList-trackListRow, [data-testid='tracklist-row']";
+type Fiber = { memoizedProps?: Record<string, unknown>; return?: Fiber };
+export const rowSelector = ".main-trackList-trackListRow, [data-testid='tracklist-row']";
 const unavailableSelector = "[aria-disabled='true'], [data-disabled], .main-trackList-trackListRow--disabled, .uWhqNrxEmH2qfzeRF1d2";
 const trackUri = /^spotify:track:[A-Za-z0-9]{22}$/;
 
-function unavailableTrack(target: Element) {
-  const row = target.closest<HTMLElement>(rowSelector);
-  if (!row) return;
-  const fields = row as unknown as Record<string, unknown>;
+export function* rowProps(element: Element, limit: number) {
+  const fields = element as unknown as Record<string, unknown>;
   const fiberKey = Object.keys(fields).find(key => key.startsWith("__reactFiber$"));
-  let fiber = fiberKey ? fields[fiberKey] as Fiber | undefined : undefined;
+  for (let fiber = fiberKey ? fields[fiberKey] as Fiber : undefined; fiber && limit > 0; fiber = fiber.return, limit--) {
+    if (fiber.memoizedProps) yield fiber.memoizedProps;
+  }
+}
+
+export function spotifyTrackRow(row: HTMLElement) {
   let unavailable = row.matches(unavailableSelector) || !!row.closest("[role='row'][aria-disabled='true']");
   let uri = row.dataset.uri;
+  let context: string | undefined;
+  let index: number | undefined;
+  let restricted = false;
   // Unavailable tracks may render a plain title. Read the row component's
   // own track URI before relying on a link in the row.
-  for (let depth = 0; fiber && depth < 8; depth++, fiber = fiber.return) {
-    const props = fiber.memoizedProps;
-    const candidate = props?.uri ?? props?.item?.uri;
+  for (const props of rowProps(row, 8)) {
+    const candidate = props.uri ?? (props.item as { uri?: string } | undefined)?.uri;
     if (typeof candidate !== "string" || !trackUri.test(candidate)) continue;
     if (uri && trackUri.test(uri) && uri !== candidate) break;
     uri = candidate;
-    unavailable ||= props?.isPlayable === false;
-    if (unavailable) break;
+    unavailable ||= props.isPlayable === false;
+    if (typeof props.contextUri === "string") context ??= props.contextUri;
+    if (typeof props.index === "number") index ??= props.index;
+    restricted ||= !!(props.isArtistBanned || props.isBannedInContext || props.ageRestricted);
   }
   const link = row.querySelector<HTMLAnchorElement>("a[href^='/track/']");
   uri ??= link?.pathname.match(/^\/track\/([A-Za-z0-9]{22})$/)?.[0].replace("/track/", "spotify:track:");
-  if (unavailable && uri && trackUri.test(uri)) return { row, uri };
+  if (uri && trackUri.test(uri)) return { row, uri, context, index, unavailable, restricted };
+}
+
+function unavailableTrack(target: Element) {
+  const row = target.closest<HTMLElement>(rowSelector);
+  const track = row && spotifyTrackRow(row);
+  if (track && track.unavailable) return track;
 }
 
 const visibleMenus = () => Array.from(document.querySelectorAll<HTMLElement>(rootMenuSelector)).filter(isElementVisible);

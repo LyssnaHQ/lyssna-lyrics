@@ -2727,3 +2727,73 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   height: 100%;
   border: 0;
 }
+
+:is(.main-trackList-trackListRow, [data-testid="tracklist-row"]):has([data-lyssna-local-play]) .main-trackList-rowMainContentTitle {
+  color: var(--text-base, #fff);
+}
+
+:is(.main-trackList-trackListRow, [data-testid="tracklist-row"])[data-lyssna-current-local-playlist-row] :is(.main-trackList-rowMarker, .main-trackList-rowMainContentTitle) {
+  color: var(--text-bright-accent, #1ed760);
+}
+
+.main-trackList-rowSectionIndex > [data-lyssna-local-play] {
+  position: absolute;
+  inset: 50% -4px auto auto;
+  display: grid;
+  place-items: center;
+  height: 24px;
+  width: 24px;
+  padding: 0;
+  transform: translateY(-50%);
+  border: 0;
+  border-radius: 50%;
+  color: var(--text-base, #fff);
+  background: transparent;
+  opacity: 0;
+  pointer-events: none;
+  cursor: pointer;
+}
+
+.main-trackList-rowSectionIndex:has(> [data-lyssna-local-play]:focus-visible) > .main-trackList-rowMarker,
+:is(.main-trackList-trackListRow, [data-testid="tracklist-row"]):hover .main-trackList-rowSectionIndex:has(> [data-lyssna-local-play]) > .main-trackList-rowMarker {
+  visibility: hidden;
+}
+
+:is(.main-trackList-trackListRow, [data-testid="tracklist-row"]):hover [data-lyssna-local-play],
+[data-lyssna-local-play]:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+[data-lyssna-local-play]::before {
+  content: "";
+  border-block: 6px solid transparent;
+  border-inline-start: 9px solid currentColor;
+}
+
+[data-lyssna-current-local-playlist-row="playing"] [data-lyssna-local-play]::before,
+[data-lyssna-local-playlist-playing="true"] [class*="button__icon-wrapper"]::after {
+  content: "";
+  box-sizing: border-box;
+  width: 12px;
+  height: 14px;
+  border: 0;
+  border-inline: 4px solid currentColor;
+}
+
+[data-lyssna-local-playlist-playing="true"] [class*="button__icon-wrapper"] {
+  position: relative;
+}
+
+[data-lyssna-local-playlist-playing="true"] [data-encore-id="icon"] {
+  visibility: hidden;
+}
+
+[data-lyssna-local-playlist-playing="true"] [class*="button__icon-wrapper"]::after {
+  position: absolute;
+  inset: 0;
+  width: 14px;
+  height: 18px;
+  margin: auto;
+  border-inline-width: 5px;
+}

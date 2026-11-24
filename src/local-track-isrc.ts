@@ -6,8 +6,10 @@ import { localSongTags, spotifySongKey } from "./spotify-song";
 import { normalizeIsrc, spotifyTrackMetadata } from "./spotify-track-metadata";
 
 const matches = new Map<string, { until: number; result: Promise<string | undefined> }>();
-const comparable = (name?: string) => (name ?? "").normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase();
-const albumName = (name?: string) => comparable(name).replace(/\s+-\s+(single|ep)$/, "");
+export function recordingName(name?: string) {
+  return (name ?? "").normalize("NFKC").trim().replace(/\s+/g, " ").toLowerCase();
+}
+const albumName = (name?: string) => recordingName(name).replace(/\s+-\s+(single|ep)$/, "");
 const matchStorageKey = (trackId: string) => `lyssna-lyrics.local-isrc:${trackId}`;
 
 function metadata(track: Track, duration: number) {
@@ -17,11 +19,11 @@ function metadata(track: Track, duration: number) {
   const album = albumName(track.album || tags?.album);
   const length = Number.isFinite(duration) && duration > 0 ? duration : tags?.duration;
   if (!title || !artist || !length) return;
-  const key = JSON.stringify([track.id, comparable(title), comparable(artist), album, tags?.duration ?? Math.round(length)]);
+  const key = JSON.stringify([track.id, recordingName(title), recordingName(artist), album, tags?.duration ?? Math.round(length)]);
   const fits = (name?: string, artists?: (string | undefined)[], ms?: number) =>
-    comparable(name) === comparable(title) &&
-    !!artists?.some(name => comparable(name) === comparable(artist)) &&
-    typeof ms === "number" && Math.abs(ms - length) <= 2000;
+    recordingName(name) === recordingName(title) &&
+    !!artists?.some(name => recordingName(name) === recordingName(artist)) &&
+    typeof ms === "number" && ms > 0 && Math.abs(ms - length) <= 2000;
   return { title, artist, album, key, length, fits };
 }
 
@@ -49,26 +51,15 @@ export async function suggestLocalTrack(track: Track, duration: number): Promise
   const details = metadata(track, duration);
   if (!details) return;
   const results = await resolveCatalogue(`${details.title} ${details.artist}`);
-  const tokens = (value: string) => comparable(value).match(/[\p{L}\p{N}]+/gu) ?? [];
-  const titleWords = [...new Set(tokens(details.title))];
-  const ranked = results.flatMap(item => {
-    const { title, artists, album, duration_ms: length } = item;
-    const isrcs = [...new Set(item.isrcs?.map(normalizeIsrc).filter(Boolean))];
-    const isrc = isrcs[0];
-    if (!title || !artists?.length || !length || !isrc || isrcs.length !== 1) return [];
-    const words = new Set(tokens(title));
-    const shared = titleWords.filter(word => words.has(word)).length;
-    const sameArtist = artists.some(name => comparable(name) === comparable(details.artist));
-    const sameTitle = comparable(title) === comparable(details.title);
-    if (!sameTitle && !sameArtist && !shared) return [];
-    const sameAlbum = !!details.album && albumName(album) === details.album;
-    const gap = Math.abs(length - details.length);
-    const titleOverlap = shared / Math.max(words.size, titleWords.length, 1);
-    const score = Number(sameTitle) * 4 + Number(sameArtist) * 4 + Number(sameAlbum)
-      + titleOverlap * 3 + Math.max(0, 1 - gap / 30_000);
-    return [{ suggestion: { title, artists, album, duration: length, isrc }, score, gap }];
-  });
-  return ranked.sort((left, right) => right.score - left.score || left.gap - right.gap)[0]?.suggestion;
+  const candidates = results.filter(item => details.fits(item.title, item.artists, item.duration_ms));
+  const sameAlbum = details.album ? candidates.filter(candidate => albumName(candidate.album) === details.album) : [];
+  const eligible = sameAlbum.length ? sameAlbum : candidates;
+  const codes = new Set(eligible.flatMap(item => item.isrcs?.length ? item.isrcs.map(normalizeIsrc) : [undefined]));
+  const isrc = codes.values().next().value;
+  const first = eligible[0];
+  if (isrc && codes.size === 1 && first?.title && first.artists && first.duration_ms) {
+    return { title: first.title, artists: first.artists, album: first.album, duration: first.duration_ms, isrc };
+  }
 }
 
 function saveLocalTrackMatch(track: Track, key: string, isrc: string) {
@@ -126,18 +117,24 @@ async function albumTrackIsrc(uri: string, details: NonNullable<ReturnType<typeo
   if (match && codes.every(code => normalizeIsrc(code) === match)) return match;
 }
 
-export function localTrackIsrc(track: Track, duration: number, host: Host) {
+export function confirmedLocalTrackIsrc(track: Track, duration: number) {
+  if (!track.local) return;
   const tagged = normalizeIsrc(track.isrc);
-  if (tagged) return Promise.resolve(tagged);
+  if (tagged) return tagged;
+  const details = metadata(track, duration);
+  if (!details) return;
+  try {
+    const saved = JSON.parse(localStorage.getItem(matchStorageKey(track.id)) ?? "null") as { key?: string; isrc?: string } | null;
+    if (saved?.key === details.key) return normalizeIsrc(saved.isrc);
+  } catch { /* Search when a saved match cannot be read. */ }
+}
+
+export function localTrackIsrc(track: Track, duration: number, host: Host) {
+  const confirmed = confirmedLocalTrackIsrc(track, duration);
+  if (confirmed) return Promise.resolve(confirmed);
   const details = metadata(track, duration);
   if (!details) return Promise.resolve(undefined);
   const { title, artist, album, key, fits } = details;
-  try {
-    const saved = JSON.parse(localStorage.getItem(matchStorageKey(track.id)) ?? "null") as { key?: string; isrc?: string } | null;
-    const isrc = saved?.key === key && normalizeIsrc(saved.isrc);
-    if (isrc) return Promise.resolve(isrc);
-  } catch { /* Search when a saved match cannot be read. */ }
-
   const cached = matches.get(key);
   if (cached && Date.now() < cached.until) return cached.result;
   function shortlist<T>(candidates: T[], albums: (candidate: T) => (string | undefined)[]) {
@@ -215,8 +212,8 @@ export function useLocalTrackIsrc(track: Track | null, duration: number, host: H
       const request = ++generation;
       void localTrackIsrc(song, duration, host).then(isrc => {
         if (request !== generation) return;
-        if (isrc) setResult({ track: song, isrc });
-        else retry = window.setTimeout(() => resolve(song), 60_000);
+        setResult(isrc ? { track: song, isrc } : undefined);
+        if (!isrc) retry = window.setTimeout(() => resolve(song), 60_000);
       });
     }
     const onLyrics = (event: Event) => {
