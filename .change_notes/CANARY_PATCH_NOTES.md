@@ -1,5 +1,10 @@
 # Lyssna Lyrics patch notes
 
+## v1.1.0-b97f678
+
+- Reset per-song source choices with Clear Cache and check for fresh lyrics.
+- Return to source lyrics after a successful Creator upload. Refresh approved lyrics immediately and show draft preview again when you make a new edit.
+
 ## v1.1.0-8e3aa2f
 
 - Show Already showing source when a TTML Creator draft already matches its lyric source.
