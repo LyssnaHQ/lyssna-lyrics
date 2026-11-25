@@ -1,5 +1,9 @@
 # Lyssna Lyrics patch notes
 
+## v1.1.0-8e3aa2f
+
+- Show Already showing source when a TTML Creator draft already matches its lyric source.
+
 ## v1.1.0-86623eb
 
 - Attach commas and other trailing punctuation to the previous word when loading TTML into Creator, preserving the word timing.
