@@ -2246,7 +2246,7 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   pointer-events: none;
 }
 .lyssna-submission-notice[data-error] {
-  bottom: 88px;
+  bottom: 128px;
 }
 .lyssna-submission-message {
   position: relative;
