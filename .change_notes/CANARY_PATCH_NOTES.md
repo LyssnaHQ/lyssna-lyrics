@@ -1,5 +1,9 @@
 # Lyssna Lyrics patch notes
 
+## v1.1.0-a9be0dd
+
+- Put the admin upload account search beside its label in Settings.
+
 ## v1.1.0-ae11d11
 
 - Keep “Written by” with the pinned footer when all lyrics fit on screen.
