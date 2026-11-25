@@ -1,5 +1,10 @@
 # Lyssna Lyrics patch notes
 
+## v1.1.0-78f01b5
+
+- Show a small instrumental message at the bottom of the lyrics page, below the controls.
+- Remove the Unmark instrumental button. Approved lyric uploads clear instrumental marks.
+
 ## v1.1.0-f90ac04
 
 - Choose a lyric source for the current song from the lyrics toolbar.
