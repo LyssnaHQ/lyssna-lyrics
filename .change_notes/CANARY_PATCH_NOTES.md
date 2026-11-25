@@ -1,5 +1,10 @@
 # Lyssna Lyrics patch notes
 
+## v1.1.0-6309b05
+
+- Move Build Channels beside Search Settings and remove the settings footer.
+- Widen Build Channels, list saved hidden builds below Canary, and keep the hidden build key field visible.
+
 ## v1.1.0-3568e78
 
 - Put matching accounts beside the admin search field. Include the account name on the stop button.
