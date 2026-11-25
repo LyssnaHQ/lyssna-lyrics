@@ -1,5 +1,9 @@
 # Lyssna Lyrics patch notes
 
+## v1.1.0-ae11d11
+
+- Keep “Written by” with the pinned footer when all lyrics fit on screen.
+
 ## v1.1.0-f8bdf05
 
 - Briefly shake Creator upload errors when they appear, unless reduced motion is enabled.
