@@ -1,5 +1,9 @@
 # Lyssna Lyrics patch notes
 
+## v1.1.0-a5d8062
+
+- Show text labels beside TTML Creator toolbar icons when the editor is wide enough.
+
 ## v1.1.0-ec2890c
 
 - Use the selected lyrics font for the instrumental message.
