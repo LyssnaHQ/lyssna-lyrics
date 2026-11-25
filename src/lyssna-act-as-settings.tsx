@@ -63,12 +63,14 @@ export function ActAsSettings() {
   return <SettingRow label={active ? `Uploading as ${active.username}` : "Upload as another account"}
     keywords="admin upload as reserved account act as impersonate user uuid">
     {active ? <button type="button" className="pill outline" onClick={clearActAs}
-      title={`Uploads go to ${active.username} until ${clock.format(active.until)}.`}>Stop uploading</button>
+      title={`Uploads go to ${active.username} until ${clock.format(active.until)}.`}>Stop uploading as {active.username}</button>
     : <div className="lyssna-account-form lyssna-act-as-form">
       <input type="text" aria-label="Account name or user ID" placeholder="Name or user ID" autoComplete="off"
         spellCheck={false} maxLength={80} value={query} onChange={(event) => setQuery(event.target.value)} />
-      {matches.map((match) => <button key={match.id} type="button" className="pill outline" disabled={busy}
-        onClick={() => { setActAs(match); setQuery(""); setMatches([]); }}>{match.username}</button>)}
+      {matches.length > 0 && <div className="settings-actions">
+        {matches.map((match) => <button key={match.id} type="button" className="pill outline" disabled={busy}
+          onClick={() => { setActAs(match); setQuery(""); setMatches([]); }}>{match.username}</button>)}
+      </div>}
       {error && <p className="settings-alert" role="alert">{error}</p>}
     </div>}
   </SettingRow>;

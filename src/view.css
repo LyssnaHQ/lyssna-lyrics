@@ -2406,13 +2406,22 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
 .lyssna-lyrics-view .lyssna-act-as-form {
   width: 100%;
   min-width: 0;
+  align-items: flex-start;
 }
 
-.lyssna-lyrics-view .lyssna-act-as-form > :is(input, .settings-alert) {
+.lyssna-lyrics-view .lyssna-act-as-form > input {
+  flex-basis: 0;
+}
+
+.lyssna-lyrics-view .lyssna-act-as-form > .settings-alert {
   flex-basis: 100%;
 }
 
-.lyssna-lyrics-view .lyssna-act-as-form > button {
+.lyssna-lyrics-view .lyssna-act-as-form > .settings-actions {
+  max-width: 60%;
+}
+
+.lyssna-lyrics-view .lyssna-act-as-form .settings-actions > button {
   max-width: 100%;
   white-space: normal;
   overflow-wrap: anywhere;
