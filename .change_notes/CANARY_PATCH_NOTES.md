@@ -1,5 +1,9 @@
 # Lyssna Lyrics patch notes
 
+## v1.1.0-25fe0a7
+
+- Make Space pause and resume the audio selected in Creator. Keep Spotify paused while Creator uses recorded or imported audio.
+
 ## v1.1.0-623e874
 
 - Remove the top-left glow from the Build Channels popup.
