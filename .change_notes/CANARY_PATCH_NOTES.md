@@ -1,5 +1,11 @@
 # Lyssna Lyrics patch notes
 
+## v1.1.0-c723f87
+
+- Refresh lyrics as soon as you choose a source, including when a Creator draft was showing.
+- Spin the refresh icon while lyrics are loading in place of the refresh popup.
+- Credit Apple Music for retained timing and list community contributors first.
+
 ## v1.1.0-a5d8062
 
 - Show text labels beside TTML Creator toolbar icons when the editor is wide enough.
