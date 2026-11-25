@@ -1,5 +1,9 @@
 # Lyssna Lyrics patch notes
 
+## v1.2.0
+
+- Beta and Canary now run the same 1.2.0 build as Stable. [Read the 1.2.0 release notes](https://github.com/LyssnaHQ/lyssna-lyrics/releases/tag/v1.2.0).
+
 ## v1.1.0-25fe0a7
 
 - Make Space pause and resume the audio selected in Creator. Keep Spotify paused while Creator uses recorded or imported audio.
