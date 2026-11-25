@@ -1,5 +1,9 @@
 # Lyssna Lyrics patch notes
 
+## v1.1.0-c769dad
+
+- Give the settings hide buttons a circular outline that matches the other controls.
+
 ## v1.1.0-22dbc76
 
 - Restore Effects and Advanced as separate tabs. Keep account and Creator tools under Tools.
