@@ -1,5 +1,9 @@
 # Lyssna Lyrics patch notes
 
+## v1.2.0-54789d0
+
+- Show songwriter credits from Lyssna’s song record when its lyrics file leaves them out. Use Apple Music or Spotify credits when the selected source has no writers.
+
 ## v1.2.0
 
 ### Recording and spectrograms
