@@ -1,5 +1,9 @@
 # Lyssna Lyrics patch notes
 
+## v1.1.0-42f00d0
+
+- Put the Build Channels button to the left of Search Settings.
+
 ## v1.1.0-6309b05
 
 - Move Build Channels beside Search Settings and remove the settings footer.
