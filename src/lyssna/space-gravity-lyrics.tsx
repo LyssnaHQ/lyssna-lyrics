@@ -21,6 +21,7 @@ import { LyricAnimator } from "./lyric-animator";
 import { presetOf } from "./animator-tuning";
 import { LyricWord } from "./lyric-word";
 import { LyricCountdown } from "./lyric-countdown";
+import { activeLines } from "./renderer";
 import {
   createBody,
   GRAVITY,
@@ -581,6 +582,7 @@ export function SpaceGravityLyrics({
   credits,
   highlighter,
   wordDensity,
+  showTranslations,
   linkWidth = 1,
   visualiser,
 }: {
@@ -588,6 +590,7 @@ export function SpaceGravityLyrics({
   time: number;
   reduceMotion: boolean;
   wordDensity: number;
+  showTranslations?: boolean;
   /** The Highlighter's ink colour: each word gets its pen instead of the
    *  usual sweep. */
   highlighter?: string;
@@ -1030,6 +1033,10 @@ export function SpaceGravityLyrics({
         )}
       </div>
       <div className="gravity-credits">
+        {showTranslations && activeLines(lyrics.lines, time).map(index => {
+          const translation = lyrics.lines[index].translation;
+          return translation && <div key={index} className="lyric-translation gravity-translation">{translation}</div>;
+        })}
         {credits}
       </div>
     </div>

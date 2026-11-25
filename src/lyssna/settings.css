@@ -551,9 +551,12 @@
     align-items: stretch;
     gap: 8px;
   }
-  .lyrics-settings .lyssna-account-actions {
+  .lyrics-settings .settings-actions.lyssna-account-actions {
     justify-content: flex-start;
   }
+}
+.lyssna-build-channels .setting-label {
+  overflow-wrap: anywhere;
 }
 .lyrics-settings .setting-label {
   font-size: 13.5px;

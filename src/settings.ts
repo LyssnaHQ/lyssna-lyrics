@@ -35,7 +35,7 @@ export const defaults = {
   lyrics_background: "animated" as "animated" | "static" | "cover" | "artist" | "color" | "none",
   lyrics_background_brightness: 100,
   lyrics_background_blur: 0,
-  lyrics_pinned_footer: "off" as "off" | "no_writers" | "full",
+  lyrics_pinned_footer: "no_writers" as "off" | "no_writers" | "full",
   lyrics_year_position: "left" as "off" | "left" | "right",
   lyrics_seek_compensation: true,
   lyrics_simple: false,

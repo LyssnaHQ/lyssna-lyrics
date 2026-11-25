@@ -2,7 +2,7 @@ import { ConvertLineLyricsToExperimentalWordSync, ConvertStaticLyricsToExperimen
 import type { Line, Lyrics, Word } from "./lyssna/types";
 
 type Syllable = { Text: string; StartTime: number; EndTime: number; IsPartOfWord: boolean; TransliteratedText?: string; estimated?: boolean };
-type Vocal = { StartTime: number; EndTime: number; Syllables: Syllable[]; original?: Line };
+type Vocal = { StartTime: number; EndTime: number; Syllables: Syllable[]; TranslatedText?: string; original?: Line };
 type Group = { Type: "Vocal"; OppositeAligned: boolean; Lead: Vocal; Background?: Vocal[] };
 type TimingResult = { Type: string; Content?: Group[]; experimentalWordSync?: boolean; lineTimingOnly?: boolean };
 
@@ -13,7 +13,8 @@ export function needsWordSync(lyrics: Lyrics, duration: number) {
 
 function lineTimedInput(lyrics: Lyrics) {
   return lyrics.lines.map((line) => ({ Type: "Vocal", Text: line.text, StartTime: line.start_ms / 1_000,
-    EndTime: line.end_ms / 1_000, TransliteratedText: line.romanization || undefined, OppositeAligned: line.opposite }));
+    EndTime: line.end_ms / 1_000, TranslatedText: line.translation || undefined,
+    TransliteratedText: line.romanization || undefined, OppositeAligned: line.opposite }));
 }
 
 function wordTimedInput(lyrics: Lyrics) {
@@ -48,7 +49,8 @@ function normalizedOutput(result: TimingResult, lyrics: Lyrics) {
     const original = vocal.original ?? (background ? undefined : (sameText?.background || !lyrics.synced) ? sameText : originalsByTime.get(`${start}:${opposite}`));
     const hasWordReading = words.some((word) => word.romanization);
     return { text: text || original?.text || "", words: result.lineTimingOnly ? [] : words, background: background || !!original?.background, opposite,
-      start_ms: start, end_ms: Math.round(vocal.EndTime * 1_000), translation: original?.translation ?? "",
+      start_ms: start, end_ms: Math.round(vocal.EndTime * 1_000),
+      translation: vocal.TranslatedText ?? (estimated ? "" : original?.translation ?? ""),
       romanization: hasWordReading ? words.map((word) => word.romanization ?? word.text).join("") : text === original?.text ? original.romanization : "" };
   }
   return result.Content?.flatMap((group) => [

@@ -7,7 +7,7 @@ const defaultKeys = [
   "lyrics_early_scroll", "lyrics_early_scroll_ms", "lyrics_smooth_scroll", "lyrics_simple",
   "lyrics_minimal", "lyrics_keep_overlaps", "lyrics_line_hover", "lyrics_wide_duet", "lyrics_credits_follow",
   "space_gravity", "lyrics_highlighter", "lyrics_word_filter", "lyrics_animator", "experimental_word_sync",
-  "romanized", "lyrics_translations",
+  "romanized",
 ] as const satisfies readonly (keyof Settings)[];
 
 const profile: Partial<Settings> = {

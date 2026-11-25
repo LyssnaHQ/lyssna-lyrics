@@ -121,7 +121,7 @@ export function AccountSettings({ ready, host, signedIn, profile }: AccountDetai
   return <><SettingRow label={account ? `Lyssna Account · ${account.username}` : "Lyssna account"} help={help}
     keywords={`lyssna account profile login sign in sign out reputation tier email${admin ? " add isrc links catalogue backfill" : ""}`} stacked={!!pending}>
     {signedIn ? <div className="settings-actions lyssna-account-actions">
-      {admin && <IsrcBackfill key={account.username} host={host} setStatus={setIsrcStatus} />}
+      {admin && <IsrcBackfill key={account?.username} host={host} setStatus={setIsrcStatus} />}
       {account && <a className="pill outline" href={`https://lyssna.org/u/${encodeURIComponent(account.username)}`}
         target="_blank" rel="noopener noreferrer">Profile <ExternalLink size={13} /></a>}
       <button type="button" className="pill outline" disabled={busy}

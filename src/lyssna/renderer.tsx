@@ -8,7 +8,7 @@ import { LyricCountdown } from "./lyric-countdown";
 import { LyricWord } from "./lyric-word";
 import { engineLines, glideScroll, GLIDE_MS, lineBlur, stepScroll, tuneMotion, vocalEnd, vocalGap, vocalGaps, wordGroups, type ScrollSpring, type VocalGap } from "./lyric-motion";
 import type { Line, Lyrics, Word } from "./types";
-import type { Settings } from "../settings";
+import { defaults, type Settings } from "../settings";
 import { LyricCredits } from "../credits";
 
 export function activeLines(
@@ -77,7 +77,7 @@ export function LyricsDisplay({
   const [following, setFollowing] = useState(true);
   const [atEnd, setAtEnd] = useState(false);
   const [returnDirection, setReturnDirection] = useState<"up" | "down">("down");
-  const footerMode = settings.lyrics_pinned_footer ?? "off";
+  const footerMode = settings.lyrics_pinned_footer ?? defaults.lyrics_pinned_footer;
   const writerNames = lyrics.songwriters?.length ? lyrics.songwriters : writers;
   const writerCredits = <WriterCredits names={writerNames} />;
   // As in Spicy Lyrics, browsing ends on its own once the user stops

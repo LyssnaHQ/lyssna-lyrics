@@ -141,7 +141,7 @@ return { flag, range, Look: [
           <select
             className="settings-select"
             aria-label="Pinned Lyrics Footer"
-            value={settings.lyrics_pinned_footer ?? "off"}
+            value={settings.lyrics_pinned_footer ?? defaults.lyrics_pinned_footer}
             onChange={(event) =>
               onSettings({
                 lyrics_pinned_footer: event.target

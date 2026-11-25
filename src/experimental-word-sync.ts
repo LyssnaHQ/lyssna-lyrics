@@ -18,6 +18,7 @@ type LineLyricsEntry = {
   Text: string;
   StartTime?: number;
   EndTime?: number;
+  TranslatedText?: string;
   TransliteratedText?: string;
   GibberishText?: string;
   OppositeAligned?: boolean;
@@ -25,6 +26,7 @@ type LineLyricsEntry = {
 
 type StaticLyricsEntry = {
   Text: string;
+  TranslatedText?: string;
   TransliteratedText?: string;
   GibberishText?: string;
   OppositeAligned?: boolean;
@@ -43,16 +45,13 @@ type GeneratedBackground = {
   StartTime: number;
   EndTime: number;
   Syllables: GeneratedWord[];
+  TranslatedText?: string;
 };
 
 type GeneratedLine = {
   Type: "Vocal";
   OppositeAligned?: boolean;
-  Lead: {
-    StartTime: number;
-    EndTime: number;
-    Syllables: GeneratedWord[];
-  };
+  Lead: GeneratedBackground;
   Background?: GeneratedBackground[];
 };
 
@@ -462,6 +461,7 @@ function createFallbackLead(
       StartTime: lineStart,
       EndTime: lineEnd,
       Syllables: leadWords,
+      TranslatedText: line.TranslatedText,
     },
   };
 }
@@ -1114,6 +1114,7 @@ function buildStaticSyntheticLineLyrics(
     syntheticLines.push({
       Type: "Vocal",
       Text: lineText,
+      TranslatedText: entry.line.TranslatedText,
       TransliteratedText: entry.line.TransliteratedText,
       GibberishText: entry.line.GibberishText,
       OppositeAligned: entry.line.OppositeAligned,
@@ -1252,6 +1253,7 @@ export function ConvertLineLyricsToExperimentalWordSync(
           StartTime: lineStart,
           EndTime: lineEnd,
           Syllables: leadWords,
+          TranslatedText: line.TranslatedText,
         },
         ...(background.length > 0 ? { Background: background } : {}),
       });
@@ -1281,6 +1283,7 @@ export function ConvertLineLyricsToExperimentalWordSync(
       (previousLine.OppositeAligned ?? false) === (line.OppositeAligned ?? false) &&
       background.length > 0
     ) {
+      background[0].TranslatedText = line.TranslatedText;
       previousLine.Background = [...(previousLine.Background ?? []), ...background];
       continue;
     }

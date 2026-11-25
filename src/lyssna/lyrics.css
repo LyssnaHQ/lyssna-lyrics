@@ -1165,6 +1165,11 @@
 .gravity-credits p {
   margin: 0;
 }
+.gravity-credits .gravity-translation {
+  margin: 0 0 0.35em;
+  font-size: clamp(16px, calc(var(--lyric-size, 58px) * 0.46), 32px);
+  overflow-wrap: anywhere;
+}
 .gravity-credits .writer-credits {
   margin-bottom: 0.2em;
 }

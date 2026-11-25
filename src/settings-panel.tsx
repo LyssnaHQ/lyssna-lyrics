@@ -1,5 +1,5 @@
 import { cloneElement, isValidElement, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
-import { AlignLeft, AppWindow, ChevronLeft, FileText, Palette, Pin, Search, Settings2, WandSparkles, Wrench, X } from "lucide-react";
+import { AlignLeft, AppWindow, ChevronLeft, FileText, FlaskConical, Palette, Pin, Search, Settings2, SlidersHorizontal, WandSparkles, Wrench, X } from "lucide-react";
 import EnhancementsSection from "./enhancements/section";
 import { AnimatorPanel } from "./lyssna/animator-settings";
 import { appFontStyles, FontControl } from "./font-settings";
@@ -13,6 +13,7 @@ import { pictureInPicture } from "./popout";
 import { quickEffects } from "./quick-effects";
 import { AccountSettings, useSettingsAccount } from "./account-settings";
 import { StoredDataSettings } from "./creator/stored-data-settings";
+import { activeHiddenBuildKey, forgetHiddenBuild, readSavedHiddenBuilds, rememberHiddenBuild } from "./hidden-builds";
 import type { Host, Track } from "./host";
 
 export type Channel = "stable" | "beta" | "canary";
@@ -31,8 +32,8 @@ export type BuildOptions = {
 };
 
 const tabs = [
-  ["Appearance", Palette], ["Lyrics", AlignLeft], ["Views", AppWindow], ["Spotify Tweaks", WandSparkles],
-  ["Sources", FileText], ["Tools", Wrench],
+  ["Appearance", Palette], ["Lyrics", AlignLeft], ["Effects", FlaskConical], ["Views", AppWindow],
+  ["Spotify Tweaks", WandSparkles], ["Sources", FileText], ["Tools", Wrench], ["Advanced", SlidersHorizontal],
 ] as const;
 type Tab = (typeof tabs)[number][0];
 const tabId = (label: Tab) => `lyssna-settings-tab-${label.toLowerCase().replaceAll(" ", "-")}`;
@@ -48,8 +49,7 @@ const submenus = {
 type Submenu = keyof typeof submenus;
 type Place = { tab: Tab; scroll: number; submenu?: Submenu; submenuScroll?: number };
 const oldTabs: Record<string, Tab> = {
-  General: "Appearance", Library: "Sources", Effects: "Lyrics", Layout: "Views",
-  Advanced: "Tools", About: "Tools", Credits: "Tools",
+  General: "Appearance", Library: "Sources", Layout: "Views", About: "Advanced", Credits: "Advanced",
 };
 
 function readPlace(remember: boolean): Place {
@@ -57,7 +57,8 @@ function readPlace(remember: boolean): Place {
     const place = remember && JSON.parse(localStorage.getItem(placeKey) ?? "null");
     if (place && typeof place.tab === "string") {
       const oldTab = Object.hasOwn(oldTabs, place.tab) ? oldTabs[place.tab] : undefined;
-      const tab = oldTab ?? tabs.find(([label]) => label === place.tab)?.[0];
+      const tab = place.submenu === "storage" ? "Tools" : place.submenu === "hidden" || place.submenu === "credits" ? "Advanced"
+        : oldTab ?? tabs.find(([label]) => label === place.tab)?.[0];
       if (tab) return {
         tab, scroll: !oldTab && Number.isFinite(place.scroll) ? place.scroll : 0,
         submenu: place.tab === "Credits" || place.tab === "About" ? "credits"
@@ -103,6 +104,7 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
   const [switching, setSwitching] = useState(false);
   const [buildKey, setBuildKey] = useState("");
   const [buildError, setBuildError] = useState("");
+  const [savedBuilds, setSavedBuilds] = useState(readSavedHiddenBuilds);
   const [showChannels, setShowChannels] = useState(false);
   const [channelError, setChannelError] = useState("");
   const [transferring, setTransferring] = useState(false);
@@ -124,6 +126,7 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
   const version = options.hiddenVersion ?? options.channels[options.channel];
   const activeBuild = options.hiddenVersion ? "Hidden build" : channelLabels[options.channel];
   const { selectHiddenBuild, clearHiddenBuild } = options;
+  const activeHiddenKey = activeHiddenBuildKey();
   const hidden = new Set(settings.hidden_settings);
   const hiding = {
     allow: settings.settings_allow_hiding,
@@ -212,7 +215,36 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
 
   function openChannels() {
     setChannelError("");
+    setBuildError("");
+    try {
+      setSavedBuilds(activeHiddenKey ? rememberHiddenBuild(activeHiddenKey, options.hiddenVersion) : readSavedHiddenBuilds());
+    } catch (error) {
+      setBuildError(error instanceof Error ? error.message : "Couldn’t load saved build keys.");
+    }
     setShowChannels(true);
+  }
+
+  function addHiddenBuild() {
+    const key = buildKey.trim();
+    if (switching || !key || !selectHiddenBuild) return;
+    void runBuildAction(async () => {
+      const saved = readSavedHiddenBuilds().some(build => build.key === key);
+      // Save before switching because the launcher reloads after validating the key.
+      setSavedBuilds(rememberHiddenBuild(key));
+      try { await selectHiddenBuild(key); }
+      catch (error) {
+        if (!saved) setSavedBuilds(forgetHiddenBuild(key));
+        throw error;
+      }
+      setBuildKey("");
+    }, setBuildError);
+  }
+
+  function removeHiddenBuild(key: string) {
+    void runBuildAction(() => {
+      setSavedBuilds(forgetHiddenBuild(key));
+      if (key === activeHiddenKey) clearHiddenBuild?.();
+    }, setBuildError);
   }
 
   async function runBuildAction(action: () => void | Promise<void>, reportError: (message: string) => void) {
@@ -305,14 +337,14 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
     ]],
     ["Lyrics", "Line layout", rowsFor("lyrics_right_align", "lyrics_flip_duet", "lyrics_wide_duet", "lyrics_line_hover"), true],
     ["Lyrics", "Loading and missing lyrics", rowsFor("lyrics_skeleton", "lyrics_no_lyrics_notice"), true],
-    ["Lyrics", "Animation and text effects", rowsFor("animator", "word-filter")],
-    ["Lyrics", "Lyric modes", rowsFor("lyrics_simple", "lyrics_minimal", "lyrics_keep_overlaps"), true],
-    ["Lyrics", "Space Gravity", [
+    ["Effects", "Animation and text effects", rowsFor("animator", "word-filter")],
+    ["Effects", "Lyric modes", rowsFor("lyrics_simple", "lyrics_minimal", "lyrics_keep_overlaps"), true],
+    ["Effects", "Space Gravity", [
       ...rowsFor("space_gravity", "gravity_word_density"),
       (settings.space_gravity || searching) && visualRowsByKey.get("lyrics_seek_compensation"),
     ]],
-    ["Lyrics", "Highlighter", rowsFor("lyrics_highlighter", "highlighter-colour", "gravity_links", "gravity_link_width")],
-    ["Lyrics", "Visualiser", rowsFor("lyrics_visualiser", "lyrics_visualiser_opacity")],
+    ["Effects", "Highlighter", rowsFor("lyrics_highlighter", "highlighter-colour", "gravity_links", "gravity_link_width")],
+    ["Effects", "Visualiser", rowsFor("lyrics_visualiser", "lyrics_visualiser_opacity")],
     ["Views", "Artwork and layout", rowsFor("lyrics_compact", "lyrics_hide_artwork", "lyrics_artwork_right", "lyrics_up_next"), true],
     ["Views", "Controls and details", rowsFor("toolbar-position", "year")],
     ["Views", "Full screen", rowsFor("always-show", "fullscreen-volume", "escape", "fullscreen_animate_close", "glass_seek")],
@@ -375,11 +407,13 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
         }} />
       </SettingRow>,
     ]],
-    ["Tools", "Storage and backups", [
+    ["Tools", "Storage", [
       <SettingRow key="manage-storage" label="Manage Stored Data" help="Manage recordings, spectrograms, and cached animated cover art."
         keywords="clear cache storage disk audio cover art delete export spectral waveform">
         {submenuButton("storage", "Manage")}
       </SettingRow>,
+    ]],
+    ["Advanced", "Backups", [
       <SettingRow key="settings-transfer" label="Import and export settings" help="Transfer Lyssna preferences, animator presets, per-song offsets and imported TTML." keywords="backup restore transfer">
         <div className="settings-actions">
           <input ref={transferInput} hidden type="file" accept=".json" aria-label="Import settings file" onChange={(event) => {
@@ -392,14 +426,14 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
         </div>
       </SettingRow>,
     ]],
-    ["Tools", "Preferences", [
+    ["Advanced", "Preferences", [
       flag("settings_remember_place", "Remember settings location", "Reopen Settings on the tab and at the place it was closed.", "tab location remember reopen"),
       flag("settings_allow_hiding", "Allow hiding settings", "Hide settings you never change. Restore them from Hidden settings."),
       (settings.settings_allow_hiding || searching) && flag("settings_hide_buttons", "Show hide buttons", "Put a hide button beside each setting's name.",
         "hide hidden settings buttons eye", settings.settings_allow_hiding ? undefined : "Turn on Allow hiding settings first."),
       flag("sync_other_plugin_preferences", "Sync preferences with other plugins", "Apply changes to compatible preferences from Legacy, Spicy Lyrics or Spotify+."),
     ], true],
-    ["Tools", "Settings and build information", [
+    ["Advanced", "Settings and build information", [
       settings.settings_allow_hiding && <SettingRow key="manage-hidden" label="Manage Hidden Settings" help="Restore settings hidden from the main window.">
         {submenuButton("hidden", "Manage")}
       </SettingRow>,
@@ -414,7 +448,7 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
   ];
   const hiddenRows = new Map<string, string>();
   for (const section of sections) {
-    if (section[0] === "Tools") continue;
+    if (section[0] === "Tools" || section[0] === "Advanced") continue;
     section[2] = section[2].map((row) => {
       if (!isValidElement(row) || row.type !== SettingRow || row.key === null) return row;
       const setting = row as ReactElement<{ label: ReactNode; hideId?: string; children?: ReactNode }>;
@@ -505,7 +539,7 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
         {notice && <p className="settings-alert" role="status">{notice}</p>}
       </div>
       {!submenu && <footer className="lyrics-settings-footer">
-        <button type="button" className="pill outline settings-build-trigger" aria-haspopup="dialog"
+        <button type="button" id="lyssna-open-builds" className="pill outline settings-build-trigger" aria-haspopup="dialog"
           aria-label={`Build Channels, ${activeBuild}${version ? ` v${version}` : ""}`} onClick={openChannels}>
           {activeBuild}{version ? ` · v${version}` : ""}
         </button>
@@ -545,14 +579,30 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
             </SettingRow>;
           })}
         </div>
+        {!!savedBuilds.length && selectHiddenBuild && <SettingsSection category="Build Channels" title="Saved hidden builds">
+          {savedBuilds.map(build => {
+            const selected = build.key === activeHiddenKey;
+            const current = selected && !!options.hiddenVersion;
+            const ending = build.key.slice(-4);
+            return <SettingRow key={build.key} label={build.version ? `v${build.version}` : "Hidden build"}
+              help={`${selected && !current ? "Unavailable · " : ""}Key ending in ${ending}`}>
+              <div className="settings-actions">
+                <button type="button" className="pill outline" disabled={switching || current}
+                  aria-label={current ? "Current hidden build" : `Switch to hidden build ending in ${ending}`}
+                  onClick={() => void runBuildAction(() => selectHiddenBuild(build.key), setBuildError)}>
+                  {current ? "Current" : selected ? "Retry" : "Switch"}
+                </button>
+                <button type="button" className="pill outline" disabled={switching}
+                  aria-label={`Remove hidden build ending in ${ending}`} onClick={() => removeHiddenBuild(build.key)}>Remove</button>
+              </div>
+            </SettingRow>;
+          })}
+        </SettingsSection>}
         {selectHiddenBuild && showChannels && <details className="settings-build-key" open={/\b(key|hidden|private)\b/i.test(query)}>
-          <summary>Hidden build key</summary>
-          {clearHiddenBuild && <p className="setting-help">{options.hiddenVersion ? "Remove the key to reload your public channel."
-            : "Saved build unavailable. Remove the key or enter a new one."}</p>}
+          <summary>Add hidden build key</summary>
           <form className="lyssna-build-key-form" onSubmit={(event) => {
             event.preventDefault();
-            const key = buildKey.trim();
-            if (!switching && key) void runBuildAction(() => selectHiddenBuild(key), setBuildError);
+            addHiddenBuild();
           }}>
             <input type="password" autoComplete="off" aria-label="Hidden build key" placeholder="Paste build key"
               value={buildKey} disabled={switching} maxLength={64} onChange={(event) => {
@@ -560,11 +610,11 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
                 setBuildError("");
               }} />
             <button type="submit" className="pill outline" disabled={switching || !buildKey.trim()}>Apply and reload</button>
-            {clearHiddenBuild && <button type="button" className="pill outline" disabled={switching}
+            {clearHiddenBuild && !savedBuilds.some(build => build.key === activeHiddenKey) && <button type="button" className="pill outline" disabled={switching}
               onClick={() => void runBuildAction(clearHiddenBuild, setBuildError)}>Remove key</button>}
           </form>
-          {buildError && <p className="settings-alert" role="alert">{buildError}</p>}
         </details>}
+        {buildError && <p className="settings-alert" role="alert">{buildError}</p>}
         {channelError && <p className="settings-alert" role="alert">{channelError}</p>}
       </div>
     </dialog>
