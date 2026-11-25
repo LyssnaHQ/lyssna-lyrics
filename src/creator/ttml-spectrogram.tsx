@@ -22,6 +22,8 @@ const FOLLOW_AFTER_MS = 5000;
 const DETAIL = [256, 512, 1024, 2048];
 const ROWS = 384;
 const SPOTIFY_DETAIL = 512;
+const AUDIO_GAIN_CENTER = 0.5;
+const AUDIO_GAIN_EXPONENT = 4;
 const FREQUENCY_LABELS = [50, 100, 250, 500, 1000, 2500, 5000, 10000, 20000];
 const RULER = 30;
 const SNAP_PX = 7;
@@ -263,7 +265,7 @@ export function TtmlSpectrogram({
     240,
     isNumber,
   );
-  const [audioGain, setAudioGain] = useStored("lyssna.ttml-spectrum-gain", 3, isNumber);
+  const [audioGain, setAudioGain] = useStored("lyssna.ttml-spectrum-gain", AUDIO_GAIN_CENTER, isNumber);
   const [pitchGain, setPitchGain] = useStored("lyssna.ttml-pitch-gain", 1, isNumber);
   const gain = pitch ? pitchGain : audioGain;
   const setGain = pitch ? setPitchGain : setAudioGain;
@@ -671,7 +673,8 @@ export function TtmlSpectrogram({
   const hoverBand = hover && hover.y > RULER ? Math.max(0, Math.min(1, 1 - (hover.y - RULER) / plotHeight)) : null;
   const hoverHz = !pitch && hoverBand !== null ? spectrumFrequency(hoverBand) : null;
   const hoverNote = pitch && hoverBand !== null ? NOTES[Math.min(pitchBands - 1, Math.floor(hoverBand * pitchBands))] : null;
-  const gainFill = ((gain - 0.5) / 7.5) * 100;
+  const gainPosition = pitch ? gain : Math.log2(gain / AUDIO_GAIN_CENTER);
+  const gainLabel = `${Number(gain.toPrecision(3))}×`;
 
   return (
     <section
@@ -696,18 +699,21 @@ export function TtmlSpectrogram({
             <span key={hz} style={{ bottom: `${spectrumFrequencyPosition(hz) * 100}%` }}>{hz < 1000 ? hz : `${hz / 1000}k`}</span>
           ))}
         </div>
-        <label className="ttml-spectrum-gain" title={`Gain ${gain}×`}>
+        <label className="ttml-spectrum-gain" title={`Gain ${gainLabel}`}>
           <input
             type="range"
             aria-label="Spectrogram gain"
-            min={0.5}
-            max={8}
-            step={0.5}
-            value={gain}
-            style={{ ["--fill" as string]: `${gainFill}%` }}
-            onChange={(event) => setGain(Number(event.target.value))}
+            aria-valuetext={gainLabel}
+            min={pitch ? 0.5 : -AUDIO_GAIN_EXPONENT}
+            max={pitch ? 8 : AUDIO_GAIN_EXPONENT}
+            step={pitch ? 0.5 : 0.1}
+            value={gainPosition}
+            onChange={(event) => {
+              const position = event.currentTarget.valueAsNumber;
+              setGain(pitch ? position : AUDIO_GAIN_CENTER * 2 ** position);
+            }}
           />
-          <output>{gain}×</output>
+          <output>{gainLabel}</output>
         </label>
       </div>
       <div
