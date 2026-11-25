@@ -1,5 +1,9 @@
 # Lyssna Lyrics patch notes
 
+## v1.1.0-5e42cfc
+
+- Fill missing songwriter credits from Apple Music when enabled, while keeping the selected lyrics and timing.
+
 ## v1.1.0-a7b5edc
 
 - Keep standalone parenthesized lrc.red lyrics in their original order and preserve word spacing in timed backing vocals.
