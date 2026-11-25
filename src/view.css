@@ -1625,7 +1625,7 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   padding-inline: 0;
 }
 
-.lyssna-lyrics-view .lyrics-toolbar[data-vertical] .lyssna-quick-choice {
+.lyssna-lyrics-view .lyrics-toolbar[data-vertical] .lyssna-quick-picker .lyssna-quick-choice {
   display: grid;
   place-items: center;
   width: 32px;
@@ -1676,7 +1676,7 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   padding-inline: 0;
 }
 
-.lyssna-lyrics-view .lyssna-quick-font-popover {
+.lyssna-lyrics-view .lyssna-quick-popover {
   position: fixed;
   inset: auto;
   max-width: calc(100% - 24px);
@@ -1686,6 +1686,20 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   border-radius: 16px;
   background: light-dark(#fafafa, #202022);
   color: inherit;
+}
+
+.lyssna-lyrics-view .lyssna-quick-source-list {
+  min-width: 11rem;
+  overflow-y: auto;
+}
+
+.lyssna-lyrics-view .lyssna-quick-source-list .lyssna-quick-choice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
 }
 
 .lyssna-lyrics-view .plugin-settings .setting-pin {

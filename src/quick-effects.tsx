@@ -1,7 +1,9 @@
-import { useId, useLayoutEffect, useRef, useState } from "react";
-import { ArrowUpDown, Ban, CaseLower, CaseSensitive, CaseUpper, ChartNoAxesColumn, ChevronDown, History, Shuffle, SlidersHorizontal, Sparkles, Type } from "lucide-react";
+import { useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type RefObject } from "react";
+import { ArrowUpDown, Ban, CaseLower, CaseSensitive, CaseUpper, ChartNoAxesColumn, Check, ChevronDown, History, Shuffle, SlidersHorizontal, Sparkles, Type } from "lucide-react";
 import { useAnchoredPopover } from "./anchored-popover";
 import { FontControl } from "./font-settings";
+import type { Track } from "./host";
+import { lyricSources, setSongLyricSource, songLyricSource, sourceIds } from "./lyric-sources";
 import { ANIMATOR_PRESETS, ANIMATOR_PRESET_LABELS, choosePreset, presetOf } from "./lyssna/animator-tuning";
 import { WORD_FILTER_OPTIONS } from "./lyssna/word-filter";
 import type { Settings } from "./settings";
@@ -53,6 +55,46 @@ const choiceIcons = {
   off: Ban, gibberish: Shuffle, lower: CaseLower, upper: CaseUpper,
 };
 
+function moveChoiceFocus(event: KeyboardEvent<HTMLDivElement>, preventScroll = true) {
+  const { key, currentTarget, target } = event;
+  if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(key)) return;
+  const buttons = Array.from(currentTarget.querySelectorAll("button"));
+  const index = buttons.findIndex((button) => button === target);
+  if (index < 0) return;
+  event.preventDefault();
+  event.stopPropagation();
+  const next = key === "Home" ? 0 : key === "End" ? buttons.length - 1
+    : (index + (key === "ArrowLeft" || key === "ArrowUp" ? -1 : 1) + buttons.length) % buttons.length;
+  buttons[next]?.focus({ preventScroll });
+}
+
+export function SongSourcePicker({ id, track, trigger, close, onError, view }: {
+  id: string; track: Track; trigger: RefObject<HTMLButtonElement | null>; close: () => void; onError: () => void; view: Window;
+}) {
+  const panel = useRef<HTMLDivElement>(null);
+  const sources = sourceIds.filter(source => !track.local || (source !== "spotify" && source !== "spicy"));
+  const preferred = songLyricSource(track);
+  const selected = preferred && sources.includes(preferred) ? preferred : undefined;
+  useAnchoredPopover(view, true, trigger, panel);
+  useLayoutEffect(() => {
+    panel.current?.querySelector<HTMLButtonElement>('[aria-pressed="true"]')?.focus();
+  }, []);
+
+  return <div className="lyssna-quick-popover lyssna-quick-source-list" id={id} ref={panel} popover="auto"
+    role="group" aria-label="Lyrics source for this song" onKeyDown={(event) => moveChoiceFocus(event, false)}
+    onToggle={(event) => { if (event.newState === "closed" && !panel.current?.matches(":popover-open")) close(); }}>
+    {[undefined, ...sources].map(source => <button key={source ?? "default"} className="lyssna-quick-choice" type="button"
+      aria-pressed={source === selected} onClick={() => {
+        try { setSongLyricSource(track, source); }
+        catch { onError(); return; }
+        close();
+      }}>
+      {source ? lyricSources[source].name : "Your source order"}
+      {source === selected && <Check size={14} aria-hidden="true" />}
+    </button>)}
+  </div>;
+}
+
 function VerticalFontPicker({ settings, change, view }: {
   settings: Settings; change: (patch: Partial<Settings>) => void; view: Window;
 }) {
@@ -66,7 +108,7 @@ function VerticalFontPicker({ settings, change, view }: {
       aria-label="Choose lyrics font" aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)}>
       <ChevronDown size={16} aria-hidden="true" />
     </button>
-    <div className="lyssna-quick-font-popover" id={id} ref={panel} popover="auto"
+    <div className="lyssna-quick-popover" id={id} ref={panel} popover="auto"
       onToggle={(event) => { if (event.newState === "closed" && !panel.current?.matches(":popover-open")) setOpen(false); }}>
       <FontControl field="lyric_font" settings={settings} change={change} view={view} />
     </div>
@@ -115,18 +157,7 @@ export function QuickEffectPicker({ effect, settings, change, close, view, verti
     {effect.id === "lyric-font" ? <div className="lyssna-quick-font" ref={options}>
       {vertical ? <VerticalFontPicker settings={settings} change={change} view={view} />
         : <FontControl field="lyric_font" settings={settings} change={change} view={view} />}
-    </div> : <div className="lyssna-quick-choices" role="group" aria-label={effect.label} ref={options} onKeyDown={(event) => {
-      const { key, currentTarget, target } = event;
-      if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(key)) return;
-      const buttons = Array.from(currentTarget.querySelectorAll("button"));
-      const index = buttons.findIndex((button) => button === target);
-      if (index < 0) return;
-      event.preventDefault();
-      event.stopPropagation();
-      const next = key === "Home" ? 0 : key === "End" ? buttons.length - 1
-        : (index + (key === "ArrowLeft" || key === "ArrowUp" ? -1 : 1) + buttons.length) % buttons.length;
-      buttons[next]?.focus({ preventScroll: true });
-    }}>
+    </div> : <div className="lyssna-quick-choices" role="group" aria-label={effect.label} ref={options} onKeyDown={moveChoiceFocus}>
       {choices.map(({ value, label, selected, apply }) => {
         const Icon = choiceIcons[value];
         return <button className="lyssna-quick-choice" type="button" key={value} title={vertical ? label : undefined}

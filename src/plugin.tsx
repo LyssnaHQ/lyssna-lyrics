@@ -1,5 +1,5 @@
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactElement, type ReactNode, type RefObject } from "react";
-import { ChevronUp, Disc3, FilePenLine, FoldVertical, MessagesSquare, MicVocal, Music2, PanelLeftOpen, Settings as GearIcon, UnfoldVertical, X } from "lucide-react";
+import { Fragment, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactElement, type ReactNode, type RefObject } from "react";
+import { ChevronUp, Disc3, FilePenLine, FoldVertical, ListMusic, MessagesSquare, MicVocal, Music2, PanelLeftOpen, Settings as GearIcon, UnfoldVertical, X } from "lucide-react";
 import { getHost, type CanvasInfo, type Host, type Root, type Track } from "./host";
 import { spotifySongUri } from "./spotify-song";
 import { useArtworkColor } from "./lyssna/artwork-color";
@@ -40,7 +40,7 @@ import { startVolumeDragController } from "./enhancements/features/volumeDrag";
 import { startPreferenceSync } from "./preference-sync";
 import { playbarViewButtons } from "./playbar-fullscreen";
 import { findPlaybarControls } from "./playbar-controls";
-import { quickEffects, QuickEffectPicker, type QuickEffectChoice } from "./quick-effects";
+import { quickEffects, QuickEffectPicker, SongSourcePicker, type QuickEffectChoice } from "./quick-effects";
 import { DJ_COVER, DJInterlude } from "./dj-interlude";
 import { readViewSession, saveViewSession } from "./view-session";
 import { lyssnaApiNotice, lyssnaInstallReady } from "./lyssna-api";
@@ -618,9 +618,12 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
   useEffect(() => () => swapAnimations.current.forEach((animation) => animation.cancel()), []);
   const quickToolbar = useRef<HTMLDivElement>(null);
   const quickPickerTrigger = useRef<HTMLButtonElement>(null);
-  const [quickPicker, setQuickPicker] = useState<QuickEffectChoice>();
+  const sourcePickerId = useId();
+  const [quickPicker, setQuickPicker] = useState<QuickEffectChoice | { id: "lyrics-source"; trackId: string }>();
   const shownQuickPicker = !showSettings && !showCreator && !showTtml && quickPicker &&
-    settings.pinned_lyric_effects.includes(quickPicker.id) ? quickPicker : undefined;
+    (quickPicker.id === "lyrics-source" ? quickPicker.trackId === trackId : settings.pinned_lyric_effects.includes(quickPicker.id))
+    ? quickPicker : undefined;
+  const showSourcePicker = shownQuickPicker?.id === "lyrics-source";
   const creatorPage = useRef<HTMLDivElement>(null);
   const ttmlTrigger = useRef<HTMLButtonElement>(null);
   const settingsTrigger = useRef<HTMLElement | undefined>(undefined);
@@ -903,6 +906,16 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
           onClick={() => change({ [id]: !active })}><Icon /></button>;
       })}
       <span className="toolbar-divider" aria-hidden="true" />
+      <button type="button" className="icon-button" data-icon="lyrics-source" title="Lyrics source for this song"
+        aria-label="Lyrics source for this song" aria-expanded={showSourcePicker} aria-controls={showSourcePicker ? sourcePickerId : undefined}
+        disabled={!track} onClick={(event) => {
+          if (!track) return;
+          quickPickerTrigger.current = event.currentTarget;
+          if (showSourcePicker) closeQuickPicker();
+          else setQuickPicker({ id: "lyrics-source", trackId: track.id });
+        }}><ListMusic size={18} aria-hidden="true" /></button>
+      {showSourcePicker && track && <SongSourcePicker id={sourcePickerId} track={track} trigger={quickPickerTrigger} view={view}
+        close={closeQuickPicker} onError={() => host.notifyError("Couldn’t save this song’s lyrics source.")} />}
       <button type="button" className="icon-button" data-icon="upload" title="Load TTML" aria-label="Load TTML"
         aria-haspopup="dialog" onClick={(event) => openTtml(event.currentTarget)}><UploadIcon /></button>
       {settings.lyrics_cache_button && <button type="button" className="icon-button" data-icon="retry" title="Refresh lyrics" aria-label="Refresh lyrics"
