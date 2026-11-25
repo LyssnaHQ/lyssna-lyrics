@@ -3,6 +3,8 @@ import { canEncodeOpus, decodeRecordingOpus, encodeRecordingOpus, opusSampleRate
 const legacySampleRate = 48_000;
 const channels = 2;
 const pcm24Bytes = 3;
+const recordingEdgeToleranceMs = 250;
+const recordingGapToleranceMs = 60;
 
 export type ReplayPacket = {
   uri: string;
@@ -19,6 +21,7 @@ type Tile = {
   uri: string; index: number; samples: Int16Array | Uint8Array; ranges: Range[];
   bitrate?: number; writeId?: string; opus?: Omit<OpusRecording, "bytes">;
 };
+type CompactionCandidate = { tile: Tile; bitrate: number };
 type TrackRecording = { uri: string; frames: number; sampleRate?: number; bytes?: number; savedAt?: number; sealed?: boolean };
 export type RecordingCoverage = { uri: string; frames: number; sampleRate: number; sealed?: boolean };
 
@@ -141,15 +144,15 @@ function resampleReplay(packet: ReplayPacket, sampleRate: number): ReplayPacket 
 }
 
 function recordingTimeline(tiles: Tile[], sampleRate: number, total: number, duration: number) {
-  const edgeTolerance = Math.round(sampleRate * 0.25);
-  const gapTolerance = Math.round(sampleRate * 0.06);
-  const timeline = tiles.flatMap(({ index, ranges }) => ranges.map(({ start, end }) => ({
+  const edgeTolerance = Math.round(sampleRate * recordingEdgeToleranceMs / 1000);
+  const gapTolerance = Math.round(sampleRate * recordingGapToleranceMs / 1000);
+  const timeline = mergeRanges(tiles.flatMap(({ index, ranges }) => ranges.map(({ start, end }) => ({
     start: index * sampleRate + start, end: Math.min(total, index * sampleRate + end),
-  })).filter(({ start, end }) => end > start));
+  })).filter(({ start, end }) => end > start)));
   const ranges = mergeRanges(timeline, gapTolerance);
   const full = ranges.length === 1 && ranges[0].start <= edgeTolerance && ranges[0].end >= total - edgeTolerance &&
     couldBeComplete(coverage(timeline), duration, sampleRate);
-  return { ranges, full };
+  return { timeline, ranges, full };
 }
 
 async function sealRecording(tracks: IDBObjectStore, tiles: IDBObjectStore, raw: TrackRecording | undefined,
@@ -175,7 +178,7 @@ async function savePackets(uri: string, packets: ReplayPacket[]) {
   const tiles = transaction.objectStore("tiles");
   const tracks = transaction.objectStore("tracks");
   const duration = packets[0].duration;
-  const candidates: { tile: Tile; bitrate: number }[] = [];
+  const candidates: CompactionCandidate[] = [];
   const writeId = crypto.randomUUID();
   const encodedUri = opusUri(uri);
   let summary: RecordingCoverage | undefined;
@@ -227,6 +230,11 @@ async function savePackets(uri: string, packets: ReplayPacket[]) {
     throw error;
   }
   await done;
+  return { summary, candidates };
+}
+
+async function compactRecordings(candidates: CompactionCandidate[]) {
+  const db = await openRecording();
   for (const { tile, bitrate } of candidates) {
     const packed = tile.samples;
     if (!(packed instanceof Uint8Array)) continue;
@@ -235,7 +243,6 @@ async function savePackets(uri: string, packets: ReplayPacket[]) {
       if (opus && opus.bytes.byteLength < packed.byteLength) await compactTile(db, tile, opus);
     } catch { /* Keep the PCM layout if the client can't encode or store Opus. */ }
   }
-  return summary;
 }
 
 async function compactTile(db: IDBDatabase, tile: Tile, { bytes, ...opus }: OpusRecording) {
@@ -362,38 +369,41 @@ export async function clearRecordedAudio() {
 
 export function createCapturedReplay(onSaved: (summary: RecordingCoverage) => void, onError: () => void,
   saveSpectrum: () => Promise<void> | undefined) {
-  let pending: ReplayPacket[] = [];
-  let saving = Promise.resolve();
-  let queued = 0;
+  const pending: ReplayPacket[] = [];
+  let saving: Promise<void> | undefined;
+  let compacting = false;
 
   function flush() {
-    if (!pending.length) return saving;
-    const batch = pending;
-    pending = [];
-    const spectrumSaved = saveSpectrum();
-    queued++;
-    saving = saving.then(async () => {
-      await spectrumSaved;
-      const byTrack = new Map<string, ReplayPacket[]>();
-      for (const packet of batch) {
-        const packets = byTrack.get(packet.uri);
-        if (packets) packets.push(packet);
-        else byTrack.set(packet.uri, [packet]);
+    if (saving) return saving;
+    if (!pending.length) return Promise.resolve();
+    saving = (async () => {
+      while (pending.length) {
+        const batch = pending.splice(0, 10);
+        await saveSpectrum();
+        const byTrack = new Map<string, ReplayPacket[]>();
+        for (const packet of batch) {
+          const packets = byTrack.get(packet.uri);
+          if (packets) packets.push(packet);
+          else byTrack.set(packet.uri, [packet]);
+        }
+        for (const [uri, packets] of byTrack) {
+          try {
+            const { summary, candidates } = await withRecordingWrite(uri, () => savePackets(uri, packets));
+            if (summary) onSaved(summary);
+            if (!compacting && candidates.length) {
+              // PCM is already durable. Keep it if the optional encoder is busy.
+              compacting = true;
+              void compactRecordings(candidates).catch(() => {}).finally(() => { compacting = false; });
+            }
+          } catch { onError(); }
+        }
       }
-      for (const [uri, packets] of byTrack) {
-        const summary = await withRecordingWrite(uri, () => savePackets(uri, packets));
-        if (summary) onSaved(summary);
-      }
-    }).catch(onError).finally(() => { queued--; });
+    })().catch(onError).finally(() => { saving = undefined; });
     return saving;
   }
 
   return {
     append(packet: ReplayPacket) {
-      if (queued >= 10) {
-        onError();
-        return;
-      }
       pending.push(packet);
       if (pending.length >= 10) void flush();
     },
@@ -401,6 +411,10 @@ export function createCapturedReplay(onSaved: (summary: RecordingCoverage) => vo
     async read(uri: string, positionMs: number, duration: number, completeOnly = false) {
       await flush();
       return readRecording(uri, positionMs, duration, completeOnly);
+    },
+    async nextMissing(uri: string, duration: number, positionMs: number) {
+      await flush();
+      return nextMissingRecordingPosition(uri, duration, positionMs);
     },
     async remove(uri: string) {
       await flush();
@@ -446,8 +460,31 @@ async function readRecordingLayout(uri: string, duration: number) {
   const bytesPerSample = tiles.some(({ samples }) => samples instanceof Uint8Array) ? pcm24Bytes : 2;
   const bytesPerFrame = channels * bytesPerSample;
   const total = Math.min(Math.ceil(duration * sampleRate / 1000), Math.floor((0xffffffff - 36) / bytesPerFrame));
-  const { ranges, full } = recordingTimeline(tiles, framesPerTile, total, duration);
-  return { byIndex, sampleRate, bytesPerSample, bytesPerFrame, total, ranges, full };
+  const { timeline, ranges, full } = recordingTimeline(tiles, framesPerTile, total, duration);
+  return { byIndex, sampleRate, bytesPerSample, bytesPerFrame, total, timeline, ranges, full };
+}
+
+async function nextMissingRecordingPosition(uri: string, duration: number, positionMs: number) {
+  const layout = await readRecordingLayout(uri, duration);
+  if (!layout || layout.full) return;
+  const { timeline, total, sampleRate } = layout;
+  const gaps: Range[] = [];
+  let end = 0;
+  for (const range of timeline) {
+    if (range.start > end) gaps.push({ start: end, end: range.start });
+    end = range.end;
+  }
+  if (end < total) gaps.push({ start: end, end: total });
+  const significant = gaps.filter((gap) => {
+    const edge = gap.start === 0 || gap.end === total;
+    const tolerance = edge ? recordingEdgeToleranceMs : recordingGapToleranceMs;
+    return gap.end - gap.start > Math.round(sampleRate * tolerance / 1000);
+  });
+  const candidates = significant.length ? significant : gaps;
+  const position = positionMs * sampleRate / 1000;
+  const next = candidates.find((gap) => gap.end > position) ?? candidates[0];
+  // Give capture time to settle after the seek before the gap begins.
+  return next && Math.max(0, next.start * 1000 / sampleRate - 1000);
 }
 
 export async function isRecordingComplete(uri: string, duration: number) {

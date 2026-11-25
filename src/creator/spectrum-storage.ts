@@ -68,7 +68,7 @@ export async function readLiveTiles(uri: string, first: number, last: number): P
   for (const recording of recordings) {
     for (const tile of recording) {
       const existing = tiles.get(tile.index);
-      tiles.set(tile.index, existing ? mergeLiveTile(existing, tile, false) : tile);
+      tiles.set(tile.index, existing ? mergeLiveTile(existing, tile) : tile);
     }
   }
   return [...tiles.values()].sort((left, right) => left.index - right.index);
@@ -114,14 +114,20 @@ export async function clearLiveSpectrograms(uri?: string) {
   window.dispatchEvent(new CustomEvent(liveSpectrumCleared, { detail: uri }));
 }
 
-export function mergeLiveTile(target: LiveTile, update: LiveTile, overwrite: boolean) {
+function fillsColumn(existing: number, incoming: number) {
+  // Keep the first measured column so a fresh capture clock cannot move it.
+  return !!incoming && !(existing & MEASURED_COLUMN) &&
+    (!existing || !!(incoming & MEASURED_COLUMN) || (incoming & AMPLITUDE_COLUMN) > (existing & AMPLITUDE_COLUMN));
+}
+
+export function mergeLiveTile(target: LiveTile, update: LiveTile) {
   const columns = target.filled.length;
   const incomingColumns = update.filled.length;
   if (columns < incomingColumns) {
     // Promote the preview buffer only. The previous recording stays in its own store.
     const promoted = { ...target, levels: new Uint16Array(update.levels.length), filled: new Uint8Array(incomingColumns) };
-    mergeLiveTile(promoted, update, overwrite);
-    return mergeLiveTile(promoted, target, false);
+    mergeLiveTile(promoted, update);
+    return mergeLiveTile(promoted, target);
   }
 
   const rows = target.levels.length / columns;
@@ -139,12 +145,8 @@ export function mergeLiveTile(target: LiveTile, update: LiveTile, overwrite: boo
   }
 
   for (let column = 0; column < columns; column++) {
-    const incoming = update.filled[column];
-    const existing = target.filled[column];
-    if (!incoming || ((existing & MEASURED_COLUMN) && (incoming & INTERPOLATED_COLUMN)) ||
-      (!overwrite && existing && (existing & AMPLITUDE_COLUMN) >= (incoming & AMPLITUDE_COLUMN) &&
-        (existing & MEASURED_COLUMN) === (incoming & MEASURED_COLUMN))) continue;
-    target.filled[column] = incoming;
+    if (!fillsColumn(target.filled[column], update.filled[column])) continue;
+    target.filled[column] = update.filled[column];
     for (let row = 0; row < rows; row++) {
       const offset = row * columns + column;
       target.levels[offset] = update.levels[offset];
@@ -157,6 +159,7 @@ export function saveLiveTiles(uri: string, duration: number, tiles: LiveTile[], 
   return withRecordingWrite(uri, async () => {
     if (protectCompleted && await isRecordingComplete(uri, duration)) return false;
     const db = await openSpectrum(currentDatabase);
+    const changed: LiveTile[] = [];
     await new Promise<void>((resolve, reject) => {
       const transaction = db.transaction("tiles", "readwrite");
       transaction.oncomplete = () => resolve();
@@ -166,12 +169,14 @@ export function saveLiveTiles(uri: string, duration: number, tiles: LiveTile[], 
         const lookup = store.get([uri, tile.index]);
         lookup.onsuccess = () => {
           const previous = lookup.result as LiveTile | undefined;
-          if (previous) mergeLiveTile(previous, tile, true);
-          store.put(previous ?? tile);
+          if (previous && !tile.filled.some((incoming, column) => fillsColumn(previous.filled[column], incoming))) return;
+          const saved = previous ? mergeLiveTile(previous, tile) : tile;
+          store.put(saved);
+          changed.push(saved);
         };
       }
     });
-    window.dispatchEvent(new CustomEvent(liveSpectrumSaved, { detail: tiles }));
+    if (changed.length) window.dispatchEvent(new CustomEvent(liveSpectrumSaved, { detail: changed }));
     return true;
   });
 }

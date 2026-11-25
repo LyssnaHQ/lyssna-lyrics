@@ -33,6 +33,7 @@ const pcm24Scale = 0x800000;
 const capturePeakLimit = 10 ** (-1 / 20);
 const captureGain = (volume: number) =>
   Number.isFinite(volume) && volume > 0 && volume < 1 ? 1 / volume : 1;
+const minimumVideo = { width: { max: 16 }, height: { max: 16 }, frameRate: { max: 1 } };
 
 function encodeCapture(samples: Float32Array, volume: number) {
   let gain = captureGain(volume);
@@ -176,7 +177,9 @@ export function createSpotifyCapture(host: Host, view: Window & typeof globalThi
       context = new view.AudioContext();
       void context.resume().catch(() => {});
       const options: DisplayOptions = {
-        video: { displaySurface: desktop ? "window" : "browser", frameRate: { ideal: 1 } },
+        video: desktop
+          ? { displaySurface: "window", width: { max: 960 }, height: { max: 720 }, frameRate: { max: 1 } }
+          : { displaySurface: "browser", ...minimumVideo },
         audio: {
           echoCancellation: false,
           noiseSuppression: false,
@@ -222,6 +225,9 @@ export function createSpotifyCapture(host: Host, view: Window & typeof globalThi
       };
       if (!isSpotify()) throw new Error("Choose the current Spotify tab. Other tabs, windows and system audio are rejected.");
       if (audio.readyState !== "live") throw new Error("Spotify audio sharing ended before capture started.");
+      // Keep the track for source and end checks, without consuming its images.
+      video.enabled = false;
+      if (desktop) void video.applyConstraints(minimumVideo).catch(() => {});
 
       // Keep a partial recording on one sample grid. New recordings prefer the shared stream's rate.
       await flushReplay();
@@ -246,7 +252,7 @@ export function createSpotifyCapture(host: Host, view: Window & typeof globalThi
       const source = context.createMediaStreamSource(new view.MediaStream([audio]));
       const audioContext = context;
       const halfWindowMs = 500 * SPECTRUM_WINDOW_SIZE / audioContext.sampleRate;
-      let previousClock: { uri: string; ms: number; audioMs: number; transportRevision: number } | undefined;
+      let previousClock: { uri: string; ms: number; now: number; transportRevision: number } | undefined;
       let lastUri: string | undefined;
       let captureFrom = 0;
       let replayFrom = 0;
@@ -297,7 +303,7 @@ export function createSpotifyCapture(host: Host, view: Window & typeof globalThi
         const switched = !!lastUri && lastUri !== uri;
         lastUri = uri;
         const discontinuity = !previousClock || switched || playback.transportRevision !== previousClock.transportRevision ||
-          playback.ms < previousClock.ms - 40 || Math.abs(playback.ms - previousClock.ms - (audioMs - previousClock.audioMs)) > 100;
+          playback.ms < previousClock.ms - 40 || Math.abs(playback.ms - previousClock.ms - (now - previousClock.now)) > 100;
         if (discontinuity) {
           captureFrom = audioMs + 160;
           // Allow the first worklet batch at the beginning of a track. Other
@@ -309,7 +315,7 @@ export function createSpotifyCapture(host: Host, view: Window & typeof globalThi
           leadingAudio.length = 0;
           replayHeard = false;
         }
-        previousClock = { ...playback, audioMs };
+        previousClock = { ...playback, now };
         return { uri, duration, ms, now, audioMs, volume: host.volume(), discontinuity };
       };
       const acceptSignal = (signal: boolean, now: number) => {
@@ -349,7 +355,7 @@ export function createSpotifyCapture(host: Host, view: Window & typeof globalThi
           tile = { uri, index, levels: new Uint16Array(LIVE_ROWS * LIVE_COLUMNS), filled: new Uint8Array(LIVE_COLUMNS) };
           tiles.set(index, tile);
         }
-        if (before && (tile.filled[column] & MEASURED_COLUMN)) return;
+        if (tile.filled[column] & MEASURED_COLUMN) return;
         for (let row = 0; row < LIVE_ROWS; row++) {
           const level = levels[row];
           tile.levels[row * LIVE_COLUMNS + column] = before ? Math.round(before[row] + (level - before[row]) * weight) : level;
@@ -410,12 +416,14 @@ export function createSpotifyCapture(host: Host, view: Window & typeof globalThi
           if ("samples" in data) {
             if (sealed.has(clock.uri)) return;
             const sampleRate = audioContext.sampleRate;
-            if (clock.volume !== 0 && data.firstFrame * 1000 / sampleRate >= replayFrom) {
+            const firstFrame = Math.max(data.firstFrame, Math.ceil(replayFrom * sampleRate / 1000));
+            const firstSample = (firstFrame - data.firstFrame) * 2;
+            if (clock.volume !== 0 && firstSample < data.samples.length) {
               replayOrigin ??= Math.round((clock.ms - clock.audioMs) * sampleRate / 1000);
-              const startFrame = data.firstFrame + replayOrigin;
+              const startFrame = firstFrame + replayOrigin;
               const remaining = Math.round(clock.duration * sampleRate / 1000) - startFrame;
               if (remaining <= 0) return;
-              const samples = encodeCapture(data.samples.subarray(0, remaining * 2), clock.volume);
+              const samples = encodeCapture(data.samples.subarray(firstSample, firstSample + remaining * 2), clock.volume);
               const packet = { uri: clock.uri, duration: clock.duration, startFrame, sampleRate, samples, bitrate: host.captureBitrate() };
               replayHeard ||= samples.some((sample) => Math.abs(sample) >= 512);
               if (!replayHeard) {
@@ -481,6 +489,19 @@ export function createSpotifyCapture(host: Host, view: Window & typeof globalThi
 
   return {
     start,
+    async skipToMissing(uri: string) {
+      const track = host.track();
+      const duration = host.duration();
+      const canSeek = () => !usingLocalAudio && !host.djNarrating() && !!track &&
+        spotifySongUri(track.id) === uri && host.track()?.id === track.id && host.duration() === duration;
+      if (!canSeek()) throw new Error("Open this track in Spotify playback to skip to missing audio.");
+      const position = await recordings.nextMissing(uri, duration, host.position());
+      if (!canSeek()) throw new Error("Playback changed while looking for missing audio.");
+      if (position === undefined) return false;
+      transportRevision++;
+      await host.seek(position);
+      return true;
+    },
     stop: () => session?.stop() ?? stoppingSession,
     stopAuto: () => { if (state.scope === "auto") void session?.stop(); },
     transportChanged: () => { transportRevision++; },

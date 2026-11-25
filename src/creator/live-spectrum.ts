@@ -14,11 +14,11 @@ export function useLiveSpectrum(uri: string, canCapture: boolean) {
   const visible = useRef({ first: 0, last: -1 });
   const revision = useRef(0);
 
-  const mergeTiles = useCallback((loaded: LiveTile[], overwrite: boolean) => {
+  const mergeTiles = useCallback((loaded: LiveTile[]) => {
     for (const tile of loaded) {
       const entry = tiles.current.get(tile.index);
       if (entry) {
-        entry.tile = mergeLiveTile(entry.tile, tile, overwrite);
+        entry.tile = mergeLiveTile(entry.tile, tile);
         entry.revision++;
       } else tiles.current.set(tile.index, { tile, revision: 0 });
     }
@@ -47,7 +47,7 @@ export function useLiveSpectrum(uri: string, canCapture: boolean) {
       if (!changed.length) return;
       setHasSaved(true);
       // The writer broadcasts the same tiles to every open editor.
-      mergeTiles(changed.map((tile) => ({ ...tile, levels: tile.levels.slice(), filled: tile.filled.slice() })), true);
+      mergeTiles(changed.map((tile) => ({ ...tile, levels: tile.levels.slice(), filled: tile.filled.slice() })));
     };
     view.addEventListener(liveSpectrumCleared, cleared);
     view.addEventListener(liveSpectrumSaved, saved);
@@ -67,7 +67,7 @@ export function useLiveSpectrum(uri: string, canCapture: boolean) {
     let current = true;
     const generation = revision.current;
     void readLiveTiles(uri, first, last).then((loaded) => {
-      if (current && generation === revision.current) mergeTiles(loaded, false);
+      if (current && generation === revision.current) mergeTiles(loaded);
     }).catch(() => {});
     return () => { current = false; };
   }, [uri, mergeTiles]);

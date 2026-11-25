@@ -1,5 +1,5 @@
 import { useId, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { AudioLines, ChevronDown, ChevronRight, Download, HardDrive, RotateCcw, Square, Trash2 } from "lucide-react";
+import { AudioLines, ChevronDown, ChevronRight, Download, HardDrive, RotateCcw, SkipForward, Square, Trash2 } from "lucide-react";
 import { useAnchoredPopover } from "../anchored-popover";
 import { findPlaybarCover } from "../now-playing";
 import type { RecordingStatus } from "./environment";
@@ -60,12 +60,13 @@ export function RecordingProgress({ id, percent }: { id: string; percent: number
 }
 
 export function RecordingDetails({ view, track, percent, sharing, deleting, returnToSpotify, remove, exportAudio,
-  manageStoredData, message, start, stop }: RecordingStatus & {
+  manageStoredData, message, start, stop, skipToMissing }: RecordingStatus & {
   view: Window; track?: { name: string; artists: string; cover?: string; uri: string };
   manageStoredData(trigger: HTMLElement | null): void;
 }) {
   const [format, setFormat] = useState<RecordingFormat>("flac");
   const [exporting, setExporting] = useState(false);
+  const [seeking, setSeeking] = useState(false);
   const [error, setError] = useState("");
   const complete = percent === 100;
   async function exportRecording() {
@@ -86,6 +87,15 @@ export function RecordingDetails({ view, track, percent, sharing, deleting, retu
       <div className="ttml-recording-actions">
         {start && <button type="button" onClick={start}><AudioLines size={15} aria-hidden="true" />Share Spotify audio</button>}
         {stop && <button type="button" onClick={stop}><Square size={14} aria-hidden="true" />Stop sharing Spotify audio</button>}
+        {skipToMissing && <button type="button" disabled={seeking || deleting || exporting} onClick={async () => {
+          setSeeking(true);
+          setError("");
+          try {
+            if (await skipToMissing()) { trigger?.focus(); close(); }
+            else setError("No missing section found.");
+          } catch (why) { setError(why instanceof Error ? why.message : "Couldn’t find missing audio."); }
+          finally { setSeeking(false); }
+        }}><SkipForward size={15} aria-hidden="true" />{seeking ? "Finding missing audio…" : "Skip to missing"}</button>}
         {returnToSpotify && <button type="button" className="ttml-recording-return" onClick={() => {
           returnToSpotify(); trigger?.focus(); close();
         }}><RotateCcw size={15} aria-hidden="true" />Return to Spotify playback</button>}
@@ -97,14 +107,14 @@ export function RecordingDetails({ view, track, percent, sharing, deleting, retu
             </select>
             <ChevronDown size={14} aria-hidden="true" />
           </label>
-          <button type="button" disabled={exporting || deleting} onClick={() => void exportRecording()}>
+          <button type="button" disabled={exporting || deleting || seeking} onClick={() => void exportRecording()}>
             <Download size={15} aria-hidden="true" />{exporting ? "Exporting…" : complete ? "Export audio" : "Export section"}
           </button>
         </div>}
         {error && <p className="ttml-recording-error" role="alert">{error}</p>}
       </div>
       <div className="ttml-recording-manage">
-        {percent > 0 && <button type="button" className="ttml-recording-delete" disabled={sharing || deleting || exporting} onClick={() => void remove()}>
+        {percent > 0 && <button type="button" className="ttml-recording-delete" disabled={sharing || deleting || exporting || seeking} onClick={() => void remove()}>
           <Trash2 size={15} aria-hidden="true" />{deleting ? "Deleting…" : "Delete recording"}
         </button>}
         {sharing && percent > 0 && <p>Stop sharing Spotify audio to delete this recording.</p>}

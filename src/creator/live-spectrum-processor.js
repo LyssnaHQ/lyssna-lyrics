@@ -16,8 +16,21 @@ class LiveSpectrumProcessor extends AudioWorkletProcessor {
     this.enabled = false;
     this.port.onmessage = ({ data }) => {
       this.enabled = data;
-      if (!this.enabled) { this.nextSequence = undefined; this.ring.fill(0); }
+      if (!this.enabled) {
+        this.nextSequence = undefined;
+        this.replayOffset = 0;
+        this.ring.fill(0);
+      }
     };
+  }
+
+  sendReplay() {
+    if (!this.replayOffset) return;
+    const capacity = this.replay.length;
+    const samples = this.replay.subarray(0, this.replayOffset);
+    this.port.postMessage({ firstFrame: this.replayStart, samples }, [samples.buffer]);
+    this.replay = new Float32Array(capacity);
+    this.replayOffset = 0;
   }
 
   sample(sequence) {
@@ -35,9 +48,9 @@ class LiveSpectrumProcessor extends AudioWorkletProcessor {
     const [left, right = left] = input;
     if (!left?.length) return true;
     if (this.nextSequence === undefined || currentFrame !== this.nextBlock) {
+      this.sendReplay();
       this.nextSequence = Math.ceil((currentFrame + this.ring.length) / this.hop - 0.5);
       this.count = 0;
-      this.replayOffset = 0;
     }
     this.nextBlock = currentFrame + left.length;
     let nextFrame = Math.round((this.nextSequence + 0.5) * this.hop);
@@ -45,11 +58,7 @@ class LiveSpectrumProcessor extends AudioWorkletProcessor {
       if (this.replayOffset === 0) this.replayStart = currentFrame + i;
       this.replay[this.replayOffset++] = left[i];
       this.replay[this.replayOffset++] = right[i];
-      if (this.replayOffset === this.replay.length) {
-        this.port.postMessage({ firstFrame: this.replayStart, samples: this.replay }, [this.replay.buffer]);
-        this.replay = new Float32Array(this.replayOffset);
-        this.replayOffset = 0;
-      }
+      if (this.replayOffset === this.replay.length) this.sendReplay();
       this.ring[this.position] = (left[i] + right[i]) / 2;
       this.position = (this.position + 1) & (this.ring.length - 1);
       if (currentFrame + i + 1 < nextFrame) continue;

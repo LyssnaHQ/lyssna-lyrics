@@ -10,6 +10,7 @@ export type RecordingStatus = {
   message?: string;
   start?(): void;
   stop?(): void;
+  skipToMissing?(): Promise<boolean>;
   returnToSpotify?(): void;
   remove(): Promise<void>;
   exportAudio(format: RecordingFormat): Promise<void>;

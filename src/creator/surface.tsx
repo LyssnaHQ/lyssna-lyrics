@@ -523,6 +523,8 @@ export function CreatorSurface({ host, view: owner, settings, close, reviewSelec
           message: captureState.message || undefined,
           start: !recordingAudio && !audioForSong && recordedPercent !== 100 ? () => void capture.start(current.uri) : undefined,
           stop: recordingAudio ? () => void capture.stop() : undefined,
+          skipToMissing: !audioForSong && recordedPercent && recordedPercent < 100
+            ? () => capture.skipToMissing(current.uri) : undefined,
           returnToSpotify: audioForSong?.replay ? releaseAudio : undefined,
         } : undefined,
         playingFullRecording: !!audioForSong?.replay?.full,

@@ -106,6 +106,7 @@ function PlaybarRecordingMeter({ host, capture, message, start, stop, playback, 
     track={uri && track ? { uri, name: track.title, artists: track.artists, cover: track.cover } : undefined}
     message={removeError || message || (stop && (narrating ? "Waiting for the DJ to finish…" : "Sharing Spotify audio.")) || undefined}
     start={start && uri ? () => start(uri) : undefined} stop={stop}
+    skipToMissing={uri && !local && !narrating && percent > 0 && percent < 100 ? () => capture.skipToMissing(uri) : undefined}
     returnToSpotify={local?.returnToSpotify} remove={remove} exportAudio={exportAudio} manageStoredData={manageStoredData} />;
   return slot ? createPortal(meter, slot) : <div className="lyssna-auto-record-slot floating">{meter}</div>;
 }
