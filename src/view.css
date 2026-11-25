@@ -2618,6 +2618,7 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
 .lyssna-lyrics-view .lyrics-instrumental-note {
   grid-row: 2;
   margin: 0 0 clamp(10px, 2dvh, 18px);
+  font-family: var(--lyric-font, inherit);
   font-size: 0.85rem;
   line-height: 1.4;
   text-align: center;
