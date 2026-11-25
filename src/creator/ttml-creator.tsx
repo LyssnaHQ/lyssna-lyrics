@@ -630,8 +630,10 @@ export function TtmlCreator({
   };
   const geniusButton = (
     <span className="ttml-export ttml-genius">
-      <button disabled={!track || fetchingGenius} onClick={() => setGeniusOpen(!geniusOpen)} aria-expanded={geniusOpen}>
-        <Globe size={15} />{fetchingGenius ? "Asking Genius…" : "Genius"}
+      <button disabled={!track || fetchingGenius} onClick={() => setGeniusOpen(!geniusOpen)}
+        title="Lyrics or sections from Genius" aria-label="Genius" aria-expanded={geniusOpen} aria-busy={fetchingGenius}>
+        <Globe size={15} />
+        <span className="ttml-label">{fetchingGenius ? "Asking Genius…" : "Genius"}</span>
       </button>
       {geniusOpen && <div className="ttml-meta-menu" role="menu">
         <button role="menuitem" onClick={() => void fromGenius()}>Lyrics from Genius</button>
@@ -2330,38 +2332,49 @@ export function TtmlCreator({
           </div>
         )}
         <div className="ttml-actions">
-          {!barSlot && onClose && <button onClick={onClose} aria-label="Close TTML Creator"><X size={15} /></button>}
+          {!barSlot && onClose && <button onClick={onClose} title="Close TTML Creator" aria-label="Close TTML Creator">
+            <X size={15} />
+            <span className="ttml-label">Close</span>
+          </button>}
           <span className="ttml-saved">
             {savedAt ? `Saved ${savedLabel(savedAt)}` : "Not saved yet"}
           </span>
-          <button onClick={openSaves} title="Saves and earlier versions">
+          <button onClick={openSaves} title="Saves and earlier versions" aria-label="Saves">
             <History size={15} />
+            <span className="ttml-label">Saves</span>
           </button>
-          <button onClick={() => setEditingKeys(true)} title="Controls">
+          <button onClick={() => setEditingKeys(true)} title="Controls" aria-label="Controls">
             <Settings size={15} />
+            <span className="ttml-label">Controls</span>
           </button>
-          <button onClick={() => setEditingMeta(true)} title="Metadata">
+          <button onClick={() => setEditingMeta(true)} title="Metadata" aria-label="Metadata">
             <Tags size={15} />
+            <span className="ttml-label">Metadata</span>
           </button>
-          <button onClick={copy} disabled={!done} title="Copy TTML">
+          <button onClick={copy} disabled={!done} title="Copy TTML" aria-label="Copy TTML">
             <Copy size={15} />
+            <span className="ttml-label">Copy</span>
           </button>
           {geniusButton}
           <button
             onClick={pickImport}
             title="Import lyrics file (TTML, LRC, QRC, YRC, Lyricify Syllable or ESLyric)"
+            aria-label="Import lyrics file"
           >
             <Upload size={15} />
+            <span className="ttml-label">Import</span>
           </button>
           {importInput}
           <span className="ttml-export">
             <button
               onClick={() => setExporting(!exporting)}
               disabled={!done}
-              title="Save lyrics file"
+              title="Export lyrics file"
+              aria-label="Export lyrics file"
               aria-expanded={exporting}
             >
               <Download size={15} />
+              <span className="ttml-label">Export</span>
             </button>
             {exporting && (
               <div className="ttml-meta-menu" role="menu">
@@ -2381,6 +2394,7 @@ export function TtmlCreator({
           <button
             onClick={() => void submit()}
             disabled={!done || !submittable || submitting || resettingSource}
+            aria-label="Submit to Lyssna"
             aria-busy={submitting}
             title={
               submittable
@@ -2389,7 +2403,7 @@ export function TtmlCreator({
             }
           >
             <Send size={15} />
-            Submit to Lyssna
+            <span className="ttml-label">Submit to Lyssna</span>
           </button>
           <button
             className="primary"
@@ -2580,6 +2594,7 @@ export function TtmlCreator({
                 aria-label="Undo"
               >
                 <Undo2 size={15} />
+                <span className="ttml-label">Undo</span>
               </button>
               <button
                 onClick={redo}
@@ -2587,6 +2602,7 @@ export function TtmlCreator({
                 aria-label="Redo"
               >
                 <Redo2 size={15} />
+                <span className="ttml-label">Redo</span>
               </button>
               <button
                 onClick={() => setLines(clearAll(lines))}
@@ -2595,15 +2611,17 @@ export function TtmlCreator({
                 aria-label="Clear every timing"
               >
                 <RotateCcw size={15} />
+                <span className="ttml-label">Clear timings</span>
               </button>
               {!reviewing && <button
                 onClick={() => void resetToSource()}
                 disabled={!here || resettingSource || submitting}
+                aria-label="Reset to source"
                 aria-busy={resettingSource}
                 title="Replace this draft with the best available lyric source"
               >
                 <FileInput size={15} />
-                {resettingSource ? "Finding source…" : "Reset to source"}
+                <span className="ttml-label">{resettingSource ? "Finding source…" : "Reset to source"}</span>
               </button>}
             </div>
           )}
