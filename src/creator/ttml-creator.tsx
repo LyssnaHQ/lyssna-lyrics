@@ -1319,6 +1319,15 @@ export function TtmlCreator({
     setCursor({ line: 0, unit: 0 });
   };
   const [resettingSource, setResettingSource] = useState(false);
+  const [checkedSource, setCheckedSource] = useState<{ uri: string; basedOn?: Lyrics; content: string }>();
+  const availableSource = state.lyrics_uri === track?.uri && state.lyrics?.lines.length &&
+    state.lyrics.source !== "Imported TTML" && state.lyrics.source !== "Imported LRC" ? state.lyrics : undefined;
+  const availableSourceContent = useMemo(() => availableSource &&
+    contentOf(joinHyphenated(fromLyrics(availableSource)), "", undefined), [availableSource]);
+  const draftLinesContent = useMemo(() => contentOf(lines, "", undefined), [lines]);
+  const sourceContent = checkedSource && checkedSource.uri === track?.uri && checkedSource.basedOn === state.lyrics
+    ? checkedSource.content : availableSourceContent;
+  const resetLabel = resettingSource ? "Finding source…" : sourceContent === draftLinesContent ? "Already showing source" : "Reset to source";
   const [clearArmed, setClearArmed] = useState(false);
   useEffect(() => {
     if (!clearArmed) return;
@@ -1378,6 +1387,12 @@ export function TtmlCreator({
       const seeded = joinHyphenated(fromLyrics(lyrics));
       if (!seeded.length) {
         notify("The source has no editable lyric lines.", true);
+        return;
+      }
+      const content = contentOf(seeded, "", undefined);
+      setCheckedSource({ uri: draft.uri, basedOn: state.lyrics, content });
+      if (draftLinesContent === content && (!textMode || draft.text === toText(seeded))) {
+        notify("Already showing source.");
         return;
       }
       history.current.past = [...history.current.past.slice(-HISTORY_LIMIT), {
@@ -2616,12 +2631,12 @@ export function TtmlCreator({
               {!reviewing && <button
                 onClick={() => void resetToSource()}
                 disabled={!here || resettingSource || submitting}
-                aria-label="Reset to source"
+                aria-label={resetLabel}
                 aria-busy={resettingSource}
-                title="Replace this draft with the best available lyric source"
+                title={resetLabel === "Already showing source" ? resetLabel : "Replace this draft with the best available lyric source"}
               >
                 <FileInput size={15} />
-                <span className="ttml-label">{resettingSource ? "Finding source…" : "Reset to source"}</span>
+                <span className="ttml-label">{resetLabel}</span>
               </button>}
             </div>
           )}
