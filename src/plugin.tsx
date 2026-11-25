@@ -92,12 +92,15 @@ function useTrackLyrics(track: Track | null, duration: number, view: Window, set
     let generation = 0;
     let timer = 0;
     let appleRetries = 0;
+    let preference = songLyricSource(currentTrack);
     async function read() {
       view.clearTimeout(timer);
       const current = ++generation;
-      const preferred = songLyricSource(currentTrack);
+      const preferred = preference;
       let appleUnavailable = false;
-      const lyrics = await readLyrics(currentTrack, duration, enabled, host, { preferred, onAppleUnavailable: () => { appleUnavailable = true; } });
+      const lyrics = await readLyrics(currentTrack, duration, enabled, host, {
+        preferred, onAppleUnavailable: () => { appleUnavailable = true; },
+      }).catch(() => undefined);
       if (generation !== current) return;
       setResult((previous) => previous?.track === currentTrack && previous.sourceKey === sourceKey &&
         previous.lyrics === lyrics && !previous.waiting
@@ -114,9 +117,13 @@ function useTrackLyrics(track: Track | null, duration: number, view: Window, set
     }
     function restart(event?: Event) {
       if (event instanceof CustomEvent && Array.isArray(event.detail) && !event.detail.includes(currentTrack.id)) return;
+      const nextPreference = songLyricSource(currentTrack);
+      const sourceChanged = preference !== nextPreference;
+      preference = nextPreference;
+      if (sourceChanged) appleRetries = 0;
       setResult((previous) => ({
-        track: currentTrack, sourceKey, waiting: enabled.length > 0 || !!songLyricSource(currentTrack),
-        lyrics: event && enabled.length && previous?.track === currentTrack ? previous.lyrics : undefined,
+        track: currentTrack, sourceKey, waiting: enabled.length > 0 || !!preference,
+        lyrics: event && !sourceChanged && previous?.track === currentTrack ? previous.lyrics : undefined,
       }));
       void read();
     }
@@ -716,7 +723,11 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
 
   function searchAgain(action: Settings["lyrics_cache_action"]) {
     refreshLyrics(track ?? undefined, action);
-    setNotice("Refreshing lyrics…");
+  }
+
+  function showOriginalLyrics() {
+    if (detachedPreview) setOriginalDraftUri(draftUri);
+    else if (draftUri) dismissDraft(draftUri);
   }
 
   function sleepTools() {
@@ -915,11 +926,13 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
           else setQuickPicker({ id: "lyrics-source", trackId: track.id });
         }}><ListMusic size={18} aria-hidden="true" /></button>
       {showSourcePicker && track && <SongSourcePicker id={sourcePickerId} track={track} trigger={quickPickerTrigger} view={view}
-        close={closeQuickPicker} onError={() => host.notifyError("Couldn’t save this song’s lyrics source.")} />}
+        close={closeQuickPicker} onApplied={draft ? showOriginalLyrics : undefined}
+        onError={() => host.notifyError("Couldn’t save this song’s lyrics source.")} />}
       <button type="button" className="icon-button" data-icon="upload" title="Load TTML" aria-label="Load TTML"
         aria-haspopup="dialog" onClick={(event) => openTtml(event.currentTarget)}><UploadIcon /></button>
       {settings.lyrics_cache_button && <button type="button" className="icon-button" data-icon="retry" title="Refresh lyrics" aria-label="Refresh lyrics"
-        disabled={!track} onClick={() => searchAgain(settings.lyrics_cache_action)}><RetryIcon /></button>}
+        aria-busy={foundLyrics.waiting} disabled={!track || foundLyrics.waiting}
+        onClick={() => searchAgain(settings.lyrics_cache_action)}><RetryIcon /></button>}
       <button type="button" className="icon-button" data-icon="fullscreen" title={fullscreen ? "Exit full screen" : externalCinema ? "Full screen" : "Full screen (Shift for cinema)"}
         aria-label={fullscreen ? "Exit full screen" : "Full screen"}
         aria-pressed={fullscreen} onClick={(event) => toggleFullscreen(event.shiftKey)}><FullScreenIcon /></button>
@@ -992,10 +1005,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
             if (fullscreen && !externalCinema) toggleFullscreen();
             openCreator();
           }}>Back to Creator</button>}
-          <button type="button" onClick={() => {
-            if (detachedPreview) setOriginalDraftUri(draftUri);
-            else if (draftUri) dismissDraft(draftUri);
-          }}>Original lyrics</button>
+          <button type="button" onClick={showOriginalLyrics}>Original lyrics</button>
           <button type="button" aria-pressed={draftReviewer} onClick={() => setReviewerOverride(!draftReviewer)}>Reviewer mode</button>
         </div>}
       </> : <div className="lyrics-message"><Music2 /><h2>Play something you love</h2><p>Your lyrics will appear here.</p></div>)}

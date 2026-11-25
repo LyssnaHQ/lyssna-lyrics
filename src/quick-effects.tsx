@@ -68,8 +68,9 @@ function moveChoiceFocus(event: KeyboardEvent<HTMLDivElement>, preventScroll = t
   buttons[next]?.focus({ preventScroll });
 }
 
-export function SongSourcePicker({ id, track, trigger, close, onError, view }: {
-  id: string; track: Track; trigger: RefObject<HTMLButtonElement | null>; close: () => void; onError: () => void; view: Window;
+export function SongSourcePicker({ id, track, trigger, close, onApplied, onError, view }: {
+  id: string; track: Track; trigger: RefObject<HTMLButtonElement | null>; close: () => void;
+  onApplied?: () => void; onError: () => void; view: Window;
 }) {
   const panel = useRef<HTMLDivElement>(null);
   const sources = sourceIds.filter(source => !track.local || (source !== "spotify" && source !== "spicy"));
@@ -87,6 +88,7 @@ export function SongSourcePicker({ id, track, trigger, close, onError, view }: {
       aria-pressed={source === selected} onClick={() => {
         try { setSongLyricSource(track, source); }
         catch { onError(); return; }
+        onApplied?.();
         close();
       }}>
       {source ? lyricSources[source].name : "Your source order"}

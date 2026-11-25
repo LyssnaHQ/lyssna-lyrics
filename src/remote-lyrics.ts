@@ -57,6 +57,20 @@ export async function readNetease(track: Track, duration: number, signal: AbortS
   for (const line of lyrics.lines) line.translation = aligned.get(line.start_ms) ?? "";
   return lyrics;
 }
+export async function within<T>(request: Promise<T> | undefined, ms: number): Promise<T | undefined> {
+  if (!request) return;
+  let timer = 0;
+  try {
+    return await Promise.race([request, new Promise<undefined>((resolve) => {
+      timer = window.setTimeout(resolve, ms);
+    })]);
+  } catch {
+    return undefined;
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
 export function parseSpotifyLyrics(response: unknown, duration: number): Lyrics | undefined {
   const lyrics = (response as { lyrics?: { syncType?: string; lines?: unknown[] } } | null)?.lyrics;
   if (!lyrics || !Array.isArray(lyrics.lines)) return;

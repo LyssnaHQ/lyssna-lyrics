@@ -1014,8 +1014,11 @@
   .lyrics-page:not(.reduce-motion) [data-icon="upload"]:is(:hover, :focus-visible) .part-arrow {
     translate: 0 -2.5px;
   }
-  .lyrics-page:not(.reduce-motion) [data-icon="retry"]:is(:hover, :focus-visible) .part-spinner {
+  .lyrics-page:not(.reduce-motion) [data-icon="retry"]:not([aria-busy="true"]):is(:hover, :focus-visible) .part-spinner {
     rotate: 135deg;
+  }
+  .lyrics-page:not(.reduce-motion) [data-icon="retry"][aria-busy="true"] .part-spinner {
+    animation: lyssna-refresh-spin 800ms linear infinite;
   }
   .lyrics-page:not(.reduce-motion) [data-icon="fullscreen"]:is(:hover, :focus-visible) .part-corner-out {
     translate: 1.5px -1.5px;
@@ -1026,6 +1029,10 @@
   .lyrics-page:not(.reduce-motion) [data-icon="settings"]:is(:hover, :focus-visible) svg {
     rotate: 55deg;
   }
+}
+@keyframes lyssna-refresh-spin {
+  from { rotate: 0deg; }
+  to { rotate: 360deg; }
 }
 /* Space Gravity: words float over the whole lyrics page. The stage spans
    the page so words can drift around the artwork, which they avoid. */

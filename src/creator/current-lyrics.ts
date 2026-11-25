@@ -1,21 +1,9 @@
 import type { Host, Track } from "../host";
 import { readLyrics, songLyricSource, type LyricSource } from "../lyric-sources";
-import { parseSpotifyLyrics } from "../remote-lyrics";
+import { parseSpotifyLyrics, within } from "../remote-lyrics";
 import { canSeed } from "./ttml-creator-model";
 
-export async function within<T>(request: Promise<T> | undefined, ms: number): Promise<T | undefined> {
-  if (!request) return;
-  let timer = 0;
-  try {
-    return await Promise.race([request, new Promise<undefined>((resolve) => {
-      timer = window.setTimeout(resolve, ms);
-    })]);
-  } catch {
-    return undefined;
-  } finally {
-    window.clearTimeout(timer);
-  }
-}
+export { within } from "../remote-lyrics";
 
 export async function currentCreatorLyrics(host: Host, track: Track, duration: number, sources: LyricSource[]) {
   const allowed = sources.filter((source) => source !== "spicy");
