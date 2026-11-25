@@ -498,13 +498,13 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
         </button>}
         <h2 id="lyssna-settings-title">{submenu ? submenus[submenu] : <><Settings2 size={20} />Lyssna Lyrics settings</>}</h2>
         {!submenu && <div className="lyrics-settings-header-controls">
-          <label className="lyrics-settings-search"><Search size={15} /><input aria-label="Search settings" placeholder="Search settings…" value={query}
-            onChange={(event) => { setQuery(event.target.value); scroll.current?.scrollTo({ top: 0 }); }} /></label>
           <button type="button" id="lyssna-open-builds" className="pill outline settings-build-trigger" aria-haspopup="dialog"
             aria-label={`Build Channels, ${activeBuild}${version ? ` v${version}` : ""}`}
             title={`Build Channels · ${activeBuild}${version ? ` · v${version}` : ""}`} onClick={openChannels}>
             <span>{activeBuild}{version ? ` · v${version}` : ""}</span>
           </button>
+          <label className="lyrics-settings-search"><Search size={15} /><input aria-label="Search settings" placeholder="Search settings…" value={query}
+            onChange={(event) => { setQuery(event.target.value); scroll.current?.scrollTo({ top: 0 }); }} /></label>
         </div>}
         <button type="button" className="icon-button" aria-label="Close settings" onClick={close}><X size={18} /></button>
       </header>
