@@ -1,5 +1,12 @@
 # Lyssna Lyrics patch notes
 
+## v1.1.0-22dbc76
+
+- Restore Effects and Advanced as separate tabs. Keep account and Creator tools under Tools.
+- Preload the Tools account profile and refresh it in place. Put the admin Add ISRC links button beside Profile.
+- Keep hidden builds in Build Channels for switching or removal. Default the pinned lyric footer to No Writers.
+- Show supplied translations in Space Gravity and Reviewer mode and preserve them when estimating word timing.
+
 ## v1.1.0-45bbd4f
 
 - Organize Settings into Appearance, Lyrics, Views, Spotify Tweaks, Sources, and Tools. Group related controls and show short switches side by side when space allows.
