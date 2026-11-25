@@ -8,10 +8,40 @@ import type { SpotifyCapture } from "./creator/spotify-capture";
 import { AMPLITUDE_COLUMN, LIVE_TILE_MS, liveSpectrumCleared, readLiveTiles, type LiveTile } from "./creator/spectrum-storage";
 import { spotifySongUri } from "./spotify-song";
 
-export function TrackArtwork({ src, className = "cover" }: { src?: string; className?: string }) {
+export function placeholderArtwork(page: Document = document) {
+  const canvas = page.createElement("canvas");
+  canvas.width = canvas.height = 96;
+  const context = canvas.getContext("2d");
+  if (!context) return;
+  const hue = Math.floor(Math.random() * 360);
+  const accent = (hue + 35 + Math.floor(Math.random() * 100)) % 360;
+  context.fillStyle = `hsl(${hue} 31% 13%)`;
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  for (const { x, y, radius, color } of [
+    { x: 21, y: 15, radius: 80, color: `${hue} 52% 37%` },
+    { x: 84, y: 84, radius: 71, color: `${accent} 48% 32%` },
+  ]) {
+    const gradient = context.createRadialGradient(x, y, 0, x, y, radius);
+    gradient.addColorStop(0, `hsl(${color})`);
+    gradient.addColorStop(1, `hsl(${color} / 0)`);
+    context.fillStyle = gradient;
+    context.fillRect(0, 0, canvas.width, canvas.height);
+  }
+  return canvas.toDataURL();
+}
+
+export function TrackArtwork({ src, className = "cover", placeholder, onUnavailable }: {
+  src?: string; className?: string; placeholder?: string; onUnavailable?(): void;
+}) {
   const [failed, setFailed] = useState<string>();
-  if (src && src !== failed) return <img className={className} src={src} alt="" onError={() => setFailed(src)} />;
-  return <div className={`${className} lyssna-cover-placeholder`} role="img" aria-label="No cover artwork">
+  const cover = src !== failed ? src : undefined;
+  const fallback = useMemo(() => cover ? undefined : placeholder ?? placeholderArtwork(), [cover, placeholder]);
+  if (cover) return <img className={className} src={cover} alt="" onError={() => {
+    setFailed(cover);
+    onUnavailable?.();
+  }} />;
+  return <div className={`${className} lyssna-cover-placeholder`} role="img" aria-label="No cover artwork"
+    style={fallback ? { backgroundImage: `url("${fallback}")` } : undefined}>
     <Music2 aria-hidden="true" />
   </div>;
 }

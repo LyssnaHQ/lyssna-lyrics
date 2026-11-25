@@ -27,7 +27,7 @@ import { attachBulkLyrics, importLyricFile, loadBulkLyrics } from "./ttml-import
 import { enabledSources, readLyrics, refreshLyrics, sourceIds } from "./lyric-sources";
 import { LyricCredits } from "./credits";
 import { SongSheetScope } from "./song-sheet";
-import { CanvasArtwork, SpotifyVisualiser, TrackArtwork, useCanvas } from "./spotify-artwork";
+import { CanvasArtwork, placeholderArtwork, SpotifyVisualiser, TrackArtwork, useCanvas } from "./spotify-artwork";
 import { findNowPlaying, findNowPlayingCover, findPlaybarCover, nowPlayingArtistCard, nowPlayingArtwork, nowPlayingCanvas, placeNowPlayingPreview } from "./now-playing";
 import { TrackMetadata } from "./track-metadata";
 import { useDefaultLyricsFont } from "./lyrics-font-fallback";
@@ -681,7 +681,11 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
     setShowTtml(false);
   }, [showCreator]);
   const fonts = appFontStyles(settings);
-  const artwork = narrating ? DJ_COVER : track?.cover;
+  const [failedCover, setFailedCover] = useState<{ trackId: string; url: string }>();
+  const trackCover = track?.cover;
+  const cover = failedCover?.trackId === trackId && failedCover?.url === trackCover ? undefined : trackCover;
+  const placeholder = useMemo(() => trackId && !cover ? placeholderArtwork(view.document) : undefined, [trackId, cover, view]);
+  const artwork = narrating ? DJ_COVER : cover || placeholder;
   const { confirmFirstUpload, firstUploadNotice } = useFirstUploadNotice(fonts, settings.liquid_glass);
   const coverColour = useArtworkColor(artwork);
   const hideArtwork = settings.lyrics_hide_artwork && !coverOnly;
@@ -927,7 +931,8 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
   </div>;
   const renderCover = (controls?: ReactNode) => <div className="lyrics-media lyrics-motion-stage">
     <TrackArtwork className={`cover${settings.cover_animation && !settings.reduce_motion ? " crossfade" : ""}`}
-      key={track?.cover || trackId} src={track?.cover} />
+      key={trackCover || trackId} src={cover} placeholder={placeholder}
+      onUnavailable={() => { if (trackId && trackCover) setFailedCover({ trackId, url: trackCover }); }} />
     <MotionArtwork cover={motion} playing={playing} />
     {controls}
     {toolbarOnCover && toolbar}
@@ -964,7 +969,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
       {narrating && <DJInterlude playing={playing} reduceMotion={settings.reduce_motion} />}
       {!narrating && (track ? <>
         <div className="lyrics-album">
-          {artworkDock ? playback : <>{canvas ? <CanvasArtwork key={`${track.id}:${canvas.fileId ?? canvas.url}`} info={canvas} cover={track.cover}
+          {artworkDock ? playback : <>{canvas ? <CanvasArtwork key={`${track.id}:${canvas.fileId ?? canvas.url}`} info={canvas} cover={artwork ?? ""}
             playing={playing && !settings.reduce_motion} onUnavailable={setUnavailableCanvas} onVideo={setCanvasVideo} heldFrame={heldFrame} />
             : renderCover()}
           {details}</>}
