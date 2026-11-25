@@ -1365,6 +1365,22 @@ export function canSeed(lyrics: Lyrics) {
 
 const STYLE_INDEX = { first: 0, second: 1, third: 2 } as const;
 
+function attachTrailingPunctuation(line: CreatorLine): CreatorLine {
+  const units: CreatorUnit[] = [];
+  for (const unit of line.units) {
+    const previous = units.at(-1);
+    if (previous && /^[\p{Pe}\p{Pf},.!?:;…、。，．？！；：؟،؛।॥]+$/u.test(unit.text)) {
+      // Punctuation follows the word in print, even when the source gave it a separate beat.
+      units[units.length - 1] = {
+        ...previous,
+        text: previous.text + unit.text,
+        ...(previous.roman && { roman: previous.roman + unit.text }),
+      };
+    } else units.push(unit);
+  }
+  return units.length === line.units.length ? line : { ...line, units };
+}
+
 export function fromLyrics(lyrics: Lyrics): CreatorLine[] {
   let voices: string[] = [];
   const firstLine = lyrics.lines.findIndex((line) => line.text.trim());
@@ -1416,7 +1432,7 @@ export function fromLyrics(lyrics: Lyrics): CreatorLine[] {
         ...(line.section && line.section_singer && { singer: line.section_singer }),
         ...(voiceFor(line.sung_by) && { sungBy: voiceFor(line.sung_by) }),
       };
-      const [main, ...echoes] = splitBrackets(lead, lineIndex === firstLine);
+      const [main, ...echoes] = splitBrackets(lead, lineIndex === firstLine).map(attachTrailingPunctuation);
       if (
         !authored &&
         lyrics.synced &&
