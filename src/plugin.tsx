@@ -780,7 +780,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
   }, [submission, view]);
 
   function showSubmission(feedback: SubmissionFeedback, closeEditor = false) {
-    if (closeEditor) closeCreator?.();
+    if (closeEditor && !feedback.error) closeCreator?.();
     setSubmission({ feedback, id: performance.now() });
   }
   useEffect(() => {

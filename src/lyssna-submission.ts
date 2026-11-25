@@ -9,7 +9,9 @@ import { drawLocalArtwork, isLocalArtwork } from "./lyssna/local-artwork";
 import { localSongTags } from "./spotify-song";
 
 export const publishingRoles = ["uploader", "reviewer", "moderator", "admin"];
-export type SubmissionFeedback = { message: string; approved: boolean };
+export type SubmissionFeedback = { message: string } & (
+  { approved: boolean; error?: false } | { approved: false; error: true }
+);
 
 const submissionErrors: Record<string, string> = {
   unauthorized: "Sign in to Lyssna in Settings to submit lyrics.",

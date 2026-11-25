@@ -2147,7 +2147,7 @@ export function TtmlCreator({
       const dismissed = (!sameSong || unchanged) && dismissSubmittedDraft(track.uri, submitted.lines);
       onSubmitted(feedback, root.isConnected && dismissed && sameSong);
     } catch (error) {
-      notify(String(error), true);
+      onSubmitted({ message: error instanceof Error ? error.message : String(error), approved: false, error: true });
     } finally {
       setSubmitting(false);
     }

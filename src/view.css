@@ -2238,12 +2238,15 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
 .lyssna-submission-notice {
   position: fixed;
   z-index: 10000;
-  bottom: 88px;
+  bottom: 108px;
   left: 50%;
   transform: translateX(-50%);
   width: max-content;
   max-width: calc(100vw - 32px);
   pointer-events: none;
+}
+.lyssna-submission-notice[data-error] {
+  bottom: 88px;
 }
 .lyssna-submission-message {
   position: relative;

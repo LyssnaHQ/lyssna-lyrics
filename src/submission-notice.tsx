@@ -15,8 +15,8 @@ export function SubmissionNotice({ feedback, container, reduceMotion, style }: {
   reduceMotion: boolean;
   style: CSSProperties;
 }) {
-  return createPortal(<div className="lyssna-submission-notice" style={style}>
-    <div className="lyssna-submission-message" role="status">{feedback.message}</div>
+  return createPortal(<div className="lyssna-submission-notice" data-error={feedback.error || undefined} style={style}>
+    <div className="lyssna-submission-message" role={feedback.error ? "alert" : "status"}>{feedback.message}</div>
     {feedback.approved && !reduceMotion && <div className="lyssna-submission-confetti" aria-hidden="true">
       {confetti.map(([x, y, spin], index) => <span key={index} style={{
         "--confetti-x": `${x}px`, "--confetti-y": `${y}px`, "--confetti-spin": `${spin}deg`,
