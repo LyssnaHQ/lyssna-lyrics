@@ -2264,6 +2264,18 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
 .lyssna-submission-notice[data-error] .lyssna-submission-message {
   box-shadow: 0 2px 14px #0009, 0 0 0 1px #ff6262c0, 0 0 18px #ff414180;
 }
+@media (prefers-reduced-motion: no-preference) {
+  .lyssna-submission-notice[data-shake] .lyssna-submission-message {
+    animation: lyssna-submission-shake 320ms ease-out;
+  }
+}
+@keyframes lyssna-submission-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(5px); }
+  60% { transform: translateX(-3px); }
+  80% { transform: translateX(2px); }
+}
 .lyssna-submission-confetti {
   position: absolute;
   top: 50%;
