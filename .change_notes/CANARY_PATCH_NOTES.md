@@ -1,5 +1,10 @@
 # Lyssna Lyrics patch notes
 
+## v1.1.0-45bbd4f
+
+- Organize Settings into Appearance, Lyrics, Views, Spotify Tweaks, Sources, and Tools. Group related controls and show short switches side by side when space allows.
+- Open playlist folder choices on demand. Search results show their tab and section, and the build version in the footer opens Build Channels.
+
 ## v1.1.0-b97f678
 
 - Reset per-song source choices with Clear Cache and check for fresh lyrics.
