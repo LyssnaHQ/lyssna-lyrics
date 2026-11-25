@@ -1,5 +1,9 @@
 # Lyssna Lyrics patch notes
 
+## v1.1.0-2e647bc
+
+- Center upload errors in the Spotify window while keeping Creator open. Raise successful upload notices by 20 pixels.
+
 ## v1.1.0-d7863c2
 
 - Center Lyssna upload confirmations in the Spotify window. Show a short confetti burst when an upload goes live unless reduced motion is enabled.
