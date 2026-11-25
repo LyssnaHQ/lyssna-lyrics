@@ -79,7 +79,22 @@ export function LyricsDisplay({
   const [returnDirection, setReturnDirection] = useState<"up" | "down">("down");
   const footerMode = settings.lyrics_pinned_footer ?? defaults.lyrics_pinned_footer;
   const writerNames = lyrics.songwriters?.length ? lyrics.songwriters : writers;
+  const hasScrollingWriters = footerMode === "no_writers" && writerNames.length > 0;
   const writerCredits = <WriterCredits names={writerNames} />;
+  useLayoutEffect(() => {
+    const container = scroll.current;
+    const credits = scrollingWriters.current;
+    if (!hasScrollingWriters || !container || !credits) return;
+    // Reveal the writers through the bottom fade even when the lyrics never scroll.
+    const observer = new IntersectionObserver(([entry]) => {
+      container.toggleAttribute("data-writers-visible", entry.intersectionRatio >= 1);
+    }, { root: container, threshold: 1 });
+    observer.observe(credits);
+    return () => {
+      observer.disconnect();
+      container.removeAttribute("data-writers-visible");
+    };
+  }, [hasScrollingWriters, lyrics.instrumental]);
   // As in Spicy Lyrics, browsing ends on its own once the user stops
   // scrolling with the current lyric still on screen; scrolled away from
   // it, browsing stays until they return or select a lyric.
@@ -595,7 +610,7 @@ export function LyricsDisplay({
         })}
         {footerMode !== "full" && (
           <div className={footerMode === "no_writers" ? "lyric-end-credits lyric-writers-end" : "lyric-end-credits"}
-            ref={footerMode === "no_writers" && writerNames.length ? scrollingWriters : undefined}>
+            ref={hasScrollingWriters ? scrollingWriters : undefined}>
             {writerCredits}
             {footerMode === "off" && (
               <div className={upNext ? "lyric-credits-row" : undefined}>

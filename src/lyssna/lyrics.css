@@ -433,8 +433,19 @@
 .lyric-scroll::-webkit-scrollbar {
   display: none;
 }
+.lyric-scroll:has(> .lyric-writers-end > .writer-credits) {
+  display: flex;
+  flex-direction: column;
+}
+.lyric-scroll:has(> .lyric-writers-end > .writer-credits) > * {
+  flex-shrink: 0;
+}
+.lyric-writers-end:has(> .writer-credits) {
+  margin-top: auto;
+}
 .lyric-scroll[data-at-end="true"],
-.lyric-scroll[data-hold-end] {
+.lyric-scroll[data-hold-end],
+.lyric-scroll[data-writers-visible] {
   --lyric-end-alpha: 1;
 }
 .compact .lyric-scroll[data-at-end="true"],

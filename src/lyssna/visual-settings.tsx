@@ -135,7 +135,7 @@ return { flag, range, Look: [
         <SettingRow
           key="pinned-footer"
           label="Pinned Lyrics Footer"
-          help="Keep source and community credits visible. Full also pins writers."
+          help="Keep source and community credits visible. Writers pin when the lyrics fit. Full pins writers for every song."
           keywords="pinned footer written by writers credits source community"
         >
           <select

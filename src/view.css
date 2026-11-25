@@ -1143,7 +1143,11 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
 
 .lyssna-npv .compact .lyric-scroll {
   padding-inline: 10px;
-  mask-image: linear-gradient(transparent, #000 min(var(--scrolled), 9%), #000 80%, transparent);
+  mask-image: linear-gradient(transparent, #000 min(var(--scrolled), 9%), #000 80%, rgb(0 0 0 / var(--npv-writer-end-alpha, 0)));
+}
+
+.lyssna-npv .compact .lyric-scroll[data-writers-visible] {
+  --npv-writer-end-alpha: 1;
 }
 
 .lyssna-npv .compact .lyric-line {
