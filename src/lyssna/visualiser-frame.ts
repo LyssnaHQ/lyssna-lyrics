@@ -1,16 +1,24 @@
 import type { Body, Rect } from "./space-gravity";
+import { spectrumAmplitude } from "../creator/spectrum-analysis.js";
 
 export const VISUALISER_BARS = 48;
 export const VISUALISER_BAR_FILL = 0.62;
 
-export function spectrumBars(bars: Uint8Array, levels: Uint16Array, columns: number, column: number) {
+export function spectrumBars(bars: Uint8Array, levels: Uint16Array, columns: number, column: number, amplitude = false) {
   const rows = levels.length / columns;
+  let floor = 0;
+  if (amplitude) {
+    let peak = 0;
+    for (let row = 0; row < rows; row++) peak = Math.max(peak, levels[row * columns + column]);
+    floor = Math.max(-120, 20 * Math.log10(spectrumAmplitude(peak)) - 70);
+  }
   for (let bar = 0; bar < bars.length; bar++) {
     const first = rows - Math.floor((bar + 1) * rows / bars.length);
     const last = rows - Math.floor(bar * rows / bars.length);
     let peak = 0;
     for (let row = first; row < last; row++) peak = Math.max(peak, levels[row * columns + column]);
-    bars[bar] = Math.min(255, Math.round(peak * 255 / 5400));
+    const level = amplitude ? (20 * Math.log10(spectrumAmplitude(peak)) - floor) / 70 : peak / 5400;
+    bars[bar] = Math.round(Math.max(0, Math.min(1, level)) * 255);
   }
   return bars;
 }

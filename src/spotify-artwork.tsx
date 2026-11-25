@@ -5,7 +5,7 @@ import { LyricsVisualiser } from "./lyssna/lyrics-visualiser";
 import { spectrumBars, VISUALISER_BARS, type VisualiserFrame } from "./lyssna/visualiser-frame";
 import { playCanvasMedia } from "./canvas-media";
 import type { SpotifyCapture } from "./creator/spotify-capture";
-import { LIVE_TILE_MS, liveSpectrumCleared, readLiveTiles, type LiveTile } from "./creator/spectrum-storage";
+import { AMPLITUDE_COLUMN, LIVE_TILE_MS, liveSpectrumCleared, readLiveTiles, type LiveTile } from "./creator/spectrum-storage";
 import { spotifySongUri } from "./spotify-song";
 
 export function TrackArtwork({ src, className = "cover" }: { src?: string; className?: string }) {
@@ -151,7 +151,8 @@ export function SpotifyVisualiser({ host, trackId, playing, opacity, capture, mo
         if (tile) {
           const columns = tile.filled.length;
           const column = Math.floor((position % LIVE_TILE_MS) * columns / LIVE_TILE_MS);
-          if (tile.filled[column]) return spectrumBars(bars, tile.levels, columns, column);
+          const format = tile.filled[column];
+          if (format) return spectrumBars(bars, tile.levels, columns, column, !!(format & AMPLITUDE_COLUMN));
         }
         if (!beatLevel) return;
         for (let bar = 0; bar < bars.length; bar++) {

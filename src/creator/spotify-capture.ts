@@ -1,14 +1,15 @@
 import type { Host } from "../host";
 import { spotifySongUri } from "../spotify-song";
 import { spectrumBars, VISUALISER_BARS } from "../lyssna/visualiser-frame";
-import { spectrumFrequency } from "./audio";
+import { createSpectrumAnalyser, spectrumLevel, SPECTRUM_WINDOW_SIZE } from "./spectrum-analysis.js";
+import analyserSource from "./spectrum-analysis.js?raw";
 import { spotifyWindowMarker } from "./spotify-window";
 import { createCapturedReplay, isRecordingComplete, recordedCoverage, savedAudioCleared, type ReplayPacket } from "./captured-replay";
 import { trackCapture } from "./capture-sessions";
 import processorSource from "./live-spectrum-processor.js?raw";
 import {
-  LIVE_COLUMNS, LIVE_FFT_SIZE, LIVE_ROWS, LIVE_SAMPLE_MS, TRANSIENT_FFT_SIZE,
-  MEASURED_COLUMN, INTERPOLATED_COLUMN, saveLiveTiles, type LiveTile,
+  LIVE_COLUMNS, LIVE_ROWS, LIVE_SAMPLE_MS,
+  AMPLITUDE_COLUMN, MEASURED_COLUMN, INTERPOLATED_COLUMN, saveLiveTiles, type LiveTile,
 } from "./spectrum-storage";
 
 type CaptureHandle = { handle: string; origin?: string };
@@ -25,19 +26,24 @@ type DisplayOptions = DisplayMediaStreamOptions & {
   surfaceSwitching: "exclude";
 };
 type CaptureStatus = "idle" | "selecting" | "live";
-type FrameBatch = { first: number; decibels: Float32Array };
-type ReplayBatch = { firstFrame: number; samples: Int32Array };
-const signalFloor = -120;
-const capturePeakLimit = 0x7fffff * 10 ** (-1 / 20);
+type FrameBatch = { first: number; amplitudes: Float32Array };
+type ReplayBatch = { firstFrame: number; samples: Float32Array };
+const signalFloor = 10 ** (-120 / 20);
+const pcm24Scale = 0x800000;
+const capturePeakLimit = 10 ** (-1 / 20);
+const captureGain = (volume: number) =>
+  Number.isFinite(volume) && volume > 0 && volume < 1 ? 1 / volume : 1;
 
-function boostCapture(samples: Int32Array, volume: number) {
-  if (!Number.isFinite(volume) || volume <= 0 || volume >= 1) return;
-  let peak = 0;
-  for (const sample of samples) peak = Math.max(peak, Math.abs(sample));
-  if (!peak) return;
-  const gain = Math.min(1 / Math.max(0.01, volume), capturePeakLimit / peak);
-  if (gain <= 1) return;
-  for (let index = 0; index < samples.length; index++) samples[index] = Math.round(samples[index] * gain);
+function encodeCapture(samples: Float32Array, volume: number) {
+  let gain = captureGain(volume);
+  if (gain > 1) {
+    let peak = 0;
+    for (const sample of samples) peak = Math.max(peak, Math.abs(sample));
+    gain = peak ? Math.max(1, Math.min(gain, capturePeakLimit / peak)) : 1;
+  }
+  const scale = pcm24Scale * gain;
+  return Int32Array.from(samples, (sample) =>
+    Math.max(-pcm24Scale, Math.min(pcm24Scale - 1, Math.round(sample * scale))));
 }
 
 function captureError(error: unknown) {
@@ -108,8 +114,8 @@ export function createSpotifyCapture(host: Host, view: Window & typeof globalThi
       dirty.clear();
       spectrumWrites = spectrumWrites.then(async () => {
         for (const [uri, tiles] of changed) {
-          if (sealed.has(uri)) continue;
-          const saved = await saveLiveTiles(uri, durations.get(uri) ?? 0, [...tiles.values()]);
+          if (scope === "auto" && sealed.has(uri)) continue;
+          const saved = await saveLiveTiles(uri, durations.get(uri) ?? 0, [...tiles.values()], scope === "auto");
           if (!saved) sealed.add(uri);
         }
       }).catch(() => {
@@ -239,9 +245,8 @@ export function createSpotifyCapture(host: Host, view: Window & typeof globalThi
       // Only connect the verified audio track. Captured video is never stored.
       const source = context.createMediaStreamSource(new view.MediaStream([audio]));
       const audioContext = context;
-      const halfWindowMs = 500 * LIVE_FFT_SIZE / audioContext.sampleRate;
-      const frequencies = Array.from({ length: LIVE_ROWS + 1 }, (_, row) => spectrumFrequency(1 - row / LIVE_ROWS));
-      let previousClock: { uri: string; ms: number; audioMs: number; transportRevision: number; volume: number } | undefined;
+      const halfWindowMs = 500 * SPECTRUM_WINDOW_SIZE / audioContext.sampleRate;
+      let previousClock: { uri: string; ms: number; audioMs: number; transportRevision: number } | undefined;
       let lastUri: string | undefined;
       let captureFrom = 0;
       let replayFrom = 0;
@@ -252,7 +257,6 @@ export function createSpotifyCapture(host: Host, view: Window & typeof globalThi
       let noSignalSince = 0;
       let suspendedSince = 0;
       let heard = false;
-      let referencePeak = signalFloor;
       const levels = new Uint16Array(LIVE_ROWS);
       setStatus("live");
       setMessage("");
@@ -289,7 +293,7 @@ export function createSpotifyCapture(host: Host, view: Window & typeof globalThi
             if (session === active && full) sealed.add(uri);
           }).catch(() => {});
         }
-        const playback = { uri, ms, transportRevision, volume: host.volume() };
+        const playback = { uri, ms, transportRevision };
         const switched = !!lastUri && lastUri !== uri;
         lastUri = uri;
         const discontinuity = !previousClock || switched || playback.transportRevision !== previousClock.transportRevision ||
@@ -305,11 +309,8 @@ export function createSpotifyCapture(host: Host, view: Window & typeof globalThi
           leadingAudio.length = 0;
           replayHeard = false;
         }
-        if (discontinuity || playback.volume !== previousClock?.volume) {
-          referencePeak = signalFloor;
-        }
         previousClock = { ...playback, audioMs };
-        return { uri, duration, ms, now, audioMs, volume: playback.volume, discontinuity };
+        return { uri, duration, ms, now, audioMs, volume: host.volume(), discontinuity };
       };
       const acceptSignal = (signal: boolean, now: number) => {
         if (signal) noSignalSince = 0;
@@ -321,28 +322,24 @@ export function createSpotifyCapture(host: Host, view: Window & typeof globalThi
         heard = true;
         return true;
       };
-      const normalizeFrame = (decibels: Float32Array, now: number, start = 0) => {
-        let peak = signalFloor;
-        for (let row = 0; row < LIVE_ROWS; row++) peak = Math.max(peak, decibels[start + row]);
+      const encodeFrame = (amplitudes: Float32Array, now: number, volume: number, start = 0) => {
+        let peak = 0;
+        for (let row = 0; row < LIVE_ROWS; row++) peak = Math.max(peak, amplitudes[start + row]);
         if (!acceptSignal(peak > signalFloor, now)) return false;
-
-        // Follow the strongest bands without amplifying short dips between syllables.
-        referencePeak = Math.max(peak, referencePeak - 18 * LIVE_SAMPLE_MS / 1000);
-        const gain = Math.min(72, -25 - referencePeak);
+        const gain = captureGain(volume);
         for (let row = 0; row < LIVE_ROWS; row++) {
-          const db = decibels[start + row];
-          levels[row] = db <= signalFloor ? 0 : Math.round(Math.max(0, Math.min(1, (db + gain + 95) / 70)) * 5400);
+          levels[row] = spectrumLevel(amplitudes[start + row] * gain);
         }
         return true;
       };
       const writeFrame = (uri: string, duration: number, frame: number, levels: Uint16Array, before?: Uint16Array, weight = 1) => {
         if (frame < 0 || frame * LIVE_SAMPLE_MS >= duration) return;
         if (!before) {
-          spectrumBars(spectrum, levels, 1, 0);
+          spectrumBars(spectrum, levels, 1, 0, true);
           spectrumTrack = uri;
           spectrumAt = view.performance.now();
         }
-        if (sealed.has(uri)) return;
+        if (scope === "auto" && sealed.has(uri)) return;
         const index = Math.floor(frame / LIVE_COLUMNS);
         const column = frame % LIVE_COLUMNS;
         let tiles = dirty.get(uri);
@@ -352,23 +349,21 @@ export function createSpotifyCapture(host: Host, view: Window & typeof globalThi
           tile = { uri, index, levels: new Uint16Array(LIVE_ROWS * LIVE_COLUMNS), filled: new Uint8Array(LIVE_COLUMNS) };
           tiles.set(index, tile);
         }
-        if (before && tile.filled[column] === MEASURED_COLUMN) return;
+        if (before && (tile.filled[column] & MEASURED_COLUMN)) return;
         for (let row = 0; row < LIVE_ROWS; row++) {
           const level = levels[row];
           tile.levels[row * LIVE_COLUMNS + column] = before ? Math.round(before[row] + (level - before[row]) * weight) : level;
         }
-        tile.filled[column] = before ? INTERPOLATED_COLUMN : MEASURED_COLUMN;
+        tile.filled[column] = AMPLITUDE_COLUMN | (before ? INTERPOLATED_COLUMN : MEASURED_COLUMN);
       };
       const sampleOnTimer = () => {
         setMessage("Saving spectrograms only. This client couldn’t start audio recording.");
         const analyser = audioContext.createAnalyser();
-        analyser.fftSize = 4096;
-        analyser.smoothingTimeConstant = 0;
+        analyser.fftSize = SPECTRUM_WINDOW_SIZE;
         source.connect(analyser);
-        const bins = new Float32Array(analyser.frequencyBinCount);
-        const edges = Uint16Array.from(frequencies, (hz) => Math.min(bins.length, Math.round(hz * analyser.fftSize / audioContext.sampleRate)));
-        const analyserDelayMs = 500 * analyser.fftSize / audioContext.sampleRate;
-        const decibels = new Float32Array(LIVE_ROWS);
+        const samples = new Float32Array(SPECTRUM_WINDOW_SIZE);
+        const amplitudes = new Float32Array(LIVE_ROWS);
+        const analyse = createSpectrumAnalyser(audioContext.sampleRate, LIVE_ROWS);
         const previousLevels = new Uint16Array(LIVE_ROWS);
         let previousSample = -1;
         let previousSampleAt = 0;
@@ -379,16 +374,10 @@ export function createSpotifyCapture(host: Host, view: Window & typeof globalThi
             if (clock && audio.muted) acceptSignal(false, clock.now);
             return;
           }
-          analyser.getFloatFrequencyData(bins);
-          for (let row = 0; row < LIVE_ROWS; row++) {
-            const first = edges[row + 1];
-            const last = Math.min(bins.length, Math.max(first + 1, edges[row]));
-            let peak = -Infinity;
-            for (let bin = first; bin < last; bin++) peak = Math.max(peak, bins[bin]);
-            decibels[row] = peak;
-          }
-          if (!normalizeFrame(decibels, clock.now)) return;
-          const sample = Math.floor((clock.ms - analyserDelayMs) / LIVE_SAMPLE_MS);
+          analyser.getFloatTimeDomainData(samples);
+          analyse(samples, samples, samples.length / 2, amplitudes);
+          if (!encodeFrame(amplitudes, clock.now, clock.volume)) return;
+          const sample = Math.floor((clock.ms - halfWindowMs) / LIVE_SAMPLE_MS);
           const elapsed = clock.now - previousSampleAt;
           const distance = sample - previousSample;
           if (!clock.discontinuity && previousSample >= 0 && distance > 1 && distance * LIVE_SAMPLE_MS <= 80 && elapsed <= 100 &&
@@ -403,12 +392,12 @@ export function createSpotifyCapture(host: Host, view: Window & typeof globalThi
       };
       saveTimer = view.setInterval(() => { flush(); void flushReplay(); }, 1000);
       try {
-        const url = view.URL.createObjectURL(new view.Blob([processorSource], { type: "text/javascript" }));
+        const url = view.URL.createObjectURL(new view.Blob([analyserSource, "\n", processorSource], { type: "text/javascript" }));
         try { await audioContext.audioWorklet.addModule(url); }
         finally { view.URL.revokeObjectURL(url); }
         if (session !== active) return;
         const node = new view.AudioWorkletNode(audioContext, "lyssna-live-spectrum", {
-          processorOptions: { frequencies, interval: LIVE_SAMPLE_MS, fftSize: LIVE_FFT_SIZE, transientFftSize: TRANSIENT_FFT_SIZE },
+          processorOptions: { rows: LIVE_ROWS, interval: LIVE_SAMPLE_MS },
           outputChannelCount: [1],
         });
         worklet = node;
@@ -426,10 +415,9 @@ export function createSpotifyCapture(host: Host, view: Window & typeof globalThi
               const startFrame = data.firstFrame + replayOrigin;
               const remaining = Math.round(clock.duration * sampleRate / 1000) - startFrame;
               if (remaining <= 0) return;
-              const samples = data.samples.subarray(0, remaining * 2);
+              const samples = encodeCapture(data.samples.subarray(0, remaining * 2), clock.volume);
               const packet = { uri: clock.uri, duration: clock.duration, startFrame, sampleRate, samples, bitrate: host.captureBitrate() };
               replayHeard ||= samples.some((sample) => Math.abs(sample) >= 512);
-              boostCapture(samples, clock.volume);
               if (!replayHeard) {
                 leadingAudio.push(packet);
                 if (leadingAudio.length > 50) leadingAudio.shift();
@@ -448,10 +436,10 @@ export function createSpotifyCapture(host: Host, view: Window & typeof globalThi
           }
           // Map the worklet's continuous audio clock to the Spotify playhead once per uninterrupted stretch.
           const offset = columnOffset ??= Math.round((clock.ms - clock.audioMs - halfWindowMs) / LIVE_SAMPLE_MS);
-          for (let i = 0; i < data.decibels.length / LIVE_ROWS; i++) {
+          for (let i = 0; i < data.amplitudes.length / LIVE_ROWS; i++) {
             if (session !== active) break;
             const sequence = data.first + i;
-            if (sequence * LIVE_SAMPLE_MS < captureFrom || !normalizeFrame(data.decibels, clock.now, i * LIVE_ROWS)) continue;
+            if ((sequence + 0.5) * LIVE_SAMPLE_MS < captureFrom || !encodeFrame(data.amplitudes, clock.now, clock.volume, i * LIVE_ROWS)) continue;
             writeFrame(clock.uri, clock.duration, sequence + offset, levels);
           }
         };
