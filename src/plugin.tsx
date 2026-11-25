@@ -219,6 +219,17 @@ function TrackLyrics({ track, host, playing, settings, compact = false, view = w
     !lyrics.instrumental && (lyrics.synced || duration > 0);
   const estimateTiming = settings.experimental_word_sync || gravity || (!lyrics?.synced && settings.lyrics_highlighter);
   const [analysis, setAnalysis] = useState<AudioAnalysisData>();
+  const [appleWriters, setAppleWriters] = useState<{ trackId: string; names: string[] }>();
+  const needsWriters = !!lyrics?.lines.length && !lyrics.songwriters?.length &&
+    !lyrics.external && !settings.lyrics_sources_disabled.includes("apple");
+  useEffect(() => {
+    if (!needsWriters) return;
+    let active = true;
+    void readLyrics(track, duration, ["apple"], host).then((apple) => {
+      if (active && apple?.songwriters?.length) setAppleWriters({ trackId: track.id, names: apple.songwriters });
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [track, duration, host, needsWriters]);
   const analyse = !!lyrics && estimateTiming && needsWordSync(lyrics, duration);
   useEffect(() => {
     if (!analyse) return;
@@ -233,6 +244,7 @@ function TrackLyrics({ track, host, playing, settings, compact = false, view = w
   const romanized = useRomanizedLyrics(timedLyrics, settings.romanized,
     settings.romanization_below && !gravity, settings.romaji_as_written);
   const rendered = filterWords(romanized, settings.lyrics_word_filter);
+  const fallbackWriters = needsWriters && appleWriters?.trackId === track.id ? appleWriters.names : undefined;
   const defaultFont = useDefaultLyricsFont(selectedFont(settings, "lyric_font"), rendered, view.document);
   const fontClass = defaultFont ? "lyssna-default-lyrics-font" : undefined;
   const upcoming = fullView && settings.lyrics_up_next && duration > 0 && position >= duration - 30_000 ? host.upcoming() : undefined;
@@ -253,14 +265,14 @@ function TrackLyrics({ track, host, playing, settings, compact = false, view = w
       linkWidth={settings.gravity_links ? settings.gravity_link_width / 100 : 0}
       credits={<div className={upNext ? "lyric-credits-row" : undefined}>
         <div className="gravity-credit-details">
-          <WriterCredits names={rendered.songwriters ?? []} />
+          <WriterCredits names={rendered.songwriters?.length ? rendered.songwriters : fallbackWriters ?? []} />
           <LyricCredits lyrics={rendered} expanded discord={settings.lyrics_discord_usernames} />
         </div>
         {upNext}
       </div>} /></div>;
   }
   if (rendered) return <div className={fontClass} style={{ display: "contents" }}><span ref={playMarker} hidden /><LyricsDisplay lyrics={rendered} positionMs={time} playing={playing} settings={settings}
-    onSeek={seek} compact={compact} upNext={upNext} /></div>;
+    onSeek={seek} compact={compact} writers={fallbackWriters} upNext={upNext} /></div>;
   if (waiting && settings.lyrics_skeleton) return <LyricsSkeleton />;
   if (!waiting && !settings.lyrics_no_lyrics_notice) return null;
   return <div className="lyrics-message" role="status"><MicVocal />
