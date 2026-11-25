@@ -124,6 +124,7 @@ import {
   removeLines,
   canSeed,
   lineVoice,
+  sectionStart,
   sectionVoices,
   setLineVoice,
   setSection,
@@ -213,6 +214,8 @@ type Tab = "write" | "sync" | "preview";
 const HISTORY_LIMIT = 200;
 const VOICE_CLASS = ["", " sung-second", " sung-third"];
 const WORD_VOICE_CLASS = [" sung-first", " sung-second", " sung-third"];
+const SECTION_NAMES = ["Intro", "Verse", "Pre-Chorus", "Chorus", "Post-Chorus", "Hook", "Bridge",
+  "Breakdown", "Interlude", "Instrumental", "Pre-Drop", "Drop", "Post-Drop", "Outro"];
 
 type DraftHistory = {
   lines: CreatorLine[];
@@ -827,11 +830,17 @@ export function TtmlCreator({
     x: number;
     y: number;
     at: Cursor;
-    line?: boolean;
+    kind?: "line" | "section";
   } | null>(null);
   const [splitting, setSplitting] = useState<Cursor | null>(null);
   const [splittingReading, setSplittingReading] = useState<Cursor | null>(null);
   const [sectionEdit, setSectionEdit] = useState<{ line: number; part: string; singer: string }>();
+  const sectionNames = useId();
+  const editSection = (line: number) => setSectionEdit({
+    line,
+    part: lines[line]?.part ?? "",
+    singer: lines[sectionStart(lines, line)]?.singer ?? "",
+  });
   const [replacing, setReplacing] = useState<Cursor | null>(null);
   const openMenu = (event: ReactMouseEvent, at: Cursor) => {
     event.preventDefault();
@@ -846,7 +855,7 @@ export function TtmlCreator({
       x: event.clientX,
       y: event.clientY,
       at: { line, unit: 0 },
-      line: true,
+      kind: "line",
     });
   };
   const [picked, setPicked] = useState<ReadonlySet<number>>(new Set());
@@ -1148,7 +1157,7 @@ export function TtmlCreator({
       ...voiceGroup(index),
       [{
         label: line.part ? "Edit section" : "Start section here",
-        run: () => setSectionEdit({ line: index, part: line.part ?? "", singer: line.singer ?? "" }),
+        run: () => editSection(index),
       }, ...(line.part ? [{ label: "Remove section", run: () => setLines(setSection(lines, index)) }] : [])],
       [
         {
@@ -1182,9 +1191,9 @@ export function TtmlCreator({
       ...group.filter((each) => each.line === at.line).map((each) => each.unit),
     );
     return [
-      ...(unit.roman ? [[{ label: "Split reading", run: () => setSplittingReading(at) }]] : []),
       [
-        { label: "Split word…", run: () => setSplitting(at) },
+        { label: "Split word…", run: () => syncRoman && unit.roman ? setSplittingReading(at) : setSplitting(at) },
+        ...(!syncRoman && unit.roman ? [{ label: "Split reading…", run: () => setSplittingReading(at) }] : []),
         {
           label: "Auto-segment word",
           disabled: !suggestion.length,
@@ -1336,7 +1345,12 @@ export function TtmlCreator({
   };
   const draftActions = <>
     {instrumentalAction}
-    {!textMode && <button type="button" disabled={!lines.length} onClick={() => restructure(bracketsToBackground(lines))}>Brackets to background</button>}
+    {!textMode && <button type="button" disabled={!lines.length} onClick={() => {
+      const next = bracketsToBackground(lines);
+      if (next === lines) { notify("No words in brackets to move."); return; }
+      restructure(next);
+      notify("Moved bracketed lyrics to background vocals.");
+    }}>Brackets to background</button>}
     <button type="button" className={clearArmed ? "danger" : undefined} onClick={clearDraft}
       disabled={!here || (!lines.length && !text.trim() && !metadata)}>
       <Trash2 size={15} aria-hidden="true" />{clearArmed ? "Click again to clear" : "Clear draft"}
@@ -2668,7 +2682,8 @@ export function TtmlCreator({
                   key={`reading:${cursor.line}:${cursor.unit}:${selectedUnit?.roman ?? ""}`}
                   aria-label="Reading of the selected word"
                   defaultValue={selectedUnit?.roman ?? ""}
-                  placeholder="–"
+                  placeholder={selectedUnit && /[^\p{Script=Latin}\P{L}]/u.test(selectedUnit.text) ? "e.g. i|no|chi" : "–"}
+                  title="Use | between pieces of a reading to time them separately"
                   disabled={!selectedUnit}
                   spellCheck={false}
                   onBlur={(event) =>
@@ -2711,6 +2726,7 @@ export function TtmlCreator({
               ))}
               <span className="ttml-edit-tools">
                 {previewToggle}
+                {draftActions}
                 <button
                   onClick={startFromLyrics}
                   disabled={!seedable}
@@ -2812,9 +2828,14 @@ export function TtmlCreator({
               );
               return (
                 <Fragment key={lineIndex}>
-                {line.part && <p className="ttml-part" onContextMenu={(event) => openLineMenu(event, lineIndex)}>
+                {line.part && <button type="button" className="ttml-part"
+                  title="Edit section. Right-click for section actions."
+                  onClick={() => editSection(lineIndex)} onContextMenu={(event) => {
+                    event.preventDefault();
+                    setMenu({ x: event.clientX, y: event.clientY, at: { line: lineIndex, unit: 0 }, kind: "section" });
+                  }}>
                   {line.singer ? `${line.part} - ${line.singer}` : line.part}
-                </p>}
+                </button>}
                 <div
                   data-line={lineIndex}
                   tabIndex={-1}
@@ -3125,6 +3146,8 @@ export function TtmlCreator({
                         const selected =
                           cursor.line === lineIndex &&
                           cursor.unit === unitIndex;
+                        const editingReading = syncRoman && !!unit.roman;
+                        const inputText = editingReading ? unit.roman! : unit.text;
                         const parts = romanParts(unit);
                         const timings = parts.length > 1 ? romanPieces(unit) : [];
                         const reading = parts.length > 1 ? <span className={`ttml-reading-pieces${syncRoman ? " large" : ""}`}>
@@ -3156,9 +3179,9 @@ export function TtmlCreator({
                               <TimePill ms={unit.start} />
                               <input
                                 className="ttml-inline-word"
-                                aria-label={`Edit ${unit.text}`}
-                                defaultValue={unit.text}
-                                size={Math.max(2, unit.text.length + 1)}
+                                aria-label={editingReading ? `Edit the reading of ${unit.text}` : `Edit ${unit.text}`}
+                                defaultValue={inputText}
+                                size={Math.max(2, inputText.length + 1)}
                                 spellCheck={false}
                                 autoFocus
                                 onFocus={(event) =>
@@ -3172,14 +3195,15 @@ export function TtmlCreator({
                                   const value =
                                     event.currentTarget.value.trim();
                                   setInline(null);
-                                  if (value !== unit.text)
-                                    commitWord(at, value);
+                                  if (value === inputText) return;
+                                  if (editingReading) setLines(setUnitRoman(lines, at, value));
+                                  else commitWord(at, value);
                                 }}
                                 onKeyDown={(event) => {
                                   event.stopPropagation();
                                   if (event.key === "Escape") {
                                     event.preventDefault();
-                                    event.currentTarget.value = unit.text;
+                                    event.currentTarget.value = inputText;
                                     event.currentTarget.blur();
                                   } else if (event.key === "Enter") {
                                     event.preventDefault();
@@ -3236,9 +3260,7 @@ export function TtmlCreator({
                             onDoubleClick={() => {
                               if (!isPlaying) {
                                 setCursor(at);
-                                if (syncRoman && unit.roman) {
-                                  window.requestAnimationFrame(() => root.querySelector<HTMLInputElement>('[aria-label="Reading of the selected word"]')?.focus());
-                                } else setInline(at);
+                                setInline(at);
                                 return;
                               }
                               if (unit.start === undefined) return;
@@ -3327,10 +3349,11 @@ export function TtmlCreator({
         <WordMenu
           x={menu.x}
           y={menu.y}
-          groups={
-            menu.line ? lineMenuGroups(menu.at.line) : menuGroups(menu.at)
-          }
-          label={menu.line ? "Line actions" : "Word actions"}
+          groups={menu.kind === "section" ? [[
+            { label: "Edit section", run: () => editSection(menu.at.line) },
+            { label: "Remove section", run: () => setLines(setSection(lines, menu.at.line)) },
+          ]] : menu.kind === "line" ? lineMenuGroups(menu.at.line) : menuGroups(menu.at)}
+          label={menu.kind === "section" ? "Section actions" : menu.kind === "line" ? "Line actions" : "Word actions"}
           onClose={() => setMenu(null)}
         />
       )}
@@ -3370,8 +3393,9 @@ export function TtmlCreator({
           setSectionEdit(undefined);
         }}>
           <h3>{lines[sectionEdit.line]?.part ? "Edit section" : "Start section here"}</h3>
-          <label className="ttml-field">Section name<input required value={sectionEdit.part}
+          <label className="ttml-field">Section name<input autoFocus required list={sectionNames} value={sectionEdit.part}
             onChange={(event) => setSectionEdit({ ...sectionEdit, part: event.currentTarget.value })} /></label>
+          <datalist id={sectionNames}>{SECTION_NAMES.map(name => <option key={name} value={name} />)}</datalist>
           <label className="ttml-field">Singers<input value={sectionEdit.singer}
             onChange={(event) => setSectionEdit({ ...sectionEdit, singer: event.currentTarget.value })} /></label>
           <div className="ttml-dialog-row end"><button type="button" onClick={() => setSectionEdit(undefined)}>Cancel</button>

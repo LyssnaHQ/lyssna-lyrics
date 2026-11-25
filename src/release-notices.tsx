@@ -17,9 +17,14 @@ const tweaksSetupKey = "lyssna-lyrics.v1.spotify-tweaks-setup";
 const spectrogramFormatKey = "lyssna-lyrics.v1.spectrogram-format";
 const spectrogramFormat = "detail";
 const integrationEvent = "lyssna-lyrics:integration-state";
+const firstRunPreviewEvent = "lyssna-lyrics:preview-first-run";
 const checkInterval = 120_000;
 const ease = "cubic-bezier(0.23, 1, 0.32, 1)";
 const openExternal = (url: string) => window.open(url, "_blank", "noopener,noreferrer");
+
+export function previewFirstRun() {
+  window.dispatchEvent(new Event(firstRunPreviewEvent));
+}
 
 function compareVersions(a: string, b: string) {
   const [aCore, ...aSuffix] = a.split("-");
@@ -265,6 +270,27 @@ export function startReleaseNotices(host: Host, options: BuildOptions) {
     primary: { label: "Get started", run() {} },
     secondary: "Close",
   });
+  function showSpotifyTweaks(existing: boolean, choose: (keep: boolean) => void) {
+    show({
+      title: "Spotify Tweaks",
+      content: [
+        existing
+          ? <p>Lyssna aims to improve your Spotify experience. The first version didn’t ask if you’d like Lyssna to clean up Spotify for you. Would you like Lyssna Lyrics to keep your Spotify Tweaks settings or disable them?</p>
+          : <p>Lyssna Lyrics has built-in tools to clean up Spotify’s interface and improve how it works. Would you like to use Lyssna’s suggested defaults?</p>,
+        <p className="release-small">You can change these settings later under Lyssna Settings → Spotify Tweaks. Enhance Spotify Performance stays on either way.</p>,
+      ],
+      hideLinks: true,
+      primary: { label: existing ? "Keep settings" : "Yes", run: () => choose(true) },
+      secondary: existing ? "Disable tweaks" : "No",
+      secondaryAction: () => choose(false),
+      dismiss: () => choose(existing),
+    });
+  }
+
+  function showFirstRun() {
+    if (!startupPending) showSpotifyTweaks(false, showFirstLoad);
+  }
+  window.addEventListener(firstRunPreviewEvent, showFirstRun);
 
   function showUpdatedDialog(from: string, to: string) {
     const upgraded = from !== "0.0.0" && to !== "0.0.0" && hasUpdate(to, from);
@@ -310,6 +336,7 @@ export function startReleaseNotices(host: Host, options: BuildOptions) {
       loadingTimer = setTimeout(() => { stopLoading?.(); stopLoading = undefined; }, 4000);
     },
     showFirstLoad,
+    showFirstRun,
     showUpdateAvailable(to = demoVersion) {
       presentUpdate(to, () => showUpdatedDialog(version, to));
     },
@@ -378,20 +405,7 @@ export function startReleaseNotices(host: Host, options: BuildOptions) {
         } catch { host.notifyError("Couldn’t save Spotify Tweaks preferences."); }
         next();
       };
-      show({
-        title: "Spotify Tweaks",
-        content: [
-          existing
-            ? <p>Lyssna aims to improve your Spotify experience. The first version didn’t ask if you’d like Lyssna to clean up Spotify for you. Would you like Lyssna Lyrics to keep your Spotify Tweaks settings or disable them?</p>
-            : <p>Lyssna Lyrics has built-in tools to clean up Spotify’s interface and improve how it works. Would you like to use Lyssna’s suggested defaults?</p>,
-          <p className="release-small">You can change these settings later under Lyssna Settings → Spotify Tweaks. Enhance Spotify Performance stays on either way.</p>,
-        ],
-        hideLinks: true,
-        primary: { label: existing ? "Keep settings" : "Yes", run: () => choose(true) },
-        secondary: existing ? "Disable tweaks" : "No",
-        secondaryAction: () => choose(false),
-        dismiss: () => choose(existing),
-      });
+      showSpotifyTweaks(existing, choose);
     };
     try { initialNotices(); } catch { startupPending = false; }
 
@@ -419,6 +433,7 @@ export function startReleaseNotices(host: Host, options: BuildOptions) {
     clearTimeout(loadingTimer);
     stopLoading?.();
     window.removeEventListener(integrationEvent, exposePreviews);
+    window.removeEventListener(firstRunPreviewEvent, showFirstRun);
     const api = previewWindow.LyssnaLyrics;
     if (api?.showStartup === previews.showStartup) {
       const remaining = { ...api };

@@ -13,6 +13,7 @@ import { pictureInPicture } from "./popout";
 import { quickEffects } from "./quick-effects";
 import { AccountSettings } from "./account-settings";
 import { StoredDataSettings } from "./creator/stored-data-settings";
+import { previewFirstRun } from "./release-notices";
 import type { Host, Track } from "./host";
 
 export type Channel = "stable" | "beta" | "canary";
@@ -343,6 +344,11 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
       </SettingRow>,
     ]],
     ["Advanced", "Advanced", [
+      <SettingRow key="first-run-preview" label="Preview First Run"
+        help="Replay the Spotify Tweaks and Welcome prompts without changing your settings."
+        keywords="welcome onboarding first run">
+        <button type="button" className="pill outline" onClick={() => { close(); previewFirstRun(); }}>Preview</button>
+      </SettingRow>,
       <SettingRow key="manage-storage" label="Manage Stored Data" help="Clear recordings, spectrograms, and cached animated cover art."
         keywords="cache storage disk audio cover art">
         {submenuButton("storage", "Manage")}
