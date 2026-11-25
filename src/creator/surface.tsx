@@ -14,7 +14,7 @@ import type { Lyrics } from "../lyssna/types";
 import { LyricsDisplay } from "../lyssna/renderer";
 import { Ambience } from "../lyssna/ambience";
 import { fromLrc } from "../lrc";
-import { submitLyssnaTtml } from "../lyssna-submission";
+import { submitLyssnaTtml, type SubmissionFeedback } from "../lyssna-submission";
 import { lyssnaInstallReady } from "../lyssna-api";
 import { CreatorEnvironment } from "./environment";
 import { couldBeComplete, recordedCoverage, recordingPercent, savedAudioCleared, type RecordingCoverage, type SavedRecording } from "./captured-replay";
@@ -70,7 +70,7 @@ export function CreatorSurface({ host, view: owner, settings, close, reviewSelec
   reviewSelection?: ReviewSelection;
   closeReview?: () => void;
   onLocalPlayback(playback: CreatorPlayback | undefined): void; manageStoredData(trigger: HTMLElement | null): void;
-  onSubmitted(message: string): void;
+  onSubmitted(feedback: SubmissionFeedback, closeEditor?: boolean): void;
   confirmFirstUpload: () => Promise<boolean>;
 }) {
   const view = owner as Window & typeof globalThis;
@@ -575,7 +575,7 @@ export function CreatorSurface({ host, view: owner, settings, close, reviewSelec
             const result = await submitLyssnaTtml(new File([text], "lyrics.ttml"), target, host, confirmFirstUpload, appleOriginal);
             if (!result) return;
             if (result.approved) refreshPublishedLyrics(target, result.isrc, result.published);
-            return result.message;
+            return result;
           }}
           renderPreview={(lyrics, position, song) => {
             const cover = current?.uri === song.uri ? track?.cover : song.album.images[0]?.url;

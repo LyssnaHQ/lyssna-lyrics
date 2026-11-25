@@ -43,6 +43,7 @@ import type { CreatorState } from "./types";
 import type { Lyrics, PlayerRequest, Track } from "./types";
 import { lyricsChanged, parseLocalTtml } from "../local-lyrics";
 import { revalidateLyssnaSong } from "../lyssna-provider";
+import type { SubmissionFeedback } from "../lyssna-submission";
 import { ReviewPanel, type ReviewOpen, type ReviewSelection } from "./review-panel";
 import {
   dismissSubmittedDraft,
@@ -335,8 +336,8 @@ export function TtmlCreator({
   onToggle: () => void;
   onSpeed: (rate: number) => Promise<void>;
   onApply: (track: Track, filename: string, ttml: string) => Promise<boolean>;
-  onSubmit: (track: Track, ttml: string, appleOriginal?: Lyrics["appleOriginal"]) => Promise<string | undefined>;
-  onSubmitted: (message: string) => void;
+  onSubmit: (track: Track, ttml: string, appleOriginal?: Lyrics["appleOriginal"]) => Promise<SubmissionFeedback | undefined>;
+  onSubmitted: (feedback: SubmissionFeedback, closeEditor?: boolean) => void;
   onResetToSource: (track: Track) => Promise<Lyrics | undefined>;
   onParse: (
     filename: string,
@@ -2016,8 +2017,8 @@ export function TtmlCreator({
       onParse={async (text) => parseLocalTtml(text)}
       onSubmitFix={async (text) => {
         if (!track || track.uri !== reviewEdit?.uri) throw new Error("Open the submission in the editor first.");
-        const message = await onSubmit(track, text);
-        if (message) notify(message);
+        const feedback = await onSubmit(track, text);
+        if (feedback) onSubmitted(feedback);
       }}
       onDecided={(_submission, action, uri) => {
         setReviewEdit(undefined);
@@ -2137,16 +2138,14 @@ export function TtmlCreator({
     const submitted = current.current;
     setSubmitting(true);
     try {
-      const message = await onSubmit(track, ttml(), appleOriginal);
-      if (!message) return;
+      const feedback = await onSubmit(track, ttml(), appleOriginal);
+      if (!feedback) return;
       const latest = current.current;
       const sameSong = latest.uri === track.uri;
       const unchanged = latest.text === submitted.text &&
         latest.metadata === submitted.metadata && latest.appleOriginal === submitted.appleOriginal;
       const dismissed = (!sameSong || unchanged) && dismissSubmittedDraft(track.uri, submitted.lines);
-      if (!root.isConnected) return;
-      if (dismissed && sameSong) onSubmitted(message);
-      else notify(message);
+      onSubmitted(feedback, root.isConnected && dismissed && sameSong);
     } catch (error) {
       notify(String(error), true);
     } finally {

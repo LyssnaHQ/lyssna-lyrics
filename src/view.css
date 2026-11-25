@@ -2235,6 +2235,50 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   background: #282828;
   box-shadow: 0 2px 14px #0009;
 }
+.lyssna-submission-notice {
+  position: fixed;
+  z-index: 10000;
+  bottom: 88px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: calc(100vw - 32px);
+  pointer-events: none;
+}
+.lyssna-submission-message {
+  position: relative;
+  z-index: 1;
+  padding: 9px 14px;
+  border-radius: 10px;
+  background: #282828;
+  color: #fff;
+  box-shadow: 0 2px 14px #0009;
+  text-align: center;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+  line-height: 1.4;
+}
+.lyssna-submission-confetti {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+}
+.lyssna-submission-confetti > span {
+  position: absolute;
+  width: 6px;
+  height: 8px;
+  border-radius: 1px;
+  opacity: 0;
+  animation: lyssna-submission-burst 780ms ease-out;
+}
+@keyframes lyssna-submission-burst {
+  0% { opacity: 1; transform: translate(0, 0) scale(.5); }
+  42% { opacity: 1; transform: translate(var(--confetti-x), var(--confetti-y)) rotate(var(--confetti-spin)); }
+  100% { opacity: 0; transform: translate(calc(var(--confetti-x) * 1.35), 14px) rotate(var(--confetti-spin)) scale(.65); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lyssna-submission-confetti { display: none; }
+}
 .lyssna-lyrics-view .lyrics-page {
   --draft-banner-bottom: 16px;
 }

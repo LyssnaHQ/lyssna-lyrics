@@ -47,7 +47,8 @@ import { readViewSession, saveViewSession } from "./view-session";
 import { lyssnaApiNotice, lyssnaInstallReady } from "./lyssna-api";
 import { requestLyssnaLyrics, resumeLyssnaRequests } from "./lyssna-provider";
 import { InstrumentalAction } from "./instrumental-actions";
-import { submitLyssnaTtml } from "./lyssna-submission";
+import { submitLyssnaTtml, type SubmissionFeedback } from "./lyssna-submission";
+import { SubmissionNotice } from "./submission-notice";
 import { useLocalTrackIsrc } from "./local-track-isrc";
 import { useFirstUploadNotice } from "./first-upload-notice";
 import { CreatorSurface, type CreatorPlayback } from "./creator/surface";
@@ -614,6 +615,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
   const [leaving, setLeaving] = useState(false);
   const [narrow, setNarrow] = useState(false);
   const [notice, setNotice] = useState("");
+  const [submission, setSubmission] = useState<{ feedback: SubmissionFeedback; id: number }>();
   const [artistHeader, setArtistHeader] = useState<{ uri: string; url: string }>();
   const [albumYear, setAlbumYear] = useState<{ uri: string; year: string }>();
   const timer = useRef<number>(0);
@@ -771,6 +773,16 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
     const id = window.setTimeout(() => setNotice(""), 3_000);
     return () => window.clearTimeout(id);
   }, [notice, showSettings]);
+  useEffect(() => {
+    if (!submission) return;
+    const timer = view.setTimeout(() => setSubmission(undefined), 4_000);
+    return () => view.clearTimeout(timer);
+  }, [submission, view]);
+
+  function showSubmission(feedback: SubmissionFeedback, closeEditor = false) {
+    if (closeEditor) closeCreator?.();
+    setSubmission({ feedback, id: performance.now() });
+  }
   useEffect(() => {
     if (background !== "artist" || !artistUri || !trackId) return;
     let current = true;
@@ -986,7 +998,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
     {(showCreator || keepCreator) && <div className="lyssna-creator-container" ref={creatorPage} style={pageStyle} data-draft-preview={keepCreator || undefined}>
       <CreatorSurface host={host} view={view} settings={preferences} close={closeCreator ?? close} reviewSelection={reviewSelection}
         closeReview={closeReview} previewing={keepCreator} capture={capture} confirmFirstUpload={confirmFirstUpload}
-        onSubmitted={(message) => { closeCreator?.(); setNotice(message); }}
+        onSubmitted={showSubmission}
         onLocalPlayback={setCreatorPlayback} manageStoredData={(trigger) => {
         settingsTrigger.current = trigger ?? undefined;
         setNotice("");
@@ -1046,7 +1058,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
         if (result.approved) refreshPublishedLyrics(target, result.isrc, result.published);
         dismissDraft(spotifySongUri(track.id), true);
         closeTtml();
-        setNotice(result.message);
+        showSubmission(result);
       }}
       onLoad={async (file, mode) => {
         if (!track) throw new Error("Play a song first.");
@@ -1072,6 +1084,9 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
       onEnableAutoRecord={externalCinema ? undefined : () => void capture.start("auto")}
       options={options} track={track ?? undefined} notice={notice} setNotice={setNotice} view={view} developerMode={host.developerMode} />}
     {firstUploadNotice}
+    {submission && <SubmissionNotice key={submission.id} feedback={submission.feedback} style={fonts}
+      reduceMotion={preferences.reduce_motion}
+      container={parent.matches(":fullscreen") ? parent : view.document.body} />}
   </>;
 }
 
