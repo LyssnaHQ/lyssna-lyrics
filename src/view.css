@@ -2606,8 +2606,31 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   padding-block: 0;
 }
 
+.lyssna-lyrics-view .lyrics-page.no-lyrics:has(> .lyrics-instrumental-note) {
+  grid-template-rows: minmax(0, 1fr) auto;
+  row-gap: 0;
+}
+
+.lyssna-lyrics-view .lyrics-page:has(> .lyrics-instrumental-note) > :is(.lyrics-toolbar, .lyrics-fullscreen-controls) {
+  grid-row: 1;
+}
+
+.lyssna-lyrics-view .lyrics-instrumental-note {
+  grid-row: 2;
+  margin: 0 0 clamp(10px, 2dvh, 18px);
+  font-size: 0.85rem;
+  line-height: 1.4;
+  text-align: center;
+  color: #ffffffe0;
+  text-shadow: 0 1px 5px #000a;
+}
+
 .lyssna-lyrics-view.immersive .lyrics-page.no-lyrics .lyrics-album {
   --lyrics-art: min(100%, 58dvh, max(96px, calc(100dvh - 210px)));
+}
+
+.lyssna-lyrics-view.immersive .lyrics-page.no-lyrics:has(> .lyrics-instrumental-note) .lyrics-album {
+  --lyrics-art: min(100%, 58dvh, max(96px, calc(100dvh - 248px)));
 }
 
 .lyssna-lyrics-view.immersive .lyrics-page.no-lyrics .lyrics-album:has(.lyrics-fullscreen-volume:is(.left, .right)) {

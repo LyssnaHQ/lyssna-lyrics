@@ -1004,6 +1004,9 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
       {!toolbarOnCover && toolbar}
       {!showSettings && notice && <div className="lyssna-popout-error" role="status">{notice}</div>}
       {!artworkDock && playback}
+      {!narrating && track && lyrics?.instrumental && <p className="lyrics-instrumental-note">
+        🎵 This track is instrumental, enjoy the vibes!
+      </p>}
     </section>}
     {!showCreator && showTtml && <LoadTtml song={track ? track.title || "Unknown song" : undefined} track={track ?? undefined}
       localRecording={track?.local ? { track, duration, host, isrc: localIsrc } : undefined}
