@@ -1,5 +1,10 @@
 # Lyssna Lyrics patch notes
 
+## v1.1.0-c4b73ed
+
+- Open Build Channels in a compact popup over Settings.
+- Enable lrc.red by default and prefer its word sync over line-synced Apple Music lyrics.
+
 ## v1.1.0-c723f87
 
 - Refresh lyrics as soon as you choose a source, including when a Creator draft was showing.
