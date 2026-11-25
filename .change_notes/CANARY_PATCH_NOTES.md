@@ -1,5 +1,9 @@
 # Lyssna Lyrics patch notes
 
+## v1.1.0-a7b5edc
+
+- Keep standalone parenthesized lrc.red lyrics in their original order and preserve word spacing in timed backing vocals.
+
 ## v1.1.0-c4b73ed
 
 - Open Build Channels in a compact popup over Settings.
