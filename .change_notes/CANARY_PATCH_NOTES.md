@@ -1,5 +1,9 @@
 # Lyssna Lyrics patch notes
 
+## v1.1.0-eec63ae
+
+- Raise Creator upload errors by 40 pixels to clear the playback controls.
+
 ## v1.1.0-2e647bc
 
 - Center upload errors in the Spotify window while keeping Creator open. Raise successful upload notices by 20 pixels.
