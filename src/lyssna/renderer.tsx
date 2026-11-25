@@ -160,6 +160,7 @@ export function LyricsDisplay({
   };
   const waiting = useRef<HTMLDivElement>(null);
   const gap = lyrics.synced && selected === undefined ? vocalGap(lyrics.lines, positionMs) : undefined;
+  const scrollGap = gap && lyrics.lines.some((line) => !line.background && line.start_ms === gap.end) ? gap : undefined;
   const gaps = useMemo(
     () => new Map(vocalGaps(lyrics.lines).map((item) => [item.after, item])),
     [lyrics],
@@ -189,28 +190,12 @@ export function LyricsDisplay({
       ? (settings.lyrics_early_scroll_ms ?? 200)
       : 0);
   const active = activeLines(lyrics.lines, scrollTime);
-  const earlyBacking = active.findLast(index => {
-    if (!lyrics.lines[index].background) return false;
-    for (let lead = index - 1; lead >= 0; lead--) {
-      if (!lyrics.lines[lead].background) return lyrics.lines[lead].start_ms > scrollTime;
-    }
-    return false;
-  });
-  // Overlapping vocals keep animating, while the newest start drives scrolling.
-  const newestActive = active.reduce<number | undefined>((latest, index) => {
-    if (latest === undefined) return index;
-    const line = lyrics.lines[index];
-    const previous = lyrics.lines[latest];
-    if (line.start_ms !== previous.start_ms) return line.start_ms > previous.start_ms ? index : latest;
-    return line.background && !previous.background ? latest : index;
+  // Keep the latest lead centered through its end and any overlapping backing vocals.
+  const latestLead = lyrics.lines.reduce<number | undefined>((latest, line, index) => {
+    if (line.background || line.start_ms > scrollTime) return latest;
+    return latest === undefined || line.start_ms >= lyrics.lines[latest].start_ms ? index : latest;
   }, undefined);
-  const primary =
-    selected ?? earlyBacking ?? newestActive ??
-    lyrics.lines.reduce(
-      (last, line, index) =>
-        line.start_ms <= scrollTime && !line.background ? index : last,
-      0,
-    );
+  const primary = selected ?? latestLead ?? Math.max(0, lyrics.lines.findIndex((line) => !line.background));
   useEffect(() => {
     setFollowing(true);
   }, [lyrics]);
@@ -269,7 +254,7 @@ export function LyricsDisplay({
       translations: settings.lyrics_translations,
     };
     const container = scroll.current,
-      line = gap ? waiting.current : lines.current[primary];
+      line = scrollGap ? waiting.current : lines.current[primary];
     if (!container || !line || !lyrics.synced) {
       spring.current.velocity = 0;
       scrollBounds.current = undefined;
@@ -474,7 +459,7 @@ export function LyricsDisplay({
     settings.lyrics_minimal,
     settings.lyrics_smooth_scroll,
     footerMode,
-    gap?.start,
+    scrollGap?.start,
   ]);
   useLayoutEffect(() => {
     // Held until follow mode resumes, so a jump while browsing still glides.
