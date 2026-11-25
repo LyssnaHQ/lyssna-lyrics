@@ -223,6 +223,7 @@ export const Ambience = memo(function Ambience({
           : panel?.querySelector<HTMLVideoElement>("video[data-canvas-video]");
       if (!video || video === failed) return stopFollowing();
       if (video === following.current) return;
+      if (video.seeking || video.readyState < video.HAVE_CURRENT_DATA) return stopFollowing();
       following.current = video;
       try {
         engine.loadVideo(video, {

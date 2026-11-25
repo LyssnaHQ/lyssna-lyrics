@@ -51,15 +51,25 @@ export function CanvasArtwork({ info, cover, playing, onUnavailable, onVideo, he
   onVideo(video: HTMLVideoElement | null): void; heldFrame?: number;
 }) {
   const ref = useRef<HTMLVideoElement>(null);
+  const frameSelected = useRef(false);
   function syncFrame(video: HTMLVideoElement) {
+    if (heldFrame === undefined && playing) {
+      void video.play().catch(() => {});
+      return;
+    }
+    video.pause();
+    if (!Number.isFinite(video.duration) || video.duration <= 0) return;
     if (heldFrame !== undefined) {
-      video.pause();
-      if (Number.isFinite(video.duration)) {
-        const target = Math.min(heldFrame, Math.max(0, video.duration - 0.001));
-        if (Math.abs(video.currentTime - target) > 0.001) video.currentTime = target;
-      }
-    } else if (playing) void video.play().catch(() => {});
-    else video.pause();
+      const target = Math.min(heldFrame, Math.max(0, video.duration - 0.001));
+      if (!frameSelected.current || Math.abs(video.currentTime - target) > 0.001) video.currentTime = target;
+    } else {
+      if (frameSelected.current || !video.seekable.length) return;
+      const start = video.seekable.start(0);
+      const end = video.seekable.end(0);
+      if (end <= start) return;
+      video.currentTime = start + (end - start) * (0.05 + Math.random() * 0.9);
+    }
+    frameSelected.current = true;
   }
   const attach = useCallback((video: HTMLVideoElement | null) => {
     ref.current = video;
@@ -68,6 +78,7 @@ export function CanvasArtwork({ info, cover, playing, onUnavailable, onVideo, he
   useEffect(() => {
     const video = ref.current;
     if (!video) return;
+    frameSelected.current = false;
     const controller = new AbortController();
     const direct = canvasUrl(info.url);
     let usingDirect = false;
@@ -75,6 +86,7 @@ export function CanvasArtwork({ info, cover, playing, onUnavailable, onVideo, he
       if (controller.signal.aborted) return;
       if (usingDirect || !direct) { onUnavailable(info); return; }
       usingDirect = true;
+      frameSelected.current = false;
       video!.src = direct;
     }
     video.addEventListener("error", useDirect);
@@ -91,8 +103,10 @@ export function CanvasArtwork({ info, cover, playing, onUnavailable, onVideo, he
     if (ref.current) syncFrame(ref.current);
   }, [playing, heldFrame]);
   return <div className="lyrics-canvas-cover"><video ref={attach} data-canvas-video=""
-    poster={cover || undefined} muted autoPlay={playing && heldFrame === undefined} loop playsInline
-    onCanPlay={(event) => syncFrame(event.currentTarget)} aria-label="Spotify Canvas" /></div>;
+    poster={cover || undefined} preload="auto" muted autoPlay={playing && heldFrame === undefined} loop playsInline
+    onDurationChange={(event) => syncFrame(event.currentTarget)} onLoadedData={(event) => syncFrame(event.currentTarget)}
+    onCanPlay={(event) => syncFrame(event.currentTarget)} onPlaying={() => { frameSelected.current = true; }}
+    aria-label="Spotify Canvas" /></div>;
 }
 
 function preceding<Entry extends { start: number }>(entries: readonly Entry[], second: number): Entry | undefined {
