@@ -1,5 +1,9 @@
 # Lyssna Lyrics patch notes
 
+## v1.1.0-86623eb
+
+- Attach commas and other trailing punctuation to the previous word when loading TTML into Creator, preserving the word timing.
+
 ## v1.1.0-5e42cfc
 
 - Fill missing songwriter credits from Apple Music when enabled, while keeping the selected lyrics and timing.
