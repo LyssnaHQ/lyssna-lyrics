@@ -1,8 +1,8 @@
 {
   "protocol": 1,
   "stableRelease": {
-    "tag": "v1.1.0",
-    "digest": "sha256:4a10ea9966f4887b1ef186887dc169a11e97d508a2c3166a36b3df50a2c718ef"
+    "tag": "v1.2.0",
+    "digest": "sha256:057af1416be29311d27860937d53c221bf524192a68ac17461ec0419d5bb2b18"
   },
   "lyssnaSignIn": true
 }
