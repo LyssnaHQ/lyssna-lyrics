@@ -1,5 +1,9 @@
 # Lyssna Lyrics patch notes
 
+## v1.1.0-f90ac04
+
+- Choose a lyric source for the current song from the lyrics toolbar.
+
 ## v1.1.0-df13d0d
 
 - Keep the latest lead line centered so backing vocals can animate without pulling the lyrics out of place.
