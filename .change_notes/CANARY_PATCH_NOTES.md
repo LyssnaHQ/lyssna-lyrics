@@ -1,5 +1,9 @@
 # Lyssna Lyrics patch notes
 
+## v1.1.0-3568e78
+
+- Put matching accounts beside the admin search field. Include the account name on the stop button.
+
 ## v1.1.0-a9be0dd
 
 - Put the admin upload account search beside its label in Settings.
