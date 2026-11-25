@@ -1,5 +1,9 @@
 # Lyssna Lyrics patch notes
 
+## v1.1.0-afd5bc9
+
+- Put Copy ID, Copy ISRC, and Copy Song Name & Artist first in Copy/Share, followed by Copy Clean URL and Embed.
+
 ## v1.1.0-eb2cd17
 
 - Use Google Translate for online lyric lines with no supplied translation when Show translations is enabled.
