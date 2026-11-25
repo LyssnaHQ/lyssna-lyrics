@@ -109,9 +109,11 @@ export async function readLyrics(track: Track, duration: number, sources: LyricS
   const readSpicy = () => readCached(track.id, "spicy", () => readSpicyLyrics(track.id), 60_000, 5 * 60_000);
 
   async function preferWordTiming(apple: Lyrics) {
-    if (!spicyEnabled || hasWordTiming(apple)) return apple;
-    const spicy = await readSpicy();
-    return spicy?.source === spicyCommunitySource && hasWordTiming(spicy) ? spicy : apple;
+    if (apple.instrumental || hasWordTiming(apple)) return apple;
+    const spicy = spicyEnabled ? await readSpicy() : undefined;
+    if (spicy?.source === spicyCommunitySource && hasWordTiming(spicy)) return spicy;
+    const lrcRed = sources.includes("lrcred") ? await fromSource("lrcred") : undefined;
+    return lrcRed && hasWordTiming(lrcRed) ? lrcRed : apple;
   }
 
   async function fromSource(id: LyricSource, selected = false): Promise<Lyrics | undefined> {
@@ -139,8 +141,8 @@ export async function readLyrics(track: Track, duration: number, sources: LyricS
       if (lyrics.source !== spicyAppleSource) return lyrics;
       if (!appleEnabled) return;
       const apple = await readApple();
-      if (apple) return apple;
-      if (apple === undefined) return lyrics;
+      if (apple) return preferWordTiming(apple);
+      if (apple === undefined) return preferWordTiming(lyrics);
     } else if (id === "spotify") {
       const lyrics = await readCached(track.id, "spotify", async () =>
         parseSpotifyLyrics(await within(host.spotifyLyrics(track.id), 7000), duration), 30_000);

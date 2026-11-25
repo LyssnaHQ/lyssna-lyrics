@@ -78,7 +78,7 @@ export const defaults = {
   lyrics_cache_button: true,
   lyrics_cache_action: "song" as "song" | "reload" | "all",
   lyrics_source_order: ["local", "lyssna", "apple", "spicy", "spotify", "lrcred", "lrclib", "netease"] as string[],
-  lyrics_sources_disabled: ["lrcred", "lrclib", "netease"] as string[],
+  lyrics_sources_disabled: ["lrclib", "netease"] as string[],
   sync_other_plugin_preferences: false,
   settings_remember_place: true,
   settings_allow_hiding: false,
@@ -93,6 +93,7 @@ type StoredSettings = Partial<Settings> & {
   theme?: unknown;
   legacy_preferences_migrated?: boolean;
   desktop_animator_default_applied?: boolean;
+  lrcred_default_applied?: boolean;
   lyrics_credit_lyssna?: boolean;
   lyrics_prefer_apple?: boolean;
 };
@@ -109,9 +110,13 @@ export function legacyPreferencesMigrated() {
 
 export function readSettings(): Settings {
   try {
-    const { legacy_preferences_migrated: _migrated, desktop_animator_default_applied: _animator,
+    const { legacy_preferences_migrated: _migrated, desktop_animator_default_applied: _animator, lrcred_default_applied,
       lyrics_credit_lyssna: _legacyCredit, lyrics_prefer_apple: _legacyApplePriority, theme: _legacyTheme, ...saved } = readRecord();
     const settings = { ...defaults, ...saved };
+    const disabled = saved.lyrics_sources_disabled;
+    if (!lrcred_default_applied && disabled?.length === 3 && ["lrcred", "lrclib", "netease"].every(id => disabled.includes(id))) {
+      settings.lyrics_sources_disabled = defaults.lyrics_sources_disabled;
+    }
     settings.lyrics_font_enabled = saved.lyrics_font_enabled ?? settings.custom_fonts_enabled;
     const yearPosition = saved.lyrics_year_position;
     if (yearPosition !== "off" && yearPosition !== "left" && yearPosition !== "right") {
@@ -147,6 +152,6 @@ export function restoreDesktopAnimatorDefault() {
 }
 
 export function saveSettings(settings: Settings, migrated = legacyPreferencesMigrated()) {
-  localStorage.setItem(key, JSON.stringify({ ...settings, legacy_preferences_migrated: migrated, desktop_animator_default_applied: true }));
+  localStorage.setItem(key, JSON.stringify({ ...settings, legacy_preferences_migrated: migrated, desktop_animator_default_applied: true, lrcred_default_applied: true }));
   window.dispatchEvent(new Event(settingsEvent));
 }

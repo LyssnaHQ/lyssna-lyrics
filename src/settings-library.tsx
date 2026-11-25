@@ -37,7 +37,7 @@ export function SourcesManager({ settings, change }: {
       </li>;
     })}</ol>
     <footer className="settings-source-footer">
-      <span className="settings-source-summary"><strong>Source priority</strong><span>Lyssna uses the first available source. Disabled sources are skipped.</span></span>
+      <span className="settings-source-summary"><strong>Source priority</strong><span>Lyssna follows this order. Word-synced Spicy Lyrics or lrc.red can take precedence over line-synced Apple Music.</span></span>
       <button type="button" className="pill outline" onClick={() => change({
         lyrics_sources_disabled: defaults.lyrics_sources_disabled,
         lyrics_source_order: defaults.lyrics_source_order,
