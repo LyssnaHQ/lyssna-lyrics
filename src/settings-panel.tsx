@@ -41,7 +41,6 @@ const submenus = {
   sources: "Manage Sources",
   library: "TTML Database",
   storage: "Manage Stored Data",
-  builds: "Build Channels",
   hidden: "Hidden Settings",
   misc: "Extra Misc Settings That Aren’t Often Useful",
 };
@@ -101,9 +100,12 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
   const [switching, setSwitching] = useState(false);
   const [buildKey, setBuildKey] = useState("");
   const [buildError, setBuildError] = useState("");
+  const [showChannels, setShowChannels] = useState(false);
+  const [channelError, setChannelError] = useState("");
   const [transferring, setTransferring] = useState(false);
   const [marker, setMarker] = useState<{ left: number; width: number }>();
   const modal = useRef<HTMLDialogElement>(null);
+  const channelsDialog = useRef<HTMLDialogElement>(null);
   const scroll = useRef<HTMLDivElement>(null);
   const mainScroll = useRef(initial.scroll);
   const submenuScroll = useRef(initial.submenuScroll ?? 0);
@@ -132,6 +134,12 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
     dialog.showModal();
     return () => dialog.close();
   }, [tuning]);
+  useLayoutEffect(() => {
+    const dialog = channelsDialog.current;
+    if (!showChannels || !dialog) return;
+    dialog.showModal();
+    return () => dialog.close();
+  }, [showChannels]);
 
   useLayoutEffect(() => {
     if (scroll.current) scroll.current.scrollTop = submenu ? submenuScroll.current : mainScroll.current;
@@ -318,7 +326,10 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
     ]],
     ["Advanced", "Build Channel", [
       <SettingRow key="channel" label="Current build" help={`${activeBuild}${version ? ` · v${version}` : ""}`} keywords="build channel version canary stable beta">
-        {submenuButton("builds", "Manage")}
+        <button type="button" className="pill outline" aria-haspopup="dialog" onClick={() => {
+          setChannelError("");
+          setShowChannels(true);
+        }}>Manage</button>
       </SettingRow>,
       selectHiddenBuild && <SettingRow key="hidden-build-key" label="Hidden build key" stacked
         help={options.hiddenVersion ? "Remove the key to reload your public channel."
@@ -456,19 +467,6 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
         {submenu === "sources" && <SourcesManager settings={settings} change={change} />}
         {submenu === "library" && <LyricsLibrary notice={setNotice} />}
         {submenu === "storage" && <StoredDataSettings host={host} notice={setNotice} />}
-        {submenu === "builds" && <div className="lyrics-settings-group">
-          {(Object.keys(options.channels) as Channel[]).map((channel) => {
-            const current = channel === options.channel && !clearHiddenBuild;
-            return <SettingRow key={channel} label={channelLabels[channel]}
-              help={options.channels[channel] ? `v${options.channels[channel]}` : "No build published."}>
-              <button type="button" className="pill outline" disabled={switching || current || !options.channels[channel]}
-                onClick={() => void runBuildAction(() => options.selectChannel(channel),
-                  (message) => setNotice(message ? "Couldn’t load that build." : ""))}>
-                {current ? "Current" : clearHiddenBuild ? "Switch and reload" : "Switch"}
-              </button>
-            </SettingRow>;
-          })}
-        </div>}
         {submenu === "hidden" && (hiddenSettings.length ? <div className="lyrics-settings-group">{hiddenSettings}</div>
           : <p className="settings-submenu-empty">No hidden settings.</p>)}
         {submenu === "misc" && <div className="lyrics-settings-group">
@@ -492,12 +490,43 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
       </div>
     </section>}
   </div>;
-  return tuning ? content : <dialog ref={modal} className="lyssna-settings-dialog" aria-labelledby="lyssna-settings-title"
-    onCancel={(event) => {
-      event.preventDefault();
-      if (submenu) back();
-      else close();
-    }}>{content}</dialog>;
+  return tuning ? content : <>
+    <dialog ref={modal} className="lyssna-settings-dialog" aria-labelledby="lyssna-settings-title"
+      onCancel={(event) => {
+        event.preventDefault();
+        if (submenu) back();
+        else close();
+      }}>{content}</dialog>
+    <dialog ref={channelsDialog} className={`lyrics-settings lyssna-build-channels${settings.liquid_glass ? " liquid-glass" : ""}`}
+      style={fonts} aria-labelledby="lyssna-build-channels-title"
+      onCancel={(event) => { event.preventDefault(); setShowChannels(false); }}
+      onKeyDown={(event) => { if (event.key === "Escape" || event.key === "F11") event.stopPropagation(); }}
+      onClick={(event) => {
+        if (event.target !== event.currentTarget) return;
+        const box = event.currentTarget.getBoundingClientRect();
+        if (event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom) setShowChannels(false);
+      }}>
+      <header className="lyrics-settings-head">
+        <h2 id="lyssna-build-channels-title">Build Channels</h2>
+        <button type="button" className="icon-button" aria-label="Close build channels" onClick={() => setShowChannels(false)}><X size={18} /></button>
+      </header>
+      <div className="lyrics-settings-scroll">
+        <div className="lyrics-settings-group">
+          {(Object.keys(options.channels) as Channel[]).map((channel) => {
+            const current = channel === options.channel && !clearHiddenBuild;
+            return <SettingRow key={channel} label={channelLabels[channel]}
+              help={options.channels[channel] ? `v${options.channels[channel]}` : "No build published."}>
+              <button type="button" className="pill outline" disabled={switching || current || !options.channels[channel]}
+                onClick={() => void runBuildAction(() => options.selectChannel(channel), setChannelError)}>
+                {current ? "Current" : clearHiddenBuild ? "Switch and reload" : "Switch"}
+              </button>
+            </SettingRow>;
+          })}
+        </div>
+        {channelError && <p className="settings-alert" role="alert">{channelError}</p>}
+      </div>
+    </dialog>
+  </>;
 }
 
 function TimingOffsetSlider({ label, value, disabled, onChange }: {
