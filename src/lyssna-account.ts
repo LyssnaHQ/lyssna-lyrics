@@ -17,6 +17,8 @@ export type LyssnaProfile = {
 };
 
 let session: Tokens | undefined;
+type ProfileSession = { token: string; profile?: LyssnaProfile; pending?: Promise<LyssnaProfile | undefined> };
+let profileSession: ProfileSession | undefined;
 let memoryOnly = false;
 let queued: Promise<unknown> = Promise.resolve();
 
@@ -36,7 +38,10 @@ function readTokens() {
   } catch { return session; }
 }
 
-function saveTokens(next?: Tokens) {
+function saveTokens(next?: Tokens, previous?: Tokens) {
+  if (next && previous && profileSession?.token === previous.refresh_token) {
+    profileSession.token = next.refresh_token;
+  } else profileSession = undefined;
   session = next;
   try {
     if (next) localStorage.setItem(key, JSON.stringify(next));
@@ -93,6 +98,18 @@ export async function finishLyssnaSignIn(pending: SignIn, pasted: string) {
 
 export const hasLyssnaSession = () => Boolean(readTokens());
 
+export function subscribeLyssnaAccount(update: () => void) {
+  const onStorage = (event: StorageEvent) => {
+    if (event.key === key || event.key === null) update();
+  };
+  window.addEventListener(accountChanged, update);
+  window.addEventListener("storage", onStorage);
+  return () => {
+    window.removeEventListener(accountChanged, update);
+    window.removeEventListener("storage", onStorage);
+  };
+}
+
 export async function lyssnaAccess(rejected?: string) {
   const current = readTokens();
   if (!current) return;
@@ -114,7 +131,7 @@ export async function lyssnaAccess(rejected?: string) {
       if (response.ok) {
         const next: unknown = await response.json();
         if (tokens(next)) {
-          saveTokens(next);
+          saveTokens(next, latest);
           return next.access_token;
         }
       }
@@ -135,7 +152,26 @@ export async function lyssnaAccountRequest(path: string, body?: object, method?:
   return accessToken ? lyssnaRequest(path, { ...options, accessToken }) : response;
 }
 
+function currentProfileSession() {
+  const token = readTokens()?.refresh_token;
+  if (!token) profileSession = undefined;
+  else if (profileSession?.token !== token) profileSession = { token };
+  return profileSession;
+}
+
+export function cachedLyssnaProfile() { return currentProfileSession()?.profile; }
+
 export async function readLyssnaProfile(): Promise<LyssnaProfile | undefined> {
+  const current = currentProfileSession();
+  if (!current) return;
+  return current.pending ??= fetchLyssnaProfile().then(profile => {
+    if (currentProfileSession() !== current) return;
+    if (profile) current.profile = profile;
+    return profile;
+  }).finally(() => { current.pending = undefined; });
+}
+
+async function fetchLyssnaProfile(): Promise<LyssnaProfile | undefined> {
   const response = await lyssnaAccountRequest("/v1/me");
   if (!response?.ok) return;
   const profile = await response.json() as {

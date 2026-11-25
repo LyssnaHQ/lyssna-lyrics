@@ -11,7 +11,7 @@ import { LyricsLibrary, SourcesManager } from "./settings-library";
 import { exportSettings, importSettings } from "./settings-transfer";
 import { pictureInPicture } from "./popout";
 import { quickEffects } from "./quick-effects";
-import { AccountSettings } from "./account-settings";
+import { AccountSettings, useSettingsAccount } from "./account-settings";
 import { StoredDataSettings } from "./creator/stored-data-settings";
 import type { Host, Track } from "./host";
 
@@ -117,6 +117,7 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
   const tabButtons = useRef<(HTMLButtonElement | null)[]>([]);
   const transferInput = useRef<HTMLInputElement>(null);
   const searching = !!query.trim();
+  const account = useSettingsAccount(!tuning && !submenu && (tab === "Tools" || searching));
   const visuals = visualRows(settings, change, () => setTuning(true), searching);
   const fonts = appFontStyles(settings);
   const { flag, range } = visuals;
@@ -268,7 +269,7 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
     ["Appearance", "Artwork", rowsFor("animated_covers", "cover_animation"), true],
     ["Appearance", "Spotify Canvas", [
       ...rowsFor("canvas_lyrics"),
-      (settings.canvas_lyrics || searching) && <CanvasFrameSlider key="canvas-frame" control={canvasFrame} />,
+      <CanvasFrameSlider key="canvas-frame" control={canvasFrame} />,
     ]],
     ["Appearance", "Interface", [
       flag("liquid_glass", "Liquid Glass", "Use translucent glass for the lyrics toolbar and dialogs.", "theme glass blur translucent"),
@@ -359,7 +360,7 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
       </SettingRow>,
     ]],
     ["Tools", "Account", [
-      <AccountSettings key="lyssna-account" ready={options.lyssnaSignIn === true} host={host} />,
+      <AccountSettings key="lyssna-account" ready={options.lyssnaSignIn === true} host={host} {...account} />,
     ]],
     ["Tools", "Creator and recording", [
       flag("ttml_creator", "TTML Creator", "Add an editor button beside fullscreen in the playbar to write and time lyrics for the playing song.",

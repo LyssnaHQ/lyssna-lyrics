@@ -545,6 +545,16 @@
 .settings-build-key .lyssna-build-key-form {
   margin-top: 8px;
 }
+@container (width < 480px) {
+  .lyrics-settings .setting-row:has(.lyssna-account-actions) {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .lyrics-settings .lyssna-account-actions {
+    justify-content: flex-start;
+  }
+}
 .lyrics-settings .setting-label {
   font-size: 13.5px;
   font-weight: 600;

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { ExternalLink, LogOut } from "lucide-react";
-import { accountChanged, beginLyssnaSignIn, finishLyssnaSignIn, hasLyssnaSession, lyssnaAccountRequest, lyssnaSignOut, readLyssnaProfile, type LyssnaProfile, type SignIn } from "./lyssna-account";
+import { beginLyssnaSignIn, cachedLyssnaProfile, finishLyssnaSignIn, hasLyssnaSession, lyssnaAccountRequest, lyssnaSignOut, readLyssnaProfile, subscribeLyssnaAccount, type LyssnaProfile, type SignIn } from "./lyssna-account";
 import { ActAsSettings } from "./lyssna-act-as-settings";
 import { SettingRow } from "./lyssna/setting-row";
 import type { Host } from "./host";
@@ -17,15 +17,21 @@ async function accountPages<T>(path: string) {
   }
 }
 
-function IsrcBackfill({ host }: { host: Host }) {
+function IsrcBackfill({ host, setStatus }: { host: Host; setStatus: (message: string) => void }) {
   const [confirming, setConfirming] = useState(false);
   const [working, setWorking] = useState(false);
-  const [status, setStatus] = useState("");
-  return <SettingRow label="Add ISRC links" help="Find ISRCs for Lyssna songs that only have a Spotify link.">
-    <button type="button" className="pill outline" disabled={working} onClick={async () => {
-      if (!confirming) { setConfirming(true); return; }
+  return <>
+    {confirming && <button type="button" className="pill outline" onClick={() => { setConfirming(false); setStatus(""); }}>Cancel</button>}
+    <button type="button" className="pill outline" disabled={working}
+      title="Find ISRCs for Lyssna songs that only have a Spotify link" onClick={async () => {
+      if (!confirming) {
+        setConfirming(true);
+        setStatus("Add missing ISRC links across the Lyssna catalogue?");
+        return;
+      }
       setConfirming(false);
       setWorking(true);
+      setStatus("Loading the Lyssna catalogue…");
       let added = 0, conflicts = 0, failed = 0;
       try {
         const users = await accountPages<{ id: string }>("/v1/users");
@@ -55,39 +61,40 @@ function IsrcBackfill({ host }: { host: Host }) {
       } catch (error) {
         setStatus(`Added ${added} links. ${error instanceof Error ? error.message : "Backfill stopped."}`);
       } finally { setWorking(false); }
-    }}>{working ? "Adding links…" : confirming ? "Confirm catalogue backfill" : "Add ISRC links"}</button>
-    {confirming && <button type="button" className="pill outline" onClick={() => setConfirming(false)}>Cancel</button>}
-    {status && <small role="status">{status}</small>}
-  </SettingRow>;
+    }}>{working ? "Adding links…" : confirming ? "Confirm backfill" : "Add ISRC links"}</button>
+  </>;
 }
 
-export function AccountSettings({ ready, host }: { ready: boolean; host: Host }) {
-  const [signedIn, setSignedIn] = useState(hasLyssnaSession);
-  const [profile, setProfile] = useState<LyssnaProfile | null>();
+type AccountDetails = { signedIn: boolean; profile?: LyssnaProfile | null };
+
+export function useSettingsAccount(visible: boolean) {
+  const [details, setDetails] = useState<AccountDetails>(() => ({ signedIn: hasLyssnaSession(), profile: cachedLyssnaProfile() }));
+  useEffect(() => {
+    let generation = 0;
+    function refresh() {
+      const current = ++generation;
+      const signedIn = hasLyssnaSession();
+      const profile = cachedLyssnaProfile();
+      setDetails({ signedIn, profile });
+      if (!signedIn) return;
+      void readLyssnaProfile().catch(() => undefined).then(() => {
+        if (current !== generation) return;
+        setDetails({ signedIn: hasLyssnaSession(), profile: cachedLyssnaProfile() ?? null });
+      });
+    }
+    const unsubscribe = subscribeLyssnaAccount(refresh);
+    if (visible || !cachedLyssnaProfile()) refresh();
+    return () => { generation++; unsubscribe(); };
+  }, [visible]);
+  return details;
+}
+
+export function AccountSettings({ ready, host, signedIn, profile }: AccountDetails & { ready: boolean; host: Host }) {
   const [pending, setPending] = useState<SignIn>();
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  useEffect(() => {
-    const update = () => setSignedIn(hasLyssnaSession());
-    window.addEventListener(accountChanged, update);
-    window.addEventListener("storage", update);
-    update();
-    return () => {
-      window.removeEventListener(accountChanged, update);
-      window.removeEventListener("storage", update);
-    };
-  }, []);
-  useEffect(() => {
-    setProfile(undefined);
-    if (!signedIn) return;
-    let live = true;
-    void readLyssnaProfile().then(
-      (account) => { if (live) setProfile(account ?? null); },
-      () => { if (live) setProfile(null); },
-    );
-    return () => { live = false; };
-  }, [signedIn]);
+  const [isrcStatus, setIsrcStatus] = useState("");
 
   async function run(task: () => Promise<void>) {
     setBusy(true);
@@ -100,6 +107,7 @@ export function AccountSettings({ ready, host }: { ready: boolean; host: Host })
 
   const account = signedIn ? profile : undefined;
   const role = account?.role;
+  const admin = role === "admin";
   const details = account && [
     role && role !== "user" && `${role[0].toUpperCase()}${role.slice(1)}`,
     account.tier,
@@ -111,8 +119,9 @@ export function AccountSettings({ ready, host }: { ready: boolean; host: Host })
     : pending ? "Approve on Lyssna, then paste the sign-in result here within one minute."
     : ready ? "Connect your Lyssna account to Spotify." : "Sign-in is awaiting setup on Lyssna.org.";
   return <><SettingRow label={account ? `Lyssna Account · ${account.username}` : "Lyssna account"} help={help}
-    keywords="lyssna account profile login sign in sign out reputation tier email" stacked={!!pending}>
+    keywords={`lyssna account profile login sign in sign out reputation tier email${admin ? " add isrc links catalogue backfill" : ""}`} stacked={!!pending}>
     {signedIn ? <div className="settings-actions lyssna-account-actions">
+      {admin && <IsrcBackfill key={account.username} host={host} setStatus={setIsrcStatus} />}
       {account && <a className="pill outline" href={`https://lyssna.org/u/${encodeURIComponent(account.username)}`}
         target="_blank" rel="noopener noreferrer">Profile <ExternalLink size={13} /></a>}
       <button type="button" className="pill outline" disabled={busy}
@@ -141,5 +150,6 @@ export function AccountSettings({ ready, host }: { ready: boolean; host: Host })
         onClick={() => void run(async () => setPending(await beginLyssnaSignIn()))}>Sign in</button>)}
     {error && <p className="settings-alert" role="alert">{error}</p>}
   </SettingRow>
-  {account?.role === "admin" && <><ActAsSettings /><IsrcBackfill host={host} /></>}</>;
+  {admin && isrcStatus && <p className="settings-alert" role="status">{isrcStatus}</p>}
+  {admin && <ActAsSettings />}</>;
 }
