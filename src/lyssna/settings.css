@@ -359,10 +359,26 @@
 .lyrics-settings-head h2 svg {
   color: light-dark(#000, #fff);
 }
+.lyrics-settings-header-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.settings-build-trigger {
+  flex: none;
+  max-width: 15rem;
+}
+.settings-build-trigger > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .lyrics-settings-search {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
   width: 200px;
   height: 32px;
   padding: 0 10px;
@@ -523,28 +539,6 @@
   max-height: 240px;
   overflow-y: auto;
 }
-.plugin-settings > .lyrics-settings-footer {
-  align-items: center;
-  margin: 0;
-  padding: 8px 20px;
-  border-width: 1px 0 0;
-  border-radius: 0;
-}
-.plugin-settings .settings-build-trigger {
-  margin-inline-start: auto;
-}
-.settings-build-key {
-  margin-top: 10px;
-}
-.settings-build-key summary {
-  width: fit-content;
-  cursor: pointer;
-  font-size: 12px;
-  color: light-dark(#4c4c4c, #b3b3b3);
-}
-.settings-build-key .lyssna-build-key-form {
-  margin-top: 8px;
-}
 @container (width < 480px) {
   .lyrics-settings .setting-row:has(.lyssna-account-actions) {
     flex-direction: column;
@@ -641,18 +635,6 @@
   #lyssna-settings-content:not(:has(.setting-row))
   .lyrics-settings-empty {
   display: block;
-}
-.lyrics-settings-footer {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 16px;
-  margin-top: auto;
-  padding: 14px 16px;
-  border-radius: 12px;
-  background: linear-gradient(135deg, light-dark(#0000000d, #ffffff0d), light-dark(#00000004, #ffffff04));
-  border: 1px solid light-dark(#00000017, #ffffff17);
-  box-shadow: 0 1px 0 #ffffff0a inset;
 }
 .lyrics-settings-wordmark {
   display: block;

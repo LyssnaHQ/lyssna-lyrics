@@ -497,8 +497,15 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
           <ChevronLeft size={16} />Back
         </button>}
         <h2 id="lyssna-settings-title">{submenu ? submenus[submenu] : <><Settings2 size={20} />Lyssna Lyrics settings</>}</h2>
-        {!submenu && <label className="lyrics-settings-search"><Search size={15} /><input aria-label="Search settings" placeholder="Search settings…" value={query}
-          onChange={(event) => { setQuery(event.target.value); scroll.current?.scrollTo({ top: 0 }); }} /></label>}
+        {!submenu && <div className="lyrics-settings-header-controls">
+          <label className="lyrics-settings-search"><Search size={15} /><input aria-label="Search settings" placeholder="Search settings…" value={query}
+            onChange={(event) => { setQuery(event.target.value); scroll.current?.scrollTo({ top: 0 }); }} /></label>
+          <button type="button" id="lyssna-open-builds" className="pill outline settings-build-trigger" aria-haspopup="dialog"
+            aria-label={`Build Channels, ${activeBuild}${version ? ` v${version}` : ""}`}
+            title={`Build Channels · ${activeBuild}${version ? ` · v${version}` : ""}`} onClick={openChannels}>
+            <span>{activeBuild}{version ? ` · v${version}` : ""}</span>
+          </button>
+        </div>}
         <button type="button" className="icon-button" aria-label="Close settings" onClick={close}><X size={18} /></button>
       </header>
       {!submenu && <div className="lyrics-settings-tabs" role="tablist" aria-label="Settings categories">
@@ -552,12 +559,6 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
         </SettingsQuery.Provider></HiddenSettings.Provider>}
         {notice && <p className="settings-alert" role="status">{notice}</p>}
       </div>
-      {!submenu && <footer className="lyrics-settings-footer">
-        <button type="button" id="lyssna-open-builds" className="pill outline settings-build-trigger" aria-haspopup="dialog"
-          aria-label={`Build Channels, ${activeBuild}${version ? ` v${version}` : ""}`} onClick={openChannels}>
-          {activeBuild}{version ? ` · v${version}` : ""}
-        </button>
-      </footer>}
     </section>}
   </div>;
   return tuning ? content : <>
@@ -592,9 +593,7 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
               </button>
             </SettingRow>;
           })}
-        </div>
-        {!!savedBuilds.length && selectHiddenBuild && <SettingsSection category="Build Channels" title="Saved hidden builds">
-          {savedBuilds.map(build => {
+          {selectHiddenBuild && savedBuilds.map(build => {
             const selected = build.key === activeHiddenKey;
             const current = selected && !!options.hiddenVersion;
             const ending = build.key.slice(-4);
@@ -611,14 +610,13 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
               </div>
             </SettingRow>;
           })}
-        </SettingsSection>}
-        {selectHiddenBuild && showChannels && <details className="settings-build-key" open={/\b(key|hidden|private)\b/i.test(query)}>
-          <summary>Add hidden build key</summary>
-          <form className="lyssna-build-key-form" onSubmit={(event) => {
+        </div>
+        {selectHiddenBuild && showChannels && (
+          <form className="lyssna-build-key-form" aria-label="Add hidden build key" onSubmit={(event) => {
             event.preventDefault();
             addHiddenBuild();
           }}>
-            <input type="password" autoComplete="off" aria-label="Hidden build key" placeholder="Paste build key"
+            <input type="password" autoComplete="off" aria-label="Hidden build key" placeholder="Paste hidden build key"
               value={buildKey} disabled={switching} maxLength={64} onChange={(event) => {
                 setBuildKey(event.target.value);
                 setBuildError("");
@@ -627,7 +625,7 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
             {clearHiddenBuild && !savedBuilds.some(build => build.key === activeHiddenKey) && <button type="button" className="pill outline" disabled={switching}
               onClick={() => void runBuildAction(clearHiddenBuild, setBuildError)}>Remove key</button>}
           </form>
-        </details>}
+        )}
         {buildError && <p className="settings-alert" role="alert">{buildError}</p>}
         {channelError && <p className="settings-alert" role="alert">{channelError}</p>}
       </div>

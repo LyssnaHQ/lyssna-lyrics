@@ -1838,7 +1838,7 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   position: fixed;
   inset: 0;
   box-sizing: border-box;
-  width: min(380px, calc(100% - 32px));
+  width: min(460px, calc(100% - 32px));
   height: fit-content;
   max-height: calc(100% - 32px);
   margin: auto;
@@ -1865,6 +1865,10 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
 
 .lyssna-lyrics-view .lyssna-build-channels .setting-help {
   overflow-wrap: anywhere;
+}
+
+.lyssna-lyrics-view .lyssna-build-key-form {
+  margin-top: 12px;
 }
 
 .lyssna-lyrics-view .lyrics-settings-backdrop.liquid-glass {
@@ -2521,11 +2525,18 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
     flex-wrap: wrap;
   }
 
-  .lyssna-lyrics-view .plugin-settings .lyrics-settings-search {
+  .lyssna-lyrics-view .plugin-settings .lyrics-settings-header-controls {
     flex: 1 0 100%;
-    width: auto;
-    box-sizing: border-box;
     order: 1;
+  }
+
+  .lyssna-lyrics-view .plugin-settings .lyrics-settings-search {
+    flex: 1;
+    width: auto;
+  }
+
+  .lyssna-lyrics-view .plugin-settings .settings-build-trigger {
+    max-width: min(50%, 15rem);
   }
 
   .lyssna-lyrics-view .plugin-settings .setting-row {
