@@ -186,7 +186,7 @@ function MissingLyrics({ track, host, openCreator, searchAgain, openTtml }: {
         <span aria-hidden="true">·</span>
         <button type="button" onClick={() => void request()} disabled={requesting || requested}>
           {requested ? "Requested" : requesting ? "Requesting…" : "Request lyrics"}</button>
-        <InstrumentalAction track={track} host={host} marked={false}
+        <InstrumentalAction track={track} host={host}
           notify={(message, error) => setMarkNotice({ message, error: error ? true : undefined })} />
       </>}
     </div>
@@ -972,8 +972,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
         <div className="lyrics-album">
           {artworkDock ? playback : <>{canvas ? <CanvasArtwork key={`${track.id}:${canvas.fileId ?? canvas.url}`} info={canvas} cover={artwork ?? ""}
             playing={playing && !settings.reduce_motion} onUnavailable={setUnavailableCanvas} onVideo={setCanvasVideo} heldFrame={heldFrame} />
-            : renderCover(!track.local && lyrics?.source === "Lyssna" && lyrics.instrumental
-              ? <InstrumentalAction key={track.id} track={track} host={host} marked notify={setNotice} /> : undefined)}
+            : renderCover()}
           {details}</>}
         </div>
         {!coverOnly && <div className="lyrics-body">

@@ -539,9 +539,8 @@ export function CreatorSurface({ host, view: owner, settings, close, reviewSelec
           onCloseReview={closeReview}
           localIsrc={localIsrc}
           instrumentalAction={track && !track.local && seed?.uri === current?.uri &&
-            (!seed?.lyrics?.lines.length || seed.lyrics.instrumental)
-            ? <InstrumentalAction key={`${track.id}:${!!seed?.lyrics?.instrumental}`} track={track} host={host}
-              marked={seed?.lyrics?.source === "Lyssna" && !!seed.lyrics.instrumental} notify={notify} />
+            !seed?.lyrics?.lines.length && !seed?.lyrics?.instrumental
+            ? <InstrumentalAction key={track.id} track={track} host={host} notify={notify} />
             : undefined}
           onResetToSource={async (song) => {
             if (track?.id !== song.id || host.track()?.id !== song.id) return;

@@ -402,26 +402,25 @@ async function parseLyrics(value: LyricsView, isrc?: string, duration?: number):
   return result;
 }
 
-export async function markLyssnaInstrumental(track: Track, host: Host, unmark = false) {
+export async function markLyssnaInstrumental(track: Track, host: Host) {
   if (!/^[A-Za-z0-9]{22}$/.test(track.id)) throw new Error("Only Spotify tracks can be marked instrumental.");
   const isrc = await trackCode(track, host.lookupIsrc);
   if (!isrc) throw new Error("Spotify doesn’t have an ISRC for this recording.");
   const metadata = await spotifyTrackMetadata(track.id).catch(() => undefined);
   const isrcs = [...new Set([isrc, ...(metadata?.isrcs ?? [])])];
-  const response = unmark ? await lyssnaAccountRequest("/v1/instrumental", { isrcs, instrumental: null }, "PUT")
-    : await lyssnaAccountRequest("/v1/submissions", {
-      instrumental: true, extra_isrcs: isrcs, title: track.title, album: track.album,
-      artists: track.artistLinks?.map(artist => artist.name) ?? [track.artists || track.artist].filter(Boolean),
-      links: [{ platform: "isrc", external_id: isrc }, { platform: "spotify", external_id: track.id }],
-    });
+  const response = await lyssnaAccountRequest("/v1/submissions", {
+    instrumental: true, extra_isrcs: isrcs, title: track.title, album: track.album,
+    artists: track.artistLinks?.map(artist => artist.name) ?? [track.artists || track.artist].filter(Boolean),
+    links: [{ platform: "isrc", external_id: isrc }, { platform: "spotify", external_id: track.id }],
+  });
   if (!hasLyssnaSession() || response?.status === 401) throw new Error("Sign in to Lyssna in Settings.");
   if (response?.status === 403) throw new Error("Your Lyssna account can’t mark recordings instrumental.");
   if (!response?.ok) throw new Error("Couldn’t update this recording’s instrumental status.");
   const result = await response.json() as { status?: string };
-  if (!unmark && result.status === "pending") return "Sent to Lyssna for review as instrumental.";
+  if (result.status === "pending") return "Sent to Lyssna for review as instrumental.";
   revalidateLyssnaSong(track.id, isrc);
   window.dispatchEvent(new CustomEvent(lyricsChanged, { detail: [track.id] }));
-  return unmark ? "Instrumental mark taken back." : "Marked instrumental on Lyssna.";
+  return "Marked instrumental on Lyssna.";
 }
 
 export async function requestLyssnaLyrics(track: Track) {
