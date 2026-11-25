@@ -96,6 +96,7 @@ export function CreatorSurface({ host, view: owner, settings, close, reviewSelec
   const [rate, setRate] = useState(1);
   const [volume, setVolume] = useState(host.volume);
   const audioElement = useRef<HTMLAudioElement>(null);
+  const returningToSpotify = useRef(false);
   const picker = useRef<HTMLInputElement>(null);
   const openAudio = useCallback(() => picker.current?.click(), []);
   const audioLoad = useRef(0);
@@ -108,6 +109,23 @@ export function CreatorSurface({ host, view: owner, settings, close, reviewSelec
     capture.setLocalAudio(true);
     return () => capture.setLocalAudio(false);
   }, [capture, audioForSong]);
+  const localTrackId = audioForSong ? current?.id : undefined;
+  useLayoutEffect(() => {
+    if (previewing || !localTrackId) return;
+    returningToSpotify.current = false;
+    let pauseRequested = false;
+    const keepSpotifyPaused = () => {
+      if (returningToSpotify.current || host.track()?.id !== localTrackId) return;
+      if (!host.playing()) pauseRequested = false;
+      else if (!pauseRequested) {
+        pauseRequested = true;
+        host.toggle();
+      }
+    };
+    const unwatch = host.watch(keepSpotifyPaused);
+    keepSpotifyPaused();
+    return unwatch;
+  }, [host, localTrackId, previewing]);
   const isPlaying = audioForSong ? localPlaying : playing;
   const notify = useCallback((message: string, error = false) => setNotice({ message, error }), []);
   const captured = capture.recordings;
@@ -241,7 +259,7 @@ export function CreatorSurface({ host, view: owner, settings, close, reviewSelec
           element && element.pause();
           void host.playTrack(request.uri).catch((why) => notify(String(why), true));
         } else if (element) {
-          if (host.playing()) host.toggle();
+          if (previewing && host.playing()) host.toggle();
           if (element.ended || element.currentTime >= element.duration) element.currentTime = 0;
           void element.play().catch((why) => notify(String(why), true));
         } else if (!host.playing()) host.toggle();
@@ -278,6 +296,8 @@ export function CreatorSurface({ host, view: owner, settings, close, reviewSelec
     const element = audioForSong && audioElement.current;
     player({ command: (element ? !element.paused : host.playing()) ? "pause" : "play" });
   }, [audioForSong, host, player]);
+  const togglePlayback = useRef(toggle);
+  useLayoutEffect(() => { togglePlayback.current = toggle; }, [toggle]);
 
   const stopLocalForSpotify = useCallback(() => {
     audioLoad.current++;
@@ -286,30 +306,40 @@ export function CreatorSurface({ host, view: owner, settings, close, reviewSelec
     setAudio(undefined);
   }, [current?.uri]);
 
+  const handlesSpace = !previewing || !!audioForSong;
   useLayoutEffect(() => {
-    if (previewing && !audioForSong) return;
+    if (!handlesSpace) return;
+    let spaceDown = false;
     function onSpace(event: KeyboardEvent) {
-      if ((event.code !== "Space" && event.key !== " ") || event.altKey || event.ctrlKey ||
-        event.metaKey || event.shiftKey || event.isComposing) return;
+      if (event.code !== "Space" && event.key !== " ") return;
+      const keydown = event.type === "keydown";
+      // Spotify can consume keydown before Creator sees it. A lone keyup
+      // can still control local audio without toggling Spotify twice.
+      const toggleNow = keydown ? !event.repeat : !spaceDown && !!audioElement.current;
+      spaceDown = keydown;
+      if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.isComposing) return;
 
       const target = event.composedPath()[0];
       if (previewing && target instanceof view.Element && target.closest("button, a[href], input, select, textarea, [contenteditable]")) return;
       event.stopImmediatePropagation();
       if (target instanceof view.Element && target.closest(
-        ".ttml-spectrum-menu, textarea, input:is(:not([type]), [type='text'], [type='search'], [type='number'], [type='password'], [type='email'], [type='url'], [type='tel']), [contenteditable]:not([contenteditable='false'])",
+        "textarea, input:is(:not([type]), [type='text'], [type='search'], [type='number'], [type='password'], [type='email'], [type='url'], [type='tel']), [contenteditable]:not([contenteditable='false'])",
       )) return;
 
       event.preventDefault();
-      if (event.type === "keydown" && !event.repeat) toggle();
+      if (toggleNow) togglePlayback.current();
     }
 
+    const resetSpace = () => { spaceDown = false; };
     view.addEventListener("keydown", onSpace, true);
     view.addEventListener("keyup", onSpace, true);
+    view.addEventListener("blur", resetSpace);
     return () => {
       view.removeEventListener("keydown", onSpace, true);
       view.removeEventListener("keyup", onSpace, true);
+      view.removeEventListener("blur", resetSpace);
     };
-  }, [audioForSong, previewing, toggle, view]);
+  }, [handlesSpace, previewing, view]);
 
   const playClip = useCallback((uri: string, from: number, end: number) => {
     if (uri !== current?.uri || end <= from) return;
@@ -341,6 +371,7 @@ export function CreatorSurface({ host, view: owner, settings, close, reviewSelec
     return () => view.clearInterval(timer);
   }, [current?.uri, player, previewing, read, view]);
   const returnToSpotify = useCallback(() => {
+    returningToSpotify.current = true;
     const element = audioElement.current;
     const track = host.track();
     const uri = track && spotifySongUri(track.id);
@@ -383,11 +414,11 @@ export function CreatorSurface({ host, view: owner, settings, close, reviewSelec
   const activateRecording = useCallback((uri: string, replay: SavedRecording, speed: number, resume: boolean, position: number) => {
     capture.transportChanged();
     clip.current = undefined;
-    if (host.playing()) host.toggle();
+    if (previewing && host.playing()) host.toggle();
     const { blob, startMs, endMs, full } = replay;
     const positionMs = full ? Math.max(0, Math.min(position, endMs)) : position >= startMs && position < endMs - 500 ? position : startMs;
     setAudio({ uri, url: URL.createObjectURL(blob), replay: { startMs, endMs, positionMs, speed, resume, full } });
-  }, [capture, host]);
+  }, [capture, host, previewing]);
 
   useEffect(() => {
     const uri = current?.uri;
