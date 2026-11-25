@@ -60,18 +60,16 @@ export function ActAsSettings() {
     return () => window.clearTimeout(timer);
   }, [query]);
 
-  return <SettingRow label={active ? `Uploading as ${active.username}` : "Upload as another account"} stacked
-    help={active ? `Uploads from this window go to ${active.username} until ${clock.format(active.until)}.`
-      : "Admins only. Type part of an account’s name, or paste its user ID, to upload as it for a while."}
+  return <SettingRow label={active ? `Uploading as ${active.username}` : "Upload as another account"}
     keywords="admin upload as reserved account act as impersonate user uuid">
-    {active ? <div className="settings-actions">
-      <button type="button" className="pill outline" onClick={clearActAs}>Stop uploading as {active.username}</button>
-    </div> : <div className="lyssna-account-form">
+    {active ? <button type="button" className="pill outline" onClick={clearActAs}
+      title={`Uploads go to ${active.username} until ${clock.format(active.until)}.`}>Stop uploading</button>
+    : <div className="lyssna-account-form lyssna-act-as-form">
       <input type="text" aria-label="Account name or user ID" placeholder="Name or user ID" autoComplete="off"
         spellCheck={false} maxLength={80} value={query} onChange={(event) => setQuery(event.target.value)} />
       {matches.map((match) => <button key={match.id} type="button" className="pill outline" disabled={busy}
         onClick={() => { setActAs(match); setQuery(""); setMatches([]); }}>{match.username}</button>)}
+      {error && <p className="settings-alert" role="alert">{error}</p>}
     </div>}
-    {error && !active && <p className="settings-alert" role="alert">{error}</p>}
   </SettingRow>;
 }

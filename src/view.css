@@ -2391,6 +2391,33 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   background: light-dark(#0001, #fff1);
 }
 
+.lyssna-lyrics-view .setting-row:has(.lyssna-act-as-form) {
+  align-items: flex-start;
+}
+
+.lyssna-lyrics-view .setting-row:has(.lyssna-act-as-form) > .setting-text {
+  padding-block-start: 7px;
+}
+
+.lyssna-lyrics-view .setting-control:has(> .lyssna-act-as-form) {
+  width: min(46%, 18rem);
+}
+
+.lyssna-lyrics-view .lyssna-act-as-form {
+  width: 100%;
+  min-width: 0;
+}
+
+.lyssna-lyrics-view .lyssna-act-as-form > :is(input, .settings-alert) {
+  flex-basis: 100%;
+}
+
+.lyssna-lyrics-view .lyssna-act-as-form > button {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .lyssna-lyrics-view :is(.lyssna-account-form, .lyssna-account-actions) a {
   text-decoration: none;
 }
