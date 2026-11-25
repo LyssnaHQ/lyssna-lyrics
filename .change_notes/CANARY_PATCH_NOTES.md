@@ -1,5 +1,9 @@
 # Lyssna Lyrics patch notes
 
+## v1.1.0-df13d0d
+
+- Keep the latest lead line centered so backing vocals can animate without pulling the lyrics out of place.
+
 ## v1.1.0-8f50186
 
 - Show changes from every skipped Canary build, grouped by version, before and after updating.
