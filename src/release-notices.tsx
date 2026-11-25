@@ -34,8 +34,10 @@ function compareVersions(a: string, b: string) {
   return aSuffix.join("-").localeCompare(bSuffix.join("-"), "en", { numeric: true });
 }
 
+type PatchNotesMode = "range" | "canary" | "release";
+
 // Port of the Legacy patch notes parser by iPixelGalaxy.
-function getPatchNotes(markdown: string, from: string, to: string, canary: boolean) {
+function getPatchNotes(markdown: string, from: string, to: string, mode: PatchNotesMode) {
   const releases: { version: string; notes: string[] }[] = [];
   let release: (typeof releases)[number] | undefined;
   let current: string[] = [];
@@ -55,7 +57,8 @@ function getPatchNotes(markdown: string, from: string, to: string, canary: boole
     else if (current.length && line.trim() && !line.startsWith("#")) current.push(line.trim());
   }
   finishNote();
-  if (canary) {
+  if (mode === "release") return releases.filter(release => release.version === to && release.notes.length);
+  if (mode === "canary") {
     const latest = releases.findIndex(release => release.version === to);
     if (latest < 0 || from === to) return [];
     const previous = releases.findIndex(release => release.version === from);
@@ -82,7 +85,7 @@ function inlineMarkdown(text: string) {
   return tokens;
 }
 
-function PatchNotes({ url, from, to, canary }: { url: string; from: string; to: string; canary: boolean }) {
+function PatchNotes({ url, from, to, mode }: { url: string; from: string; to: string; mode: PatchNotesMode }) {
   const [notes, setNotes] = useState<ReturnType<typeof getPatchNotes>>();
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -94,11 +97,11 @@ function PatchNotes({ url, from, to, canary }: { url: string; from: string; to: 
         return response.text();
       })
       .then((markdown) => {
-        if (!controller.signal.aborted) setNotes(getPatchNotes(markdown, from, to, canary));
+        if (!controller.signal.aborted) setNotes(getPatchNotes(markdown, from, to, mode));
       })
       .catch(() => { if (!controller.signal.aborted) setFailed(true); });
     return () => controller.abort();
-  }, [url, from, to, canary, attempt]);
+  }, [url, from, to, mode, attempt]);
   return <section className="release-notes" aria-label="Patch notes" aria-live="polite">
     <h3>What changed</h3>
     {failed ? <p>Couldn’t load patch notes. <button type="button" className="release-text-button" onClick={() => {
@@ -107,7 +110,7 @@ function PatchNotes({ url, from, to, canary }: { url: string; from: string; to: 
     }}>Retry</button></p>
       : !notes ? <p>Loading patch notes…</p>
       : !notes.length ? <p>No patch notes are available for this update.</p>
-      : canary ? notes.map(({ version, notes }) => <div className="release-note-group" key={version}>
+      : mode === "canary" ? notes.map(({ version, notes }) => <div className="release-note-group" key={version}>
         <h4>v{version}</h4>
         <ul>{notes.map((text, index) => <li key={index}>{inlineMarkdown(text)}</li>)}</ul>
       </div>) : <ul>{notes.flatMap(({ version, notes }) => notes.map((text, index) =>
@@ -235,7 +238,12 @@ export function startReleaseNotices(host: Host, options: BuildOptions) {
   if (!installed) return () => {};
   const version = installed;
   const canary = options.channel === "canary" && !options.hiddenVersion;
+  const publicTestChannel = options.channel !== "stable" && !options.hiddenVersion;
   const patchNotes = canary ? canaryNotesUrl : options.patchNotesUrl;
+  function notesFor(to: string): { url: string | undefined; mode: PatchNotesMode } {
+    if (publicTestChannel && /^\d+\.\d+\.\d+$/.test(to)) return { url: canaryNotesUrl, mode: "release" };
+    return { url: patchNotes, mode: canary ? "canary" : "range" };
+  }
   // The Canary manifest is authoritative because commit hashes don't sort by release order.
   const hasUpdate = (next: string, current: string) => canary ? next !== current : compareVersions(next, current) > 0;
   const controller = new AbortController();
@@ -302,18 +310,20 @@ export function startReleaseNotices(host: Host, options: BuildOptions) {
 
   function showUpdatedDialog(from: string, to: string, notesFrom = from) {
     const upgraded = from !== "0.0.0" && to !== "0.0.0" && hasUpdate(to, from);
+    const { url, mode } = notesFor(to);
     show({
       title: `${upgraded ? "Updated" : "Changed"} to ${to}`,
       content: [
         <p>You were on <strong>{from}</strong>. You are now on <strong>{to}</strong>.</p>,
-        ...(upgraded && patchNotes && notesFrom !== to ? [<PatchNotes url={patchNotes} from={notesFrom} to={to} canary={canary} />] : []),
+        ...(upgraded && url && notesFrom !== to ? [<PatchNotes url={url} from={notesFrom} to={to} mode={mode} />] : []),
       ],
-      primary: patchNotes ? { label: "See all patch notes", run: () => openExternal(patchNotes) } : { label: "Got it", run() {} },
+      primary: url ? { label: "See all patch notes", run: () => openExternal(url) } : { label: "Got it", run() {} },
       secondary: "Close",
     });
   }
 
   function presentUpdate(to: string, apply: () => void) {
+    const { url, mode } = notesFor(to);
     const warn = () => {
       render(<ReleaseToast key={++noticeId} title={`Staying on ${version}`} warning
         description="Updating allows us to provide you with features and bug fixes that have never been seen before 👀"
@@ -326,8 +336,8 @@ export function startReleaseNotices(host: Host, options: BuildOptions) {
         title: `Version ${to} is out`,
         content: [
           <p>You’re on <strong>{version}</strong>. Updating reloads Spotify, which takes a few seconds.</p>,
-          ...(canary && patchNotes ? [<PatchNotes url={patchNotes} from={version} to={to} canary />] : []),
-          ...(patchNotes ? [<p className="release-small">See what changed in the <a href={patchNotes} target="_blank" rel="noopener noreferrer">patch notes</a>.</p>] : []),
+          ...(url && mode !== "range" ? [<PatchNotes url={url} from={version} to={to} mode={mode} />] : []),
+          ...(url && mode !== "release" ? [<p className="release-small">See what changed in the <a href={url} target="_blank" rel="noopener noreferrer">patch notes</a>.</p>] : []),
         ],
         primary: { label: "Update and reload", run: apply },
         secondary: "Not now",
