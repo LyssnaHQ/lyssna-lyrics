@@ -110,6 +110,8 @@
   line-height: 1.5;
 }
 .release-notes h3 { margin: 0 0 10px; font-size: .88rem; }
+.release-note-group h4 { margin: 0 0 6px; color: var(--muted); font-size: .8rem; }
+.release-note-group + .release-note-group { margin-top: 14px; }
 .release-notes p, .release-notes ul { margin: 0; }
 .release-notes ul { padding-inline-start: 1.25rem; }
 .release-notes li { overflow-wrap: anywhere; }

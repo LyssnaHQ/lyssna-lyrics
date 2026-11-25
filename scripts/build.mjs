@@ -22,6 +22,11 @@ const host = testBuild || hiddenBuild ? "Y:/website/lyssna-plugin" : output;
 const entrypoint = join(output, "rewrite", "v1.0");
 const channelsFile = join("loader", "channels.json");
 const testChannelsFile = join(host, "rewrite", "v1.0", "channels.json");
+const canaryNotesFile = join(".change_notes", "CANARY_PATCH_NOTES.md");
+const canaryNotes = testBuild ? readFileSync(canaryNotesFile, "utf8") : undefined;
+if (canaryNotes !== undefined && !canaryNotes.split(/\r?\n/).some(line => line.trim() === `## v${version}`)) {
+  throw new Error(`Add ## v${version} to ${canaryNotesFile} before publishing Canary.`);
+}
 
 function write(target, content) {
   const temp = `${target}.${process.pid}.tmp`;
@@ -76,6 +81,7 @@ if (hiddenBuild) {
   copy("loader/lyssna-lyrics.mjs", join(output, "rewrite", "lyssna-lyrics.mjs"));
   if (testCatalog) {
     mkdirSync(join(host, "rewrite", "v1.0"), { recursive: true });
+    write(join(host, "rewrite", "v1.0", "patch-notes.md"), canaryNotes);
     testCatalog.channels.canary = version;
     write(testChannelsFile, JSON.stringify(testCatalog, null, 2) + "\n");
     console.log(`Canary ${version} published in ${testChannelsFile}`);

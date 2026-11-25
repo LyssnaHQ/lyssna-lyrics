@@ -13,6 +13,7 @@ const github = "https://github.com/LyssnaHQ/lyssna-lyrics";
 const guide = "https://lyssna.org/guides";
 const canaryNotesUrl = "https://ipixelgalaxy.com/lyssna-plugin/rewrite/v1.0/patch-notes.md";
 const lastBuildKey = "lyssna-lyrics.v1.last-public-build";
+const lastCanaryBuildKey = "lyssna-lyrics.v1.last-canary-build";
 const tweaksSetupKey = "lyssna-lyrics.v1.spotify-tweaks-setup";
 const spectrogramFormatKey = "lyssna-lyrics.v1.spectrogram-format";
 const spectrogramFormat = "detail";
@@ -34,25 +35,35 @@ function compareVersions(a: string, b: string) {
 }
 
 // Port of the Legacy patch notes parser by iPixelGalaxy.
-function getPatchNotes(markdown: string, from: string, to: string, exact: boolean) {
-  const notes: { version: string; text: string }[] = [];
-  let version = "";
+function getPatchNotes(markdown: string, from: string, to: string, canary: boolean) {
+  const releases: { version: string; notes: string[] }[] = [];
+  let release: (typeof releases)[number] | undefined;
   let current: string[] = [];
   const finishNote = () => {
-    if (current.length && version && (exact ? version === to : compareVersions(version, from) > 0 && compareVersions(version, to) <= 0)) {
-      notes.push({ version, text: current.join(" ") });
-    }
+    if (current.length) release?.notes.push(current.join(" "));
     current = [];
   };
   for (const line of markdown.replace(/\r/g, "").split("\n")) {
     const heading = /^##\s+v?(\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?)\s*$/i.exec(line);
     const bullet = /^\s*[-*]\s+(.+)$/.exec(line);
-    if (heading) { finishNote(); version = heading[1]; }
+    if (heading) {
+      finishNote();
+      release = { version: heading[1], notes: [] };
+      releases.push(release);
+    }
     else if (bullet) { finishNote(); current = [bullet[1].trim()]; }
     else if (current.length && line.trim() && !line.startsWith("#")) current.push(line.trim());
   }
   finishNote();
-  return notes.sort((a, b) => compareVersions(b.version, a.version));
+  if (canary) {
+    const latest = releases.findIndex(release => release.version === to);
+    if (latest < 0 || from === to) return [];
+    const previous = releases.findIndex(release => release.version === from);
+    // Canary versions contain commit hashes. The history is newest first.
+    return releases.slice(latest, previous > latest ? previous : latest + 1).filter(release => release.notes.length);
+  }
+  return releases.filter(release => release.notes.length && compareVersions(release.version, from) > 0 && compareVersions(release.version, to) <= 0)
+    .sort((a, b) => compareVersions(b.version, a.version));
 }
 
 function inlineMarkdown(text: string) {
@@ -71,7 +82,7 @@ function inlineMarkdown(text: string) {
   return tokens;
 }
 
-function PatchNotes({ url, from, to, exact }: { url: string; from: string; to: string; exact: boolean }) {
+function PatchNotes({ url, from, to, canary }: { url: string; from: string; to: string; canary: boolean }) {
   const [notes, setNotes] = useState<ReturnType<typeof getPatchNotes>>();
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -83,11 +94,11 @@ function PatchNotes({ url, from, to, exact }: { url: string; from: string; to: s
         return response.text();
       })
       .then((markdown) => {
-        if (!controller.signal.aborted) setNotes(getPatchNotes(markdown, from, to, exact));
+        if (!controller.signal.aborted) setNotes(getPatchNotes(markdown, from, to, canary));
       })
       .catch(() => { if (!controller.signal.aborted) setFailed(true); });
     return () => controller.abort();
-  }, [url, from, to, exact, attempt]);
+  }, [url, from, to, canary, attempt]);
   return <section className="release-notes" aria-label="Patch notes" aria-live="polite">
     <h3>What changed</h3>
     {failed ? <p>Couldn’t load patch notes. <button type="button" className="release-text-button" onClick={() => {
@@ -95,9 +106,12 @@ function PatchNotes({ url, from, to, exact }: { url: string; from: string; to: s
       setAttempt((value) => value + 1);
     }}>Retry</button></p>
       : !notes ? <p>Loading patch notes…</p>
-      : notes.length ? <ul>{notes.map(({ version, text }, index) =>
-        <li key={`${version}-${index}`}>{inlineMarkdown(text)}</li>)}</ul>
-      : <p>No patch notes are available for this update.</p>}
+      : !notes.length ? <p>No patch notes are available for this update.</p>
+      : canary ? notes.map(({ version, notes }) => <div className="release-note-group" key={version}>
+        <h4>v{version}</h4>
+        <ul>{notes.map((text, index) => <li key={index}>{inlineMarkdown(text)}</li>)}</ul>
+      </div>) : <ul>{notes.flatMap(({ version, notes }) => notes.map((text, index) =>
+        <li key={`${version}-${index}`}>{inlineMarkdown(text)}</li>))}</ul>}
   </section>;
 }
 
@@ -286,13 +300,13 @@ export function startReleaseNotices(host: Host, options: BuildOptions) {
     if (!startupPending) showSpotifyTweaks(false, showFirstLoad);
   }
 
-  function showUpdatedDialog(from: string, to: string) {
+  function showUpdatedDialog(from: string, to: string, notesFrom = from) {
     const upgraded = from !== "0.0.0" && to !== "0.0.0" && hasUpdate(to, from);
     show({
       title: `${upgraded ? "Updated" : "Changed"} to ${to}`,
       content: [
         <p>You were on <strong>{from}</strong>. You are now on <strong>{to}</strong>.</p>,
-        ...(upgraded && patchNotes ? [<PatchNotes url={patchNotes} from={from} to={to} exact={canary} />] : []),
+        ...(upgraded && patchNotes && notesFrom !== to ? [<PatchNotes url={patchNotes} from={notesFrom} to={to} canary={canary} />] : []),
       ],
       primary: patchNotes ? { label: "See all patch notes", run: () => openExternal(patchNotes) } : { label: "Got it", run() {} },
       secondary: "Close",
@@ -312,6 +326,7 @@ export function startReleaseNotices(host: Host, options: BuildOptions) {
         title: `Version ${to} is out`,
         content: [
           <p>You’re on <strong>{version}</strong>. Updating reloads Spotify, which takes a few seconds.</p>,
+          ...(canary && patchNotes ? [<PatchNotes url={patchNotes} from={version} to={to} canary />] : []),
           ...(patchNotes ? [<p className="release-small">See what changed in the <a href={patchNotes} target="_blank" rel="noopener noreferrer">patch notes</a>.</p>] : []),
         ],
         primary: { label: "Update and reload", run: apply },
@@ -347,13 +362,16 @@ export function startReleaseNotices(host: Host, options: BuildOptions) {
   if (!options.hiddenVersion) {
     const initialNotices = () => {
       const previous = localStorage.getItem(lastBuildKey);
+      const previousCanary = canary ? localStorage.getItem(lastCanaryBuildKey) : null;
       const existing = !!previous || legacyPreferencesMigrated();
       const finish = () => {
         startupPending = false;
-        if (controller.signal.aborted || previous === version) return;
+        if (controller.signal.aborted) return;
+        if (canary && previousCanary !== version) localStorage.setItem(lastCanaryBuildKey, version);
+        if (previous === version) return;
         localStorage.setItem(lastBuildKey, version);
         if (!previous) showFirstLoad();
-        else if (/^\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$/.test(previous)) showUpdatedDialog(previous, version);
+        else if (/^\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$/.test(previous)) showUpdatedDialog(previous, version, previousCanary ?? previous);
       };
       const spectrogramNotice = async () => {
         if (localStorage.getItem(spectrogramFormatKey) === spectrogramFormat) {
