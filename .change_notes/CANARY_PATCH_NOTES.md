@@ -1,5 +1,9 @@
 # Lyssna Lyrics patch notes
 
+## v1.1.0-623e874
+
+- Remove the top-left glow from the Build Channels popup.
+
 ## v1.1.0-42f00d0
 
 - Put the Build Channels button to the left of Search Settings.
