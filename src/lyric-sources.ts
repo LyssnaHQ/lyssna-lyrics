@@ -20,7 +20,8 @@ export const lyricSources = {
 
 export type LyricSource = keyof typeof lyricSources;
 export const sourceIds = Object.keys(lyricSources) as LyricSource[];
-const songSourceKey = (track: Track) => `lyssna-lyrics.song-source.${track.id}`;
+const songSourcePrefix = "lyssna-lyrics.song-source.";
+const songSourceKey = (track: Track) => songSourcePrefix + track.id;
 
 export function songLyricSource(track: Track) {
   try {
@@ -58,6 +59,12 @@ export function refreshLyrics(track?: Track, action: Settings["lyrics_cache_acti
   if (action === "all") {
     cache.clear();
     clearLyssnaCache();
+    try {
+      for (let index = localStorage.length - 1; index >= 0; index--) {
+        const key = localStorage.key(index);
+        if (key?.startsWith(songSourcePrefix)) localStorage.removeItem(key);
+      }
+    } catch { /* The lyric cache can still be cleared without local storage. */ }
   }
   else if (trackId) {
     if (action === "song") cache.delete(trackId);
@@ -65,6 +72,14 @@ export function refreshLyrics(track?: Track, action: Settings["lyrics_cache_acti
   }
   if (track) revalidateLyssnaSong(track.id, track.isrc);
   window.dispatchEvent(trackId && action !== "all" ? new CustomEvent(lyricsChanged, { detail: [trackId] }) : new Event(lyricsChanged));
+}
+
+export function refreshPublishedLyrics(track: Track, isrc?: string, approved?: { songId: string; revision: string }) {
+  try { localStorage.removeItem(songSourceKey(track)); }
+  catch { /* Still revalidate the published sync without local storage. */ }
+  clearTemporaryLyrics(track.id);
+  revalidateLyssnaSong(track.id, isrc ?? track.isrc, approved);
+  window.dispatchEvent(new CustomEvent(lyricsChanged, { detail: [track.id] }));
 }
 
 function readCached(trackId: string, id: string, reader: () => Promise<Lyrics | undefined>, missMs: number, hitMs = 60_000) {

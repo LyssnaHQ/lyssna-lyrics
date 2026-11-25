@@ -6,7 +6,7 @@ import type { Lyrics } from "./types";
 // Songs whose draft was edited in the TTML Creator this session. Their
 // timed draft shows on the Lyrics page until the user picks the original.
 const working = new Set<string>();
-const dismissed = new Set<string>();
+const dismissed = new Map<string, "main" | "all">();
 
 export function markWorking(uri: string) {
   working.add(uri);
@@ -17,8 +17,8 @@ export function forgetWorking(uri: string) {
   working.delete(uri);
 }
 
-export function dismissDraft(uri: string) {
-  dismissed.add(uri);
+export function dismissDraft(uri: string, everywhere = false) {
+  if (everywhere || !dismissed.has(uri)) dismissed.set(uri, everywhere ? "all" : "main");
   window.dispatchEvent(new CustomEvent(liveDraftChanged, { detail: uri }));
 }
 
@@ -56,8 +56,14 @@ export function showLive(uri: string, lines: CreatorLine[]) {
   window.dispatchEvent(new CustomEvent(liveDraftChanged, { detail: uri }));
 }
 
+export function dismissSubmittedDraft(uri: string, lines: CreatorLine[]) {
+  if (live.get(uri) !== lines) return false;
+  dismissDraft(uri, true);
+  return true;
+}
+
 function draftPreview(uri: string | undefined, detached: boolean): Lyrics | null {
-  if (!uri || (!detached && (!shown || dismissed.has(uri)))) return null;
+  if (!uri || dismissed.get(uri) === "all" || (!detached && (!shown || dismissed.has(uri)))) return null;
   const lines =
     live.get(uri) ?? (working.has(uri) ? loadDraft(uri)?.lines : undefined);
   if (!lines?.length) return null;

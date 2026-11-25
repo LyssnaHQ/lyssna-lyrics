@@ -120,6 +120,7 @@ export function clearLyssnaCache() {
   pending.clear();
   cooling.clear();
   refreshes.clear();
+  appleCredits.clear();
   for (const approval of approvals.values()) approval.fallback = undefined;
   writes = writes.then(async () => {
     await globalThis.caches?.delete(cacheName);
@@ -179,8 +180,8 @@ async function lookup(path: string, current: () => boolean, revalidate: boolean)
   if (!revalidate && cached && Date.now() < cached.freshUntil) return cached.value;
   if (Date.now() < (cooling.get(path) ?? 0)) return cached?.value ?? undefined;
   try {
-    // Edge caches can keep a previous miss even after Apple has indexed the song.
-    const requestPath = revalidate && cached?.value === null ? `${path}&fresh=${Date.now()}` : path;
+    // A cleared cache can still have a previous miss at the edge.
+    const requestPath = revalidate && !cached?.value ? `${path}&fresh=${Date.now()}` : path;
     const response = await lyssnaRequest(requestPath, {
       etag: cached?.etag, revalidate: revalidate && !cached?.etag, waitForInstall: true,
     });
@@ -229,7 +230,7 @@ async function lookupRefreshed(path: string, current: () => boolean, refresh: bo
   // Confirm the current revision and its timing offset before using the approved file.
   const songPath = `/v1/songs/${approval.songId}`;
   try {
-    const songReply = await lyssnaRequest(songPath);
+    const songReply = await lyssnaRequest(`${songPath}?fresh=${approval.revision}`, { revalidate: true });
     if (!songReply?.ok || !current()) return approval.fallback?.value ?? value;
     const song = await songReply.json() as { current_revision_id?: string; links?: { platform: string; external_id: string; offset_ms: number }[] };
     if (song.current_revision_id !== approval.revision) {
@@ -242,7 +243,7 @@ async function lookupRefreshed(path: string, current: () => boolean, refresh: bo
     if (!link || !Number.isFinite(link.offset_ms) || !current()) return value;
     const [file, credits] = await Promise.all([
       lyssnaRequest(`/v1/revisions/${approval.revision}/ttml`),
-      lyssnaRequest(`${songPath}/contributors`),
+      lyssnaRequest(`${songPath}/contributors?fresh=${approval.revision}`, { revalidate: true }),
     ]);
     if (!file?.ok || !credits?.ok || !current()) return approval.fallback?.value ?? value;
     const [ttml, contributors] = await Promise.all([file.text(), credits.json()]);
@@ -273,6 +274,14 @@ function timedLookupPath(trackId: string, route: string, duration: number) {
   const length = duration >= 1_000 && duration <= 3_600_000 ? `&duration_ms=${Math.round(duration)}` : "";
   const path = route + length;
   const paths = songPaths.get(trackId) ?? new Set<string>();
+  if (length && !paths.has(path) && refreshes.has(route)) {
+    refreshes.add(path);
+    const approval = approvals.get(route);
+    if (approval) {
+      approvals.set(path, approval);
+      if (approvals.size > cacheLimit) approvals.delete(approvals.keys().next().value!);
+    }
+  }
   paths.add(path);
   if (paths.size > 10) paths.delete(paths.values().next().value!);
   songPaths.set(trackId, paths);

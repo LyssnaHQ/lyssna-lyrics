@@ -24,7 +24,7 @@ import { downloadTtml, keepTemporaryLyricsFor, listLocalLyrics, lyricsChanged, r
 import { LoadTtml } from "./lyssna/load-ttml";
 import { useReviewerSettings } from "./ttml-reviewer";
 import { attachBulkLyrics, importLyricFile, loadBulkLyrics } from "./ttml-import";
-import { enabledSources, readLyrics, refreshLyrics, sourceIds, songLyricSource } from "./lyric-sources";
+import { enabledSources, readLyrics, refreshLyrics, refreshPublishedLyrics, sourceIds, songLyricSource } from "./lyric-sources";
 import { LyricCredits } from "./credits";
 import { SongSheetScope } from "./song-sheet";
 import { CanvasArtwork, placeholderArtwork, SpotifyVisualiser, TrackArtwork, useCanvas } from "./spotify-artwork";
@@ -44,7 +44,7 @@ import { quickEffects, QuickEffectPicker, SongSourcePicker, type QuickEffectChoi
 import { DJ_COVER, DJInterlude } from "./dj-interlude";
 import { readViewSession, saveViewSession } from "./view-session";
 import { lyssnaApiNotice, lyssnaInstallReady } from "./lyssna-api";
-import { requestLyssnaLyrics, revalidateLyssnaSong, resumeLyssnaRequests } from "./lyssna-provider";
+import { requestLyssnaLyrics, resumeLyssnaRequests } from "./lyssna-provider";
 import { InstrumentalAction } from "./instrumental-actions";
 import { submitLyssnaTtml } from "./lyssna-submission";
 import { useLocalTrackIsrc } from "./local-track-isrc";
@@ -983,6 +983,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
     {(showCreator || keepCreator) && <div className="lyssna-creator-container" ref={creatorPage} style={pageStyle} data-draft-preview={keepCreator || undefined}>
       <CreatorSurface host={host} view={view} settings={preferences} close={closeCreator ?? close} reviewSelection={reviewSelection}
         closeReview={closeReview} previewing={keepCreator} capture={capture} confirmFirstUpload={confirmFirstUpload}
+        onSubmitted={(message) => { closeCreator?.(); setNotice(message); }}
         onLocalPlayback={setCreatorPlayback} manageStoredData={(trigger) => {
         settingsTrigger.current = trigger ?? undefined;
         setNotice("");
@@ -1039,10 +1040,8 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
         const target = track.local ? { ...track, isrc: localIsrc } : track;
         const result = await submitLyssnaTtml(file, target, host, confirmFirstUpload);
         if (!result) return;
-        if (result.approved) {
-          revalidateLyssnaSong(track.id, result.isrc, result.published);
-          window.dispatchEvent(new CustomEvent(lyricsChanged, { detail: [track.id] }));
-        }
+        if (result.approved) refreshPublishedLyrics(target, result.isrc, result.published);
+        dismissDraft(spotifySongUri(track.id), true);
         closeTtml();
         setNotice(result.message);
       }}

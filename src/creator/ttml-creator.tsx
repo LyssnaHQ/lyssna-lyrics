@@ -45,6 +45,7 @@ import { lyricsChanged, parseLocalTtml } from "../local-lyrics";
 import { revalidateLyssnaSong } from "../lyssna-provider";
 import { ReviewPanel, type ReviewOpen, type ReviewSelection } from "./review-panel";
 import {
+  dismissSubmittedDraft,
   forgetWorking,
   markWorking,
   setShowsPreview,
@@ -315,6 +316,7 @@ export function TtmlCreator({
   onSpeed,
   onApply,
   onSubmit,
+  onSubmitted,
   onResetToSource,
   onParse,
   notify,
@@ -334,6 +336,7 @@ export function TtmlCreator({
   onSpeed: (rate: number) => Promise<void>;
   onApply: (track: Track, filename: string, ttml: string) => Promise<boolean>;
   onSubmit: (track: Track, ttml: string, appleOriginal?: Lyrics["appleOriginal"]) => Promise<string | undefined>;
+  onSubmitted: (message: string) => void;
   onResetToSource: (track: Track) => Promise<Lyrics | undefined>;
   onParse: (
     filename: string,
@@ -2131,10 +2134,19 @@ export function TtmlCreator({
   const submittable = !!track?.id && (!track.is_local || !!(here ? localIsrc : track.spotify?.isrc));
   const submit = async () => {
     if (!track || submitting) return;
+    const submitted = current.current;
     setSubmitting(true);
     try {
       const message = await onSubmit(track, ttml(), appleOriginal);
-      if (message) notify(message);
+      if (!message) return;
+      const latest = current.current;
+      const sameSong = latest.uri === track.uri;
+      const unchanged = latest.text === submitted.text &&
+        latest.metadata === submitted.metadata && latest.appleOriginal === submitted.appleOriginal;
+      const dismissed = (!sameSong || unchanged) && dismissSubmittedDraft(track.uri, submitted.lines);
+      if (!root.isConnected) return;
+      if (dismissed && sameSong) onSubmitted(message);
+      else notify(message);
     } catch (error) {
       notify(String(error), true);
     } finally {

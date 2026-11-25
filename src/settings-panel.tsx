@@ -308,7 +308,7 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
             onChange={(lyrics_cache_button) => change({ lyrics_cache_button })} />
         </div>
       </SettingRow>,
-      <SettingRow key="lyrics-cache" label="Cache Actions" help="Clear lyrics cached by Lyssna. Imported lyrics are kept." keywords="storage cache clear refresh">
+      <SettingRow key="lyrics-cache" label="Cache Actions" help="Clear Cache also resets per-song source choices. Saved imports are kept." keywords="storage cache clear refresh">
         <div className="settings-actions">
           <button type="button" className="pill outline" disabled={!trackId} onClick={() => {
             refreshLyrics(track, "song");
@@ -316,7 +316,7 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
           }}>Clear Current Song</button>
           <button type="button" className="pill outline" onClick={() => {
             refreshLyrics(track, "all");
-            setNotice("Lyssna lyric cache cleared.");
+            setNotice("Lyric cache and per-song source choices cleared.");
           }}>Clear Cache</button>
         </div>
       </SettingRow>,

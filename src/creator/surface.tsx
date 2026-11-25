@@ -6,7 +6,7 @@ import type { Settings } from "../settings";
 import { usePlayback } from "../playback";
 import { TrackArtwork } from "../spotify-artwork";
 import { InstrumentalAction } from "../instrumental-actions";
-import { enabledSources, type LyricSource } from "../lyric-sources";
+import { enabledSources, refreshPublishedLyrics, type LyricSource } from "../lyric-sources";
 import { useLocalTrackIsrc } from "../local-track-isrc";
 import { lyricsChanged, parseLocalTtml, saveLocalLyrics } from "../local-lyrics";
 import { displayLyrics, needsWordSync } from "../word-sync";
@@ -15,7 +15,6 @@ import { LyricsDisplay } from "../lyssna/renderer";
 import { Ambience } from "../lyssna/ambience";
 import { fromLrc } from "../lrc";
 import { submitLyssnaTtml } from "../lyssna-submission";
-import { revalidateLyssnaSong } from "../lyssna-provider";
 import { lyssnaInstallReady } from "../lyssna-api";
 import { CreatorEnvironment } from "./environment";
 import { couldBeComplete, recordedCoverage, recordingPercent, savedAudioCleared, type RecordingCoverage, type SavedRecording } from "./captured-replay";
@@ -65,12 +64,13 @@ async function seedTimings(host: Host, lyrics: Lyrics, duration: number, trackId
   } : undefined) ?? lyrics;
 }
 
-export function CreatorSurface({ host, view: owner, settings, close, reviewSelection, closeReview, previewing, onLocalPlayback, manageStoredData, capture, confirmFirstUpload }: {
+export function CreatorSurface({ host, view: owner, settings, close, reviewSelection, closeReview, previewing, onLocalPlayback, onSubmitted, manageStoredData, capture, confirmFirstUpload }: {
   host: Host; view: Window; settings: Settings; close: () => void; previewing: boolean;
   capture: SpotifyCapture;
   reviewSelection?: ReviewSelection;
   closeReview?: () => void;
   onLocalPlayback(playback: CreatorPlayback | undefined): void; manageStoredData(trigger: HTMLElement | null): void;
+  onSubmitted(message: string): void;
   confirmFirstUpload: () => Promise<boolean>;
 }) {
   const view = owner as Window & typeof globalThis;
@@ -535,6 +535,7 @@ export function CreatorSurface({ host, view: owner, settings, close, reviewSelec
         <TtmlCreator state={state} onPlayer={player} onToggle={toggle} draftPreview={previewing}
           onSpeed={setSpeed} notify={notify} barSlot={previewing ? undefined : playbar?.wave ?? bar} playbar={playbar}
           onClose={close}
+          onSubmitted={onSubmitted}
           reviewSelection={reviewSelection}
           onCloseReview={closeReview}
           localIsrc={localIsrc}
@@ -573,10 +574,7 @@ export function CreatorSurface({ host, view: owner, settings, close, reviewSelec
             const target = song.is_local && current?.uri === song.uri ? { ...spotify, isrc: localIsrc } : spotify;
             const result = await submitLyssnaTtml(new File([text], "lyrics.ttml"), target, host, confirmFirstUpload, appleOriginal);
             if (!result) return;
-            if (result.approved) {
-              revalidateLyssnaSong(song.id, result.isrc, result.published);
-              window.dispatchEvent(new CustomEvent(lyricsChanged, { detail: [song.id] }));
-            }
+            if (result.approved) refreshPublishedLyrics(target, result.isrc, result.published);
             return result.message;
           }}
           renderPreview={(lyrics, position, song) => {
