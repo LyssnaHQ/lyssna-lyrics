@@ -3,6 +3,22 @@ import { EyeOff } from "lucide-react";
 
 /** Current settings search text; rows that do not match it are hidden. */
 export const SettingsQuery = createContext("");
+const SettingLocation = createContext("");
+
+export function SettingsSection({ category, title, columns, children }: {
+  category: string;
+  title: string;
+  columns?: boolean;
+  children: ReactNode;
+}) {
+  const query = useContext(SettingsQuery);
+  return <section className="lyrics-settings-section">
+    <h3>{query.trim() ? `${category} › ${title}` : title}</h3>
+    <div className={`lyrics-settings-group${columns ? " settings-toggle-grid" : ""}`}>
+      <SettingLocation.Provider value={`${category} ${title}`}>{children}</SettingLocation.Provider>
+    </div>
+  </section>;
+}
 
 /** Hide settings, as in Spicy Lyrics: while hiding is allowed, chosen rows
  *  leave the settings window, and each row can offer a button to hide it. */
@@ -17,8 +33,9 @@ export function matchesSetting(
   query: string,
   ...texts: (string | undefined)[]
 ) {
-  const needle = query.trim().toLowerCase();
-  return !needle || texts.some((text) => text?.toLowerCase().includes(needle));
+  const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const haystack = texts.join(" ").toLowerCase();
+  return terms.every(term => haystack.includes(term));
 }
 
 export function SettingRow({
@@ -41,11 +58,12 @@ export function SettingRow({
   children?: ReactNode;
 }) {
   const query = useContext(SettingsQuery);
+  const location = useContext(SettingLocation);
   const hiding = useContext(HiddenSettings);
   const text = [label, help].filter(
     (part): part is string => typeof part === "string",
   );
-  if (!matchesSetting(query, ...text, keywords)) return null;
+  if (!matchesSetting(query, ...text, keywords, location)) return null;
   if (hideId && hiding.allow && hiding.hidden.has(hideId)) return null;
   return (
     <div

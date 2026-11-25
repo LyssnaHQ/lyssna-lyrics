@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 import { AnimatorPresetControl } from "./animator-settings";
+import { ANIMATOR_PARAMETERS } from "./animator-tuning";
 import { WORD_FILTER_OPTIONS } from "./word-filter";
 import { DEFAULT_MARKER, MARKER_COLOURS } from "./highlighter";
 import { SettingRow, Toggle } from "./setting-row";
@@ -7,7 +8,7 @@ import { defaults, gravityDensityRange, type Settings } from "../settings";
 type KeysOf<T> = { [K in keyof Settings]: Settings[K] extends T ? K : never }[keyof Settings];
 type Flag = KeysOf<boolean>;
 type Amount = KeysOf<number>;
-export function visualRows(settings: Settings, onSettings: (patch: Partial<Settings>) => void, onManageAnimator: () => void) {
+export function visualRows(settings: Settings, onSettings: (patch: Partial<Settings>) => void, onManageAnimator: () => void, searching: boolean) {
   const flag = (
     key: Flag,
     label: string,
@@ -40,7 +41,7 @@ export function visualRows(settings: Settings, onSettings: (patch: Partial<Setti
     unit = "",
     off = false,
   ) => {
-    if (off) return null;
+    if (off && !searching) return null;
     const value = settings[key] ?? fallback;
     return (
       <SettingRow key={key} label={label} help={help} keywords={keywords}>
@@ -181,6 +182,7 @@ return { flag, range, Look: [
           "Space Gravity seek fade-in compensation",
           "Clicking a floating word during playback seeks 300 ms early to give speakers time to fade in.",
           "seek fade in compensation click lyric early volume",
+          settings.space_gravity ? undefined : "Turn on Space Gravity first.",
         ),
         flag(
           "romanized",
@@ -234,17 +236,16 @@ return { flag, range, Look: [
           "Show bars that move with the music behind the lyrics, coloured by the album cover.",
           "visualiser visualizer bars spectrum equalizer audio",
         ),
-        settings.lyrics_visualiser
-          ? range(
-              "lyrics_visualiser_opacity",
-              "Visualiser opacity",
-              "How strongly the visualiser bars show behind the lyrics.",
-              "visualiser visualizer opacity transparency bars",
-              [5, 100, 5],
-              40,
-              "%",
-            )
-          : null,
+        range(
+          "lyrics_visualiser_opacity",
+          "Visualiser opacity",
+          "How strongly the visualiser bars show behind the lyrics.",
+          "visualiser visualizer opacity transparency bars",
+          [5, 100, 5],
+          40,
+          "%",
+          !settings.lyrics_visualiser,
+        ),
         flag(
           "lyrics_keep_overlaps",
           "Keep overlapping lines",
@@ -344,7 +345,7 @@ return { flag, range, Look: [
           "A marker pen sweeps behind each line as it's sung, row by row, and over each floating word in Space Gravity.",
           "highlighter marker highlight pen lyrics player style",
         ),
-        settings.lyrics_highlighter ? (
+        (settings.lyrics_highlighter || searching) ? (
           <MarkerColourRow
             key="highlighter-colour"
             value={settings.lyrics_highlighter_color ?? DEFAULT_MARKER}
@@ -353,13 +354,14 @@ return { flag, range, Look: [
             }
           />
         ) : null,
-        ...(settings.lyrics_highlighter && settings.space_gravity
+        ...((settings.lyrics_highlighter && settings.space_gravity) || searching
           ? [
               flag(
                 "gravity_links",
                 "Connecting lines",
                 "In Space Gravity, a marker line joins each sung word to the next.",
                 "highlighter space gravity line link connect brainstorm",
+                settings.lyrics_highlighter && settings.space_gravity ? undefined : "Turn on Highlighter and Space Gravity first.",
               ),
               range(
                 "gravity_link_width",
@@ -377,7 +379,7 @@ return { flag, range, Look: [
           key="animator"
           label="Animator Presets"
           help="Lyssna (Default) is the standard animation, Lyssna (Legacy) the earlier one. Custom stores live tuning."
-          keywords="animator preset default custom tuning spring"
+          keywords={`animator preset default custom tuning spring ${ANIMATOR_PARAMETERS.map(({ label }) => label).join(" ")}`}
         >
           <AnimatorPresetControl
             animator={settings.lyrics_animator}

@@ -1,9 +1,9 @@
 import { cloneElement, isValidElement, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
-import { AlignLeft, AppWindow, ChevronLeft, FileText, FlaskConical, Info, Palette, Pin, Search, Settings2, WandSparkles, Wrench, X } from "lucide-react";
+import { AlignLeft, AppWindow, ChevronLeft, FileText, Palette, Pin, Search, Settings2, WandSparkles, Wrench, X } from "lucide-react";
 import EnhancementsSection from "./enhancements/section";
 import { AnimatorPanel } from "./lyssna/animator-settings";
 import { appFontStyles, FontControl } from "./font-settings";
-import { HiddenSettings, SettingRow, SettingsQuery, Toggle } from "./lyssna/setting-row";
+import { HiddenSettings, SettingRow, SettingsQuery, SettingsSection, Toggle } from "./lyssna/setting-row";
 import { visualRows } from "./lyssna/visual-settings";
 import { lyricSources, refreshLyrics } from "./lyric-sources";
 import { defaults, maxBackgroundBrightness, type Settings } from "./settings";
@@ -31,32 +31,37 @@ export type BuildOptions = {
 };
 
 const tabs = [
-  ["Appearance", Palette], ["Lyrics", AlignLeft], ["Effects", FlaskConical], ["Layout", AppWindow], ["Spotify Tweaks", WandSparkles],
-  ["Sources", FileText], ["Advanced", Wrench], ["Credits", Info],
+  ["Appearance", Palette], ["Lyrics", AlignLeft], ["Views", AppWindow], ["Spotify Tweaks", WandSparkles],
+  ["Sources", FileText], ["Tools", Wrench],
 ] as const;
 type Tab = (typeof tabs)[number][0];
-type Section = [Tab, string, ReactNode[]];
+const tabId = (label: Tab) => `lyssna-settings-tab-${label.toLowerCase().replaceAll(" ", "-")}`;
+type Section = [Tab, string, ReactNode[], columns?: boolean];
 const placeKey = "lyssna-lyrics.settings-place";
 const submenus = {
   sources: "Manage Sources",
   library: "TTML Database",
   storage: "Manage Stored Data",
   hidden: "Hidden Settings",
-  misc: "Extra Misc Settings That Aren’t Often Useful",
+  credits: "Credits and licences",
 };
 type Submenu = keyof typeof submenus;
 type Place = { tab: Tab; scroll: number; submenu?: Submenu; submenuScroll?: number };
-const oldTabs: Record<string, Tab> = { General: "Appearance", Library: "Sources", About: "Credits" };
+const oldTabs: Record<string, Tab> = {
+  General: "Appearance", Library: "Sources", Effects: "Lyrics", Layout: "Views",
+  Advanced: "Tools", About: "Tools", Credits: "Tools",
+};
 
 function readPlace(remember: boolean): Place {
   try {
     const place = remember && JSON.parse(localStorage.getItem(placeKey) ?? "null");
     if (place && typeof place.tab === "string") {
-      if (Object.hasOwn(oldTabs, place.tab)) return { tab: oldTabs[place.tab], scroll: 0 };
-      const tab = tabs.find(([label]) => label === place.tab)?.[0];
-      if (tab && Number.isFinite(place.scroll)) return {
-        tab, scroll: place.scroll,
-        submenu: Object.hasOwn(submenus, place.submenu) ? place.submenu : undefined,
+      const oldTab = Object.hasOwn(oldTabs, place.tab) ? oldTabs[place.tab] : undefined;
+      const tab = oldTab ?? tabs.find(([label]) => label === place.tab)?.[0];
+      if (tab) return {
+        tab, scroll: !oldTab && Number.isFinite(place.scroll) ? place.scroll : 0,
+        submenu: place.tab === "Credits" || place.tab === "About" ? "credits"
+          : Object.hasOwn(submenus, place.submenu) ? place.submenu : undefined,
         submenuScroll: Number.isFinite(place.submenuScroll) ? place.submenuScroll : undefined,
       };
     }
@@ -69,8 +74,6 @@ function writePlace(place: Place) {
 }
 
 const sourceSearch = Object.values(lyricSources).flatMap(({ name, help }) => [name, help]).join(" ");
-const appearanceRows = ["background", "lyrics_background_blur", "pinned-footer", "npv_ambience", "glass_seek", "canvas_lyrics", "animated_covers", "cover_animation"];
-
 function visualRowKey(row: ReactNode) {
   return isValidElement(row) && row.key !== null ? String(row.key) : "";
 }
@@ -92,7 +95,7 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
 }) {
   const trackId = track?.id;
   const [initial] = useState<Place>(() => initialSubmenu
-    ? { tab: "Advanced", scroll: 0, submenu: initialSubmenu } : readPlace(settings.settings_remember_place));
+    ? { tab: "Tools", scroll: 0, submenu: initialSubmenu } : readPlace(settings.settings_remember_place));
   const [tab, setTab] = useState(initial.tab);
   const [submenu, setSubmenu] = useState(initial.submenu);
   const [query, setQuery] = useState("");
@@ -114,7 +117,7 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
   const tabButtons = useRef<(HTMLButtonElement | null)[]>([]);
   const transferInput = useRef<HTMLInputElement>(null);
   const searching = !!query.trim();
-  const visuals = visualRows(settings, change, () => setTuning(true));
+  const visuals = visualRows(settings, change, () => setTuning(true), searching);
   const fonts = appFontStyles(settings);
   const { flag, range } = visuals;
   const version = options.hiddenVersion ?? options.channels[options.channel];
@@ -206,6 +209,11 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
     return <button type="button" className="pill outline" id={`lyssna-open-${menu}`} onClick={() => openSubmenu(menu)}>{title}</button>;
   }
 
+  function openChannels() {
+    setChannelError("");
+    setShowChannels(true);
+  }
+
   async function runBuildAction(action: () => void | Promise<void>, reportError: (message: string) => void) {
     setSwitching(true);
     reportError("");
@@ -235,7 +243,9 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
 
   const emptyTrack = trackId ? undefined : "Play a song first.";
   const offset = trackId ? settings.lyric_song_offsets[trackId] ?? 0 : 0;
-  const visualRowsByKey = new Map([...visuals.Look, ...visuals.Effects].map((row) => [visualRowKey(row), row]));
+  const visualRowsByKey = new Map([...visuals.Look, ...visuals.Display, ...visuals.Effects, ...visuals.Layout]
+    .map((row) => [visualRowKey(row), row]));
+  const rowsFor = (...keys: string[]) => keys.map((key) => visualRowsByKey.get(key));
   const sections: Section[] = [
     ["Appearance", "Fonts", [
       <SettingRow key="lyric-font" label="Lyrics font" help="Choose a font or type an installed family name."
@@ -246,26 +256,40 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
         keywords="font typeface spotify mix installed">
         <FontControl field="ui_font" settings={settings} change={change} view={view} />
       </SettingRow>,
+      ...rowsFor("size"),
     ]],
-    ["Appearance", "Appearance", [
-      flag("liquid_glass", "Liquid Glass", "Use translucent glass for the lyrics toolbar and dialogs.", "theme glass blur translucent"),
-      visualRowsByKey.get("background"),
+    ["Appearance", "Background", [
+      ...rowsFor("background"),
       range("lyrics_background_brightness", "Dynamic background brightness", "Adjust the brightness of animated and still artwork backgrounds.",
-        "background brightness ambience dynamic animated artwork dim", [0, maxBackgroundBrightness, 1], defaults.lyrics_background_brightness, "%"),
-      ...appearanceRows.filter((key) => key !== "background").map((key) => visualRowsByKey.get(key)),
+        "background brightness ambience dynamic animated artwork dim", [0, maxBackgroundBrightness, 1], defaults.lyrics_background_brightness, "%",
+        !["animated", "static"].includes(settings.lyrics_background)),
+      ...rowsFor("lyrics_background_blur"),
+    ]],
+    ["Appearance", "Artwork", rowsFor("animated_covers", "cover_animation"), true],
+    ["Appearance", "Spotify Canvas", [
+      ...rowsFor("canvas_lyrics"),
+      (settings.canvas_lyrics || searching) && <CanvasFrameSlider key="canvas-frame" control={canvasFrame} />,
+    ]],
+    ["Appearance", "Interface", [
+      flag("liquid_glass", "Liquid Glass", "Use translucent glass for the lyrics toolbar and dialogs.", "theme glass blur translucent"),
+      flag("reduce_motion", "Reduce motion", "Turn off animated backgrounds and word animations.", "animation accessibility"),
+    ], true],
+    ["Appearance", "Animation performance", [
       flag("animation_fps_cap_enabled", "Limit animation frame rate", "Cap how often lyrics, scrolling and the moving background redraw, to save power.", "fps frame rate"),
       range("animation_fps_cap", "Animation frame rate", "The most frames per second animations draw while the limit is on.",
         "fps frame rate", [15, 240, 5], 60, " fps", !settings.animation_fps_cap_enabled),
-      flag("reduce_motion", "Reduce motion", "Turn off animated backgrounds and word animations.", "animation accessibility"),
     ]],
-    ["Lyrics", "Lyrics display", [
-      visualRowsByKey.get("size"),
+    ["Lyrics", "Language", rowsFor("romanized", "lyrics_translations", "romanization_below", "romaji_as_written"), true],
+    ["Lyrics", "Credits", [
+      ...rowsFor("pinned-footer", "lyrics_credits_follow"),
       <SettingRow key="lyrics_discord_usernames" label="Discord display name in credits"
         help="Show display names. Turn off to look up Discord usernames through the same public service as Legacy."
         keywords="discord username user names contributor credits">
         <Toggle label="Discord display name in credits" checked={!settings.lyrics_discord_usernames}
           onChange={(displayNames) => change({ lyrics_discord_usernames: !displayNames })} />
       </SettingRow>,
+    ]],
+    ["Lyrics", "Timing and scrolling", [
       <SettingRow key="global-offset" label="Lyric timing offset" help="Positive values show lyrics earlier." keywords="delay timing offset">
         <TimingOffsetSlider label="Lyric timing offset" value={settings.lyric_offset_ms}
           onChange={(lyric_offset_ms) => change({ lyric_offset_ms })} />
@@ -276,20 +300,31 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
             if (trackId) change({ lyric_song_offsets: { ...settings.lyric_song_offsets, [trackId]: value } });
           }} />
       </SettingRow>,
-      ...visuals.Display,
+      ...rowsFor("experimental_word_sync", "lyrics_early_scroll", "lyrics_early_scroll_ms", "lyrics_smooth_scroll", "lyrics_follow_button"),
     ]],
-    ["Layout", "Lyrics layout", [
+    ["Lyrics", "Line layout", rowsFor("lyrics_right_align", "lyrics_flip_duet", "lyrics_wide_duet", "lyrics_line_hover"), true],
+    ["Lyrics", "Loading and missing lyrics", rowsFor("lyrics_skeleton", "lyrics_no_lyrics_notice"), true],
+    ["Lyrics", "Animation and text effects", rowsFor("animator", "word-filter")],
+    ["Lyrics", "Lyric modes", rowsFor("lyrics_simple", "lyrics_minimal", "lyrics_keep_overlaps"), true],
+    ["Lyrics", "Space Gravity", [
+      ...rowsFor("space_gravity", "gravity_word_density"),
+      (settings.space_gravity || searching) && visualRowsByKey.get("lyrics_seek_compensation"),
+    ]],
+    ["Lyrics", "Highlighter", rowsFor("lyrics_highlighter", "highlighter-colour", "gravity_links", "gravity_link_width")],
+    ["Lyrics", "Visualiser", rowsFor("lyrics_visualiser", "lyrics_visualiser_opacity")],
+    ["Views", "Artwork and layout", rowsFor("lyrics_compact", "lyrics_hide_artwork", "lyrics_artwork_right", "lyrics_up_next"), true],
+    ["Views", "Controls and details", rowsFor("toolbar-position", "year")],
+    ["Views", "Full screen", rowsFor("always-show", "fullscreen-volume", "escape", "fullscreen_animate_close", "glass_seek")],
+    ["Views", "Separate windows", [
       flag("cinema_lyrics", "Enable lyrics pop-out", "Show the Picture-in-Picture button in the playbar.",
         "cinema window external popup", pictureInPicture ? undefined : "This Spotify client does not support Picture-in-Picture windows."),
       flag("cinema_window", "Enable Cinema Lyrics Window", developerMode === true
         ? "Add a playbar button that opens the full lyrics view in a separate window."
         : "The separate lyrics window requires Spotify DevTools. Enable it with spicetify enable-devtools.",
       "cinema window external popup devtools"),
-      ...visuals.Layout,
-      visualRowsByKey.get("year"),
     ]],
-    ["Effects", "Lyric effects", visuals.Effects.filter((row) => !appearanceRows.includes(visualRowKey(row)))],
-    ["Sources", "Sources", [
+    ["Views", "Now Playing sidebar", rowsFor("lyrics_hide_npv", "lyrics_hide_npv_empty", "npv_ambience"), true],
+    ["Sources", "Providers and imports", [
       <SettingRow key="source-order" label="Manage Sources" help="Set lyric source priority and availability."
         keywords={`sources order ${sourceSearch}`}>
         {submenuButton("sources", "Manage")}
@@ -297,6 +332,8 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
       <SettingRow key="ttml-library" label="Browse TTML Database" help="Open your saved lyrics." keywords="local lyrics download remove">
         {submenuButton("library", "Browse")}
       </SettingRow>,
+    ]],
+    ["Sources", "Refresh and cache", [
       <SettingRow key="lyrics_cache_button" label="Lyrics View Cache Button" help="Choose what the refresh button does in the lyrics toolbar."
         keywords="cache-action refresh clear reload">
         <div className="settings-actions">
@@ -321,52 +358,26 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
         </div>
       </SettingRow>,
     ]],
-    ["Advanced", "Lyssna Account", [
+    ["Tools", "Account", [
       <AccountSettings key="lyssna-account" ready={options.lyssnaSignIn === true} host={host} />,
     ]],
-    ["Advanced", "Build Channel", [
-      <SettingRow key="channel" label="Current build" help={`${activeBuild}${version ? ` · v${version}` : ""}`} keywords="build channel version canary stable beta">
-        <button type="button" className="pill outline" aria-haspopup="dialog" onClick={() => {
-          setChannelError("");
-          setShowChannels(true);
-        }}>Manage</button>
-      </SettingRow>,
-      selectHiddenBuild && <SettingRow key="hidden-build-key" label="Hidden build key" stacked
-        help={options.hiddenVersion ? "Remove the key to reload your public channel."
-          : clearHiddenBuild ? "Saved build unavailable. Remove the key or enter a new one."
-          : "Enter a key from Lyssna to load a specific build on this Spotify client."}
-        keywords="access key private test release hidden build channel">
-        <form className="lyssna-build-key-form" onSubmit={(event) => {
-          event.preventDefault();
-          const key = buildKey.trim();
-          if (!switching && key) void runBuildAction(() => selectHiddenBuild(key), setBuildError);
-        }}>
-          <input type="password" autoComplete="off" aria-label="Hidden build key" placeholder="Paste build key"
-            value={buildKey} disabled={switching} maxLength={64} onChange={(event) => {
-              setBuildKey(event.target.value);
-              setBuildError("");
-            }} />
-          <button type="submit" className="pill outline" disabled={switching || !buildKey.trim()}>Apply and reload</button>
-          {clearHiddenBuild && <button type="button" className="pill outline" disabled={switching}
-            onClick={() => void runBuildAction(clearHiddenBuild, setBuildError)}>Remove key</button>}
-        </form>
-        {buildError && <p className="settings-alert" role="alert">{buildError}</p>}
-      </SettingRow>,
-    ]],
-    ["Advanced", "Advanced", [
-      <SettingRow key="manage-storage" label="Manage Stored Data" help="Clear recordings, spectrograms, and cached animated cover art."
-        keywords="cache storage disk audio cover art">
-        {submenuButton("storage", "Manage")}
-      </SettingRow>,
+    ["Tools", "Creator and recording", [
       flag("ttml_creator", "TTML Creator", "Add an editor button beside fullscreen in the playbar to write and time lyrics for the playing song.",
         "ttml creator maker editor sync timing word by word karaoke amll make lyrics"),
-      settings.ttml_creator && <SettingRow key="auto_record" label="Auto Record"
+      (settings.ttml_creator || searching) && <SettingRow key="auto_record" label="Auto Record"
         help="Ask to share Spotify audio when Lyssna Lyrics loads. Save songs and spectrograms on this device while sharing is active."
-        keywords="automatic recording capture audio spectrogram startup">
+        keywords="automatic recording capture audio spectrogram startup"
+        unavailable={settings.ttml_creator ? undefined : "Turn on TTML Creator first."}>
         <Toggle label="Auto Record" checked={settings.auto_record} onChange={(auto_record) => {
           change({ auto_record });
           if (auto_record) onEnableAutoRecord?.();
         }} />
+      </SettingRow>,
+    ]],
+    ["Tools", "Storage and backups", [
+      <SettingRow key="manage-storage" label="Manage Stored Data" help="Manage recordings, spectrograms, and cached animated cover art."
+        keywords="clear cache storage disk audio cover art delete export spectral waveform">
+        {submenuButton("storage", "Manage")}
       </SettingRow>,
       <SettingRow key="settings-transfer" label="Import and export settings" help="Transfer Lyssna preferences, animator presets, per-song offsets and imported TTML." keywords="backup restore transfer">
         <div className="settings-actions">
@@ -379,26 +390,30 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
           <button type="button" className="pill outline" disabled={transferring} onClick={() => void transfer()}>Export</button>
         </div>
       </SettingRow>,
+    ]],
+    ["Tools", "Preferences", [
       flag("settings_remember_place", "Remember settings location", "Reopen Settings on the tab and at the place it was closed.", "tab location remember reopen"),
-      settings.settings_allow_hiding && flag("settings_hide_buttons", "Show hide buttons", "Put a hide button beside each setting's name.", "hide hidden settings buttons eye"),
+      flag("settings_allow_hiding", "Allow hiding settings", "Hide settings you never change. Restore them from Hidden settings."),
+      (settings.settings_allow_hiding || searching) && flag("settings_hide_buttons", "Show hide buttons", "Put a hide button beside each setting's name.",
+        "hide hidden settings buttons eye", settings.settings_allow_hiding ? undefined : "Turn on Allow hiding settings first."),
+      flag("sync_other_plugin_preferences", "Sync preferences with other plugins", "Apply changes to compatible preferences from Legacy, Spicy Lyrics or Spotify+."),
+    ], true],
+    ["Tools", "Settings and build information", [
       settings.settings_allow_hiding && <SettingRow key="manage-hidden" label="Manage Hidden Settings" help="Restore settings hidden from the main window.">
         {submenuButton("hidden", "Manage")}
       </SettingRow>,
-      <SettingRow key="misc" label={submenus.misc} keywords="canvas frame scrub freeze allow hiding settings sync preferences with other plugins">
-        {submenuButton("misc", "Manage")}
+      <SettingRow key="credits" label={submenus.credits} keywords="Inter Metropolis Adobe Blank Kawarp Lucide about credits licenses">
+        {submenuButton("credits", "View")}
       </SettingRow>,
-    ]],
-    ["Credits", "Credits and licences", [
-      <SettingRow key="inter" label="Inter" help="Lyrics typeface by the Inter Project Authors. SIL Open Font License." />,
-      <SettingRow key="metropolis" label="Metropolis" help="Interface typeface by Chris Simpson. Unlicense." />,
-      <SettingRow key="adobe-blank" label="Adobe Blank 2" help="Detects missing characters in custom lyric fonts. SIL Open Font License." />,
-      <SettingRow key="kawarp" label="Kawarp" help="Artwork ambience by Better Lyrics. MIT." />,
-      <SettingRow key="lucide" label="Lucide" help="Interface icons by the Lucide contributors. ISC and MIT." />,
+      searching && <SettingRow key="channel" label="Build Channels" help={`${activeBuild}${version ? ` · v${version}` : ""}`}
+        keywords="current build version canary stable beta access key private test release hidden build channel">
+        <button type="button" className="pill outline" aria-haspopup="dialog" onClick={openChannels}>Manage</button>
+      </SettingRow>,
     ]],
   ];
   const hiddenRows = new Map<string, string>();
   for (const section of sections) {
-    if (section[0] === "Advanced" || section[0] === "Credits") continue;
+    if (section[0] === "Tools") continue;
     section[2] = section[2].map((row) => {
       if (!isValidElement(row) || row.type !== SettingRow || row.key === null) return row;
       const setting = row as ReactElement<{ label: ReactNode; hideId?: string; children?: ReactNode }>;
@@ -442,7 +457,7 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
           ? { opacity: 1, transform: `translateX(${marker.left}px)`, width: marker.width } : { opacity: 0 }} />
         {tabs.map(([label, Icon], index) => <button type="button" key={label} ref={(element) => { tabButtons.current[index] = element; }}
           role="tab" aria-selected={tab === label && !searching} className={tab === label && !searching ? "active" : ""}
-          id={`lyssna-settings-tab-${label}`} aria-controls="lyssna-settings-content"
+          id={tabId(label)} aria-controls="lyssna-settings-content"
           tabIndex={(!searching && tab === label) || (searching && index === 0) ? 0 : -1}
           onClick={() => select(label)} onKeyDown={(event) => {
             let next: number;
@@ -469,18 +484,18 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
         {submenu === "storage" && <StoredDataSettings host={host} notice={setNotice} />}
         {submenu === "hidden" && (hiddenSettings.length ? <div className="lyrics-settings-group">{hiddenSettings}</div>
           : <p className="settings-submenu-empty">No hidden settings.</p>)}
-        {submenu === "misc" && <div className="lyrics-settings-group">
-          <CanvasFrameSlider control={canvasFrame} />
-          {flag("settings_allow_hiding", "Allow hiding settings", "Hide settings you never change. Restore them from Hidden settings.")}
-          {flag("sync_other_plugin_preferences", "Sync preferences with other plugins", "Apply changes to compatible preferences from Legacy, Spicy Lyrics or Spotify+.")}
+        {submenu === "credits" && <div className="lyrics-settings-group">
+          <SettingRow label="Inter" help="Lyrics typeface by the Inter Project Authors. SIL Open Font License." />
+          <SettingRow label="Metropolis" help="Interface typeface by Chris Simpson. Unlicense." />
+          <SettingRow label="Adobe Blank 2" help="Detects missing characters in custom lyric fonts. SIL Open Font License." />
+          <SettingRow label="Kawarp" help="Artwork ambience by Better Lyrics. MIT." />
+          <SettingRow label="Lucide" help="Interface icons by the Lucide contributors. ISC and MIT." />
         </div>}
         {!submenu && <HiddenSettings.Provider value={hiding}><SettingsQuery.Provider value={query}>
           <div id="lyssna-settings-content" role={searching ? "region" : "tabpanel"}
-            aria-label={searching ? "Search results" : undefined} aria-labelledby={searching ? undefined : `lyssna-settings-tab-${tab}`}>
-            {sections.filter(([key]) => searching || key === tab).map(([key, title, rows]) => (
-              <section key={`${key}-${title}`} className="lyrics-settings-section">
-                <h3>{title}</h3><div className="lyrics-settings-group">{rows}</div>
-              </section>
+            aria-label={searching ? "Search results" : undefined} aria-labelledby={searching ? undefined : tabId(tab)}>
+            {sections.filter(([key]) => searching || key === tab).map(([key, title, rows, columns]) => (
+              <SettingsSection key={`${key}-${title}`} category={key} title={title} columns={columns}>{rows}</SettingsSection>
             ))}
             {(searching || tab === "Spotify Tweaks") && <EnhancementsSection notice={setNotice} />}
             <p className="lyrics-settings-empty">No settings match.</p>
@@ -488,6 +503,12 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
         </SettingsQuery.Provider></HiddenSettings.Provider>}
         {notice && <p className="settings-alert" role="status">{notice}</p>}
       </div>
+      {!submenu && <footer className="lyrics-settings-footer">
+        <button type="button" className="pill outline settings-build-trigger" aria-haspopup="dialog"
+          aria-label={`Build Channels, ${activeBuild}${version ? ` v${version}` : ""}`} onClick={openChannels}>
+          {activeBuild}{version ? ` · v${version}` : ""}
+        </button>
+      </footer>}
     </section>}
   </div>;
   return tuning ? content : <>
@@ -523,6 +544,26 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
             </SettingRow>;
           })}
         </div>
+        {selectHiddenBuild && showChannels && <details className="settings-build-key" open={/\b(key|hidden|private)\b/i.test(query)}>
+          <summary>Hidden build key</summary>
+          {clearHiddenBuild && <p className="setting-help">{options.hiddenVersion ? "Remove the key to reload your public channel."
+            : "Saved build unavailable. Remove the key or enter a new one."}</p>}
+          <form className="lyssna-build-key-form" onSubmit={(event) => {
+            event.preventDefault();
+            const key = buildKey.trim();
+            if (!switching && key) void runBuildAction(() => selectHiddenBuild(key), setBuildError);
+          }}>
+            <input type="password" autoComplete="off" aria-label="Hidden build key" placeholder="Paste build key"
+              value={buildKey} disabled={switching} maxLength={64} onChange={(event) => {
+                setBuildKey(event.target.value);
+                setBuildError("");
+              }} />
+            <button type="submit" className="pill outline" disabled={switching || !buildKey.trim()}>Apply and reload</button>
+            {clearHiddenBuild && <button type="button" className="pill outline" disabled={switching}
+              onClick={() => void runBuildAction(clearHiddenBuild, setBuildError)}>Remove key</button>}
+          </form>
+          {buildError && <p className="settings-alert" role="alert">{buildError}</p>}
+        </details>}
         {channelError && <p className="settings-alert" role="alert">{channelError}</p>}
       </div>
     </dialog>

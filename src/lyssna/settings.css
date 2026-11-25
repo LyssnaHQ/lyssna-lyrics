@@ -390,6 +390,8 @@
   position: relative;
   display: flex;
   gap: 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
   margin: 0 20px 4px;
   padding: 3px;
   border-radius: 10px;
@@ -402,7 +404,7 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  min-width: 0;
+  min-width: max-content;
   height: 32px;
   padding: 0 8px;
   border-radius: 7px;
@@ -446,6 +448,7 @@
   transition: none;
 }
 .lyrics-settings-scroll {
+  container-type: inline-size;
   display: flex;
   flex: 1;
   flex-direction: column;
@@ -487,6 +490,60 @@
 }
 .lyrics-settings .setting-row + .setting-row {
   border-top: 1px solid light-dark(#0000000d, #ffffff0d);
+}
+.lyrics-settings .settings-toggle-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+.lyrics-settings .settings-toggle-grid > .setting-row {
+  min-width: 0;
+  min-height: 44px;
+  gap: 10px;
+  padding: 8px 12px;
+}
+.settings-toggle-grid .setting-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+@container (min-width: 560px) {
+  .lyrics-settings .settings-toggle-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .lyrics-settings .settings-toggle-grid > .setting-row:nth-child(2) {
+    border-top: 0;
+  }
+  .lyrics-settings .settings-toggle-grid > .setting-row:nth-child(even) {
+    border-inline-start: 1px solid light-dark(#0000000d, #ffffff0d);
+  }
+}
+.settings-folder-list {
+  padding: 0 12px 12px;
+}
+.lyrics-settings .settings-folder-list > div {
+  max-height: 240px;
+  overflow-y: auto;
+}
+.plugin-settings > .lyrics-settings-footer {
+  align-items: center;
+  margin: 0;
+  padding: 8px 20px;
+  border-width: 1px 0 0;
+  border-radius: 0;
+}
+.plugin-settings .settings-build-trigger {
+  margin-inline-start: auto;
+}
+.settings-build-key {
+  margin-top: 10px;
+}
+.settings-build-key summary {
+  width: fit-content;
+  cursor: pointer;
+  font-size: 12px;
+  color: light-dark(#4c4c4c, #b3b3b3);
+}
+.settings-build-key .lyssna-build-key-form {
+  margin-top: 8px;
 }
 .lyrics-settings .setting-label {
   font-size: 13.5px;
@@ -568,7 +625,7 @@
   color: light-dark(#585858, #a7a7a7);
 }
 .lyrics-settings
-  [role="tabpanel"]:not(:has(.setting-row))
+  #lyssna-settings-content:not(:has(.setting-row))
   .lyrics-settings-empty {
   display: block;
 }
@@ -619,7 +676,7 @@
   text-align: right;
   color: light-dark(#00000073, #ffffff73);
 }
-/* Below this, the eight tabs only fit as labels. */
+/* Keep tab labels visible in narrow layouts. */
 @media (max-width: 820px) {
   .lyrics-settings-tabs button svg {
     display: none;
