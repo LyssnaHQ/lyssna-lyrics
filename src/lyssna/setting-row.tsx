@@ -65,6 +65,7 @@ export function SettingRow({
   );
   if (!matchesSetting(query, ...text, keywords, location)) return null;
   if (hideId && hiding.allow && hiding.hidden.has(hideId)) return null;
+  const hideLabel = `Hide ${typeof label === "string" ? label : "this setting"}`;
   return (
     <div
       className={`setting-row ${stacked ? "stacked" : ""} ${unavailable ? "unavailable" : ""}`}
@@ -74,11 +75,13 @@ export function SettingRow({
           {label}
           {hideId && hiding.allow && hiding.buttons && (
             <button
-              className="setting-hide"
-              title={`Hide ${typeof label === "string" ? label : "this setting"}`}
+              type="button"
+              className="pill outline setting-hide"
+              title={hideLabel}
+              aria-label={hideLabel}
               onClick={() => hiding.hide(hideId)}
             >
-              <EyeOff size={13} />
+              <EyeOff size={13} aria-hidden="true" />
             </button>
           )}
         </span>

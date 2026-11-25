@@ -963,18 +963,21 @@
   }
 }
 /* Hide settings: a small button after the setting's name. */
-.setting-hide {
-  display: inline-flex;
+.lyrics-settings .pill.setting-hide {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 50%;
   vertical-align: middle;
-  margin-left: 6px;
-  padding: 2px;
-  border-radius: 4px;
-  color: light-dark(#585858, #a7a7a7);
-  opacity: 0.6;
+  margin-inline-start: 6px;
+  color: light-dark(#4c4c4c, #b3b3b3);
 }
-.setting-hide:hover {
+.lyrics-settings .pill.setting-hide:is(:hover, :focus-visible) {
   color: light-dark(#000, #fff);
-  opacity: 1;
+}
+.lyrics-settings .pill.setting-hide:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
 }
 .marker-colour {
   display: flex;
