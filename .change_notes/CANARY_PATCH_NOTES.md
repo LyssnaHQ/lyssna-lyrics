@@ -1,5 +1,9 @@
 # Lyssna Lyrics patch notes
 
+## v1.1.0-ec2890c
+
+- Use the selected lyrics font for the instrumental message.
+
 ## v1.1.0-78f01b5
 
 - Show a small instrumental message at the bottom of the lyrics page, below the controls.
