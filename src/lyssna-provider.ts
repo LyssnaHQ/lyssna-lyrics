@@ -53,13 +53,13 @@ export function readLyssnaAppleCredit(songId: string, revisionId: string) {
   const request = (async () => {
     const response = await lyssnaRequest(`/v1/songs/${songId}/revisions`);
     if (!response?.ok) return;
-    const revisions = await response.json() as { id: string; parent_id?: string; source: string }[];
+    const revisions = await response.json() as { id: string; parent_id?: string; source: string; timing_kind?: Lyrics["timing_kind"] }[];
     if (!Array.isArray(revisions)) return;
     const byId = new Map(revisions.map(revision => [revision.id, revision]));
     if (!byId.has(revisionId)) return;
     let revision = byId.get(revisionId);
     while (revision) {
-      if (revision.source === "apple_music") return true;
+      if (revision.source === "apple_music") return revision.timing_kind === "word";
       byId.delete(revision.id);
       revision = revision.parent_id ? byId.get(revision.parent_id) : undefined;
     }

@@ -51,7 +51,7 @@ export function LyricCredits({ lyrics, expanded = false, discord = false }: {
         {via && <> <span className="lyssna-credit-suffix">{via[1]}</span></>}
         {timing && <> <span className="lyssna-credit-suffix">{timing}</span></>}
       </div>
-      {lyrics.lyssna ? <LyssnaContributors attribution={lyrics.lyssna} /> : (maker || uploader) && <div className="lyssna-community-credits">
+      {lyrics.lyssna ? <LyssnaContributors attribution={lyrics.lyssna} wordSynced={lyrics.timing_kind === "word"} /> : (maker || uploader) && <div className="lyssna-community-credits">
         {maker && <CreditPerson key={`maker:${maker.id}`} role="Made by" person={maker} usernames={discord} />}
         {uploader && <CreditPerson key={`uploader:${uploader.id}`} role="Uploaded by" person={uploader} usernames={discord} />}
       </div>}
@@ -59,10 +59,15 @@ export function LyricCredits({ lyrics, expanded = false, discord = false }: {
   );
 }
 
-function LyssnaContributors({ attribution }: { attribution: NonNullable<Lyrics["lyssna"]> }) {
+function LyssnaContributors({ attribution, wordSynced }: { attribution: NonNullable<Lyrics["lyssna"]>; wordSynced: boolean }) {
   const songUrl = lyssnaSongUrl(attribution.songId);
   const open = useContext(SongSheetContext);
-  const revisionId = attribution.contributors.some(({ original }) => original) ? undefined : attribution.revisionId;
+  const timingShares = attribution.contributors.map(({ timing_share }) => timing_share);
+  const contributorTiming = timingShares.reduce<number>((sum, share) => sum + (share ?? 0), 0);
+  // The API rounds each timing share to two decimal places and lists community contributors only.
+  const hasRemainingTiming = timingShares.every(share => typeof share === "number" && Number.isFinite(share)) &&
+    100 - contributorTiming > timingShares.length * 0.005 + 1e-8;
+  const revisionId = wordSynced && hasRemainingTiming ? attribution.revisionId : undefined;
   const [appleCredit, setAppleCredit] = useState<{ revisionId: string; credited: boolean }>();
   useEffect(() => {
     if (!revisionId) return;
@@ -78,24 +83,17 @@ function LyssnaContributors({ attribution }: { attribution: NonNullable<Lyrics["
     event.preventDefault();
     open(songUrl);
   };
-  const apple = revisionId !== undefined && appleCredit?.revisionId === revisionId && appleCredit.credited;
+  const apple = !!songUrl && revisionId !== undefined && appleCredit?.revisionId === revisionId && appleCredit.credited;
   const ranked = attribution.contributors.toSorted((left, right) => right.share - left.share);
   const contributors = ranked.slice(0, apple ? 4 : 5);
-  const named = contributors.filter(({ share, text_share, timing_share }, index) => {
-    const timing = timing_share ?? 0;
-    if (apple) return timing >= 30;
-    return index === 0 || Math.max(share, text_share ?? 0, timing) >= 30;
-  }).slice(0, 2);
+  const named = contributors.filter(({ share, text_share, timing_share }, index) =>
+    index === 0 || Math.max(share, text_share ?? 0, timing_share ?? 0) >= 30).slice(0, 2);
   return (apple || contributors.length > 0) && <div className="lyssna-community-credits lyssna-contributors">
     <span>Contributors:</span>
     <span className="lyssna-contributor-avatars">
-      {apple && songUrl && <a className="lyssna-contributor-avatar" style={{ "--avatar-layer": contributors.length + 1 } as CSSProperties}
-        onClick={openSong} href={songUrl} target="_blank" rel="noopener noreferrer" title="Apple Music" aria-label="Apple Music lyric credits">
-        <img src={appleMusicAvatar} alt="" />
-      </a>}
       {contributors.map(({ user_id, username, avatar_url }, index) => {
         const name = username || "Deleted user";
-        const position = { "--avatar-layer": contributors.length - index } as CSSProperties;
+        const position = { "--avatar-layer": contributors.length - index + 1 } as CSSProperties;
         const avatar = <>
           <UserRound aria-hidden="true" />
           {username && avatar_url && <img key={avatar_url} src={avatar_url} alt="" loading="lazy" referrerPolicy="no-referrer"
@@ -107,18 +105,22 @@ function LyssnaContributors({ attribution }: { attribution: NonNullable<Lyrics["
           : <span key={user_id ?? index} className="lyssna-contributor-avatar" style={position} role="img"
             title={name} aria-label={name}>{avatar}</span>;
       })}
+      {apple && <a className="lyssna-contributor-avatar" style={{ "--avatar-layer": 1 } as CSSProperties}
+        onClick={openSong} href={songUrl} target="_blank" rel="noopener noreferrer" title="Apple Music sync" aria-label="Apple Music sync credit">
+        <img src={appleMusicAvatar} alt="" />
+      </a>}
     </span>
     <span className="lyssna-contributor-names">
-      {apple && songUrl && <span>
-        <a className="lyssna-credit-profile" onClick={openSong} href={songUrl} target="_blank" rel="noopener noreferrer">
-          <span className="lyssna-credit-name">Apple Music</span>
-        </a>{named.length > 0 && ","}
-      </span>}
       {named.map(({ user_id, username }, index) => <span key={user_id ?? index}>
         {username ? <a className="lyssna-credit-profile" onClick={openSong} href={songUrl ?? lyssnaProfile(username)} target="_blank" rel="noopener noreferrer">
           <span className="lyssna-credit-name">{username}</span>
-        </a> : "Deleted user"}{index < named.length - 1 && ","}
+        </a> : "Deleted user"}{(index < named.length - 1 || apple) && ","}
       </span>)}
+      {apple && <span>
+        <a className="lyssna-credit-profile" onClick={openSong} href={songUrl} target="_blank" rel="noopener noreferrer">
+          <span className="lyssna-credit-name">Apple Music (sync)</span>
+        </a>
+      </span>}
     </span>
   </div>;
 }
