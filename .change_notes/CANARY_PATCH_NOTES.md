@@ -1,5 +1,12 @@
 # Lyssna Lyrics patch notes
 
+## v1.1.0-eb2cd17
+
+- Use Google Translate for online lyric lines with no supplied translation when Show translations is enabled.
+- Edit hidden settings in Manage Hidden Settings while keeping them hidden from their usual tabs.
+- Move Copy Clean URL and Embed into Copy/Share and give both actions distinct icons.
+- Use alternate artwork or a cover placeholder when the Up Next image fails to load.
+
 ## v1.1.0-c769dad
 
 - Give the settings hide buttons a circular outline that matches the other controls.
