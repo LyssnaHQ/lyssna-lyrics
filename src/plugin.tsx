@@ -13,6 +13,7 @@ import type { VisualiserFrame } from "./lyssna/visualiser-frame";
 import { CompactIcon, FullScreenIcon, HideArtworkIcon, RetryIcon, SwapSidesIcon, TranslateIcon, UploadIcon, WordSyncIcon } from "./lyssna/toolbar-icons";
 import type { Lyrics } from "./lyssna/types";
 import { useRomanizedLyrics } from "./lyssna/romanization";
+import { useTranslatedLyrics } from "./lyssna/translated-lyrics";
 import { setWindowActivity, setWindowPosition } from "./lyssna/window-activity";
 import { filterWords } from "./lyssna/word-filter";
 import { displayLyrics, needsWordSync } from "./word-sync";
@@ -239,8 +240,9 @@ function TrackLyrics({ track, host, playing, settings, compact = false, view = w
     });
     return () => { active = false; };
   }, [host, track.id, analyse]);
-  const timedLyrics = useMemo(() => displayLyrics(lyrics, estimateTiming, duration, analysis),
-    [lyrics, estimateTiming, duration, analysis]);
+  const translated = useTranslatedLyrics(lyrics, settings.lyrics_translations);
+  const timedLyrics = useMemo(() => displayLyrics(translated, estimateTiming, duration, analysis),
+    [translated, estimateTiming, duration, analysis]);
   const romanized = useRomanizedLyrics(timedLyrics, settings.romanized,
     settings.romanization_below && !gravity, settings.romaji_as_written);
   const rendered = filterWords(romanized, settings.lyrics_word_filter);
@@ -250,7 +252,7 @@ function TrackLyrics({ track, host, playing, settings, compact = false, view = w
   const upcoming = fullView && settings.lyrics_up_next && duration > 0 && position >= duration - 30_000 ? host.upcoming() : undefined;
   const upNext = upcoming && <div className="lyrics-up-next">
     <button type="button" className="lyrics-up-next-body first" onClick={host.next}>
-      {upcoming.image && <img className="cover" src={upcoming.image} alt="" />}
+      <TrackArtwork key={upcoming.image || `${upcoming.title}:${upcoming.artist}`} src={upcoming.image} alternate={upcoming.alternate} />
       <span className="lyrics-up-next-text"><small>Up next</small>
         <strong className="lyrics-up-next-title">{upcoming.title}</strong>
         <span className="lyrics-up-next-artist">{upcoming.artist}</span></span>

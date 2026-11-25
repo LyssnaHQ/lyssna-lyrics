@@ -30,15 +30,16 @@ export function placeholderArtwork(page: Document = document) {
   return canvas.toDataURL();
 }
 
-export function TrackArtwork({ src, className = "cover", placeholder, onUnavailable }: {
-  src?: string; className?: string; placeholder?: string; onUnavailable?(): void;
+export function TrackArtwork({ src, alternate, className = "cover", placeholder, onUnavailable }: {
+  src?: string; alternate?: string; className?: string; placeholder?: string; onUnavailable?(): void;
 }) {
-  const [failed, setFailed] = useState<string>();
-  const cover = src !== failed ? src : undefined;
+  const [failure, setFailure] = useState<{ src?: string; alternate?: string; urls: string[] }>();
+  const failed = failure?.src === src && failure?.alternate === alternate ? failure?.urls : undefined;
+  const cover = [src, alternate].find(url => url && !failed?.includes(url));
   const fallback = useMemo(() => cover ? undefined : placeholder ?? placeholderArtwork(), [cover, placeholder]);
   if (cover) return <img className={className} src={cover} alt="" onError={() => {
-    setFailed(cover);
-    onUnavailable?.();
+    setFailure({ src, alternate, urls: [...(failed ?? []), cover] });
+    if (!alternate || alternate === cover || failed?.includes(alternate)) onUnavailable?.();
   }} />;
   return <div className={`${className} lyssna-cover-placeholder`} role="img" aria-label="No cover artwork"
     style={fallback ? { backgroundImage: `url("${fallback}")` } : undefined}>

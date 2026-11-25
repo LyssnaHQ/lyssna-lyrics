@@ -1,4 +1,4 @@
-import { cloneElement, isValidElement, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
+import { cloneElement, isValidElement, useEffect, useLayoutEffect, useRef, useState, type ComponentProps, type CSSProperties, type ReactElement, type ReactNode } from "react";
 import { AlignLeft, AppWindow, ChevronLeft, FileText, FlaskConical, Palette, Pin, Search, Settings2, SlidersHorizontal, WandSparkles, Wrench, X } from "lucide-react";
 import EnhancementsSection from "./enhancements/section";
 import { AnimatorPanel } from "./lyssna/animator-settings";
@@ -114,13 +114,15 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
   const scroll = useRef<HTMLDivElement>(null);
   const mainScroll = useRef(initial.scroll);
   const submenuScroll = useRef(initial.submenuScroll ?? 0);
+  const parentSubmenu = useRef<{ key: Submenu; scroll: number }>(undefined);
   const backButton = useRef<HTMLButtonElement>(null);
   const openedFrom = useRef<Submenu>(initialSubmenu);
   const tabButtons = useRef<(HTMLButtonElement | null)[]>([]);
   const transferInput = useRef<HTMLInputElement>(null);
   const searching = !!query.trim();
   const account = useSettingsAccount(!tuning && !submenu && (tab === "Tools" || searching));
-  const visuals = visualRows(settings, change, () => setTuning(true), searching);
+  const includeDependentRows = searching || submenu === "hidden";
+  const visuals = visualRows(settings, change, () => setTuning(true), includeDependentRows);
   const fonts = appFontStyles(settings);
   const { flag, range } = visuals;
   const version = options.hiddenVersion ?? options.channels[options.channel];
@@ -183,7 +185,9 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
   }
 
   function openSubmenu(next: Submenu) {
-    mainScroll.current = scroll.current?.scrollTop ?? 0;
+    const top = scroll.current?.scrollTop ?? 0;
+    if (submenu) parentSubmenu.current = { key: submenu, scroll: top };
+    else mainScroll.current = top;
     submenuScroll.current = 0;
     openedFrom.current = next;
     setNotice("");
@@ -193,8 +197,11 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
 
   function back() {
     setNotice("");
-    setSubmenu(undefined);
-    if (settings.settings_remember_place) writePlace({ tab, scroll: mainScroll.current });
+    const parent = parentSubmenu.current;
+    parentSubmenu.current = undefined;
+    if (parent) submenuScroll.current = parent.scroll;
+    setSubmenu(parent?.key);
+    if (settings.settings_remember_place) writePlace({ tab, scroll: mainScroll.current, submenu: parent?.key, submenuScroll: parent?.scroll });
   }
 
   useEffect(() => {
@@ -341,7 +348,7 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
     ["Effects", "Lyric modes", rowsFor("lyrics_simple", "lyrics_minimal", "lyrics_keep_overlaps"), true],
     ["Effects", "Space Gravity", [
       ...rowsFor("space_gravity", "gravity_word_density"),
-      (settings.space_gravity || searching) && visualRowsByKey.get("lyrics_seek_compensation"),
+      (settings.space_gravity || includeDependentRows) && visualRowsByKey.get("lyrics_seek_compensation"),
     ]],
     ["Effects", "Highlighter", rowsFor("lyrics_highlighter", "highlighter-colour", "gravity_links", "gravity_link_width")],
     ["Effects", "Visualiser", rowsFor("lyrics_visualiser", "lyrics_visualiser_opacity")],
@@ -446,20 +453,22 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
       </SettingRow>,
     ]],
   ];
-  const hiddenRows = new Map<string, string>();
+  const hiddenRows = new Map<string, ReactElement<ComponentProps<typeof SettingRow>>>();
   for (const section of sections) {
     if (section[0] === "Tools" || section[0] === "Advanced") continue;
     section[2] = section[2].map((row) => {
       if (!isValidElement(row) || row.type !== SettingRow || row.key === null) return row;
-      const setting = row as ReactElement<{ label: ReactNode; hideId?: string; children?: ReactNode }>;
+      const setting = row as ReactElement<ComponentProps<typeof SettingRow>>;
       const id = String(row.key);
-      if (hidden.has(id)) hiddenRows.set(id, typeof setting.props.label === "string" ? setting.props.label : id);
       const effect = quickEffects.find((option) => option.id === id);
-      if (!effect) return cloneElement(setting, { hideId: id });
+      if (!effect) {
+        if (hidden.has(id)) hiddenRows.set(id, setting);
+        return cloneElement(setting, { hideId: id });
+      }
       const pins = settings.pinned_lyric_effects;
       const pinned = pins.includes(id);
       const title = `${pinned ? "Unpin" : "Pin"} ${effect.label} ${pinned ? "from" : "to"} the lyrics toolbar`;
-      return cloneElement(setting, { hideId: id }, <>
+      const withPin = cloneElement(setting, {}, <>
         <button className="icon-button setting-pin" type="button" title={title}
           aria-label={`Pin ${effect.label} to the lyrics toolbar`} aria-pressed={pinned}
           onClick={() => change({ pinned_lyric_effects: pinned ? pins.filter((pin) => pin !== id) : [...pins, id] })}>
@@ -467,11 +476,16 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
         </button>
         {setting.props.children}
       </>);
+      if (hidden.has(id)) hiddenRows.set(id, withPin);
+      return cloneElement(withPin, { hideId: id });
     });
   }
-  const hiddenSettings = settings.hidden_settings.map((id) => <SettingRow key={id} label={hiddenRows.get(id) ?? id.replaceAll("_", " ")}>
-      <button type="button" className="pill outline" onClick={() => change({ hidden_settings: settings.hidden_settings.filter((item) => item !== id) })}>Show</button>
-    </SettingRow>);
+  const hiddenSettings = settings.hidden_settings.map((id) => {
+    const row = hiddenRows.get(id) ?? <SettingRow key={id} label={id.replaceAll("_", " ")} />;
+    const label = typeof row.props.label === "string" ? row.props.label : id;
+    return cloneElement(row, { labelAction: <button type="button" className="pill outline setting-restore"
+      aria-label={`Show ${label} in Settings`} onClick={() => change({ hidden_settings: settings.hidden_settings.filter((item) => item !== id) })}>Show</button> });
+  });
 
   const backdropClass = `modal-backdrop lyrics-settings-backdrop${settings.liquid_glass ? " liquid-glass" : ""}${settings.reduce_motion ? " reduce-motion" : ""}${tuning ? " lyssna-animator-backdrop" : ""}`;
   const content = <div className={backdropClass} style={fonts}

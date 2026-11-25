@@ -44,6 +44,7 @@ export function SettingRow({
   keywords,
   stacked = false,
   hideId,
+  labelAction,
   unavailable,
   children,
 }: {
@@ -53,6 +54,7 @@ export function SettingRow({
   stacked?: boolean;
   /** Lets the row be hidden; set by the settings window. */
   hideId?: string;
+  labelAction?: ReactNode;
   /** Greys the row out and says why it does nothing right now. */
   unavailable?: string;
   children?: ReactNode;
@@ -73,6 +75,7 @@ export function SettingRow({
       <div className="setting-text">
         <span className="setting-label">
           {label}
+          {labelAction}
           {hideId && hiding.allow && hiding.buttons && (
             <button
               type="button"

@@ -1,7 +1,6 @@
-import { getSetting } from "../config";
 import { isElementVisible, rootMenuSelector } from "../dom";
 
-type CopyAction = { label: string; copy(uri: string): void };
+type CopyAction = { label: string; copy(uri: string): void; enabled(uri: string): boolean };
 type Fiber = { memoizedProps?: Record<string, unknown>; return?: Fiber };
 export const rowSelector = ".main-trackList-trackListRow, [data-testid='tracklist-row']";
 const unavailableSelector = "[aria-disabled='true'], [data-disabled], .main-trackList-trackListRow--disabled, .uWhqNrxEmH2qfzeRF1d2";
@@ -48,6 +47,7 @@ const visibleMenus = () => Array.from(document.querySelectorAll<HTMLElement>(roo
 
 export function startUnavailableTrackMenu(actions: CopyAction[]) {
   let close: (() => void) | undefined;
+  let openUri: string | undefined;
   let pending: number | undefined;
   let previousMenus: Map<HTMLElement, Element | null> | undefined;
   const nativeOpened = () => !!previousMenus && visibleMenus().some(menu =>
@@ -57,15 +57,16 @@ export function startUnavailableTrackMenu(actions: CopyAction[]) {
   function dismiss() {
     window.clearTimeout(pending);
     previousMenus = undefined;
+    openUri = undefined;
     close?.();
   }
 
   document.addEventListener("contextmenu", event => {
     dismiss();
-    if (!getSetting("showTrackCopyMenu") || !(event.target instanceof Element)) return;
+    if (!(event.target instanceof Element)) return;
     if (event.target.closest("input, textarea, [contenteditable='true']")) return;
     const target = unavailableTrack(event.target);
-    if (!target) return;
+    if (!target || !actions.some(action => action.enabled(target.uri))) return;
 
     previousMenus = new Map(visibleMenus().map(menu => [menu, menu.firstElementChild]));
     // Give Spotify's menu first chance to open. This prevents the browser's
@@ -73,12 +74,15 @@ export function startUnavailableTrackMenu(actions: CopyAction[]) {
     event.preventDefault();
     const { clientX, clientY } = event;
     pending = window.setTimeout(() => {
-      if (nativeOpened() || !target.row.isConnected || !getSetting("showTrackCopyMenu")) return;
+      if (nativeOpened() || !target.row.isConnected) return;
+      const available = actions.filter(action => action.enabled(target.uri));
+      if (!available.length) return;
 
       const menu = document.createElement("div");
       menu.className = "lyssna-unavailable-track-menu";
       menu.setAttribute("role", "menu");
-      menu.setAttribute("aria-label", "Copy");
+      menu.setAttribute("aria-label", "Copy/Share");
+      openUri = target.uri;
 
       const session = new AbortController();
       const options = { capture: true, signal: session.signal };
@@ -87,7 +91,7 @@ export function startUnavailableTrackMenu(actions: CopyAction[]) {
         menu.remove();
         close = undefined;
       };
-      const buttons = actions.map(({ label, copy }) => {
+      const buttons = available.map(({ label, copy }) => {
         const button = document.createElement("button");
         button.type = "button";
         button.setAttribute("role", "menuitem");
@@ -133,6 +137,7 @@ export function startUnavailableTrackMenu(actions: CopyAction[]) {
   }, true);
 
   return () => {
-    if (!getSetting("showTrackCopyMenu") || nativeOpened()) dismiss();
+    const uri = openUri;
+    if ((uri && !actions.some(action => action.enabled(uri))) || nativeOpened()) dismiss();
   };
 }

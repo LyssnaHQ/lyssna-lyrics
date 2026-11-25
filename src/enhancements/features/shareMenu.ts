@@ -1,8 +1,8 @@
 import type { Host } from "../../host";
-import { Spicetify } from "../compat";
+import { kit, Spicetify } from "../compat";
 import { getSetting, SETTINGS_CHANGED_EVENT } from "../config";
 import {
-  encoreMenu, encoreMenuRow, getEncoreSubmenu, getMenuRowAction, isElementVisible,
+  encoreMenu, encoreMenuRow, getEncoreSubmenu, getEncoreSubmenuTrigger, getMenuRowAction, isElementVisible,
   menuActionLabel, normalizeText, openEncoreSubmenu, rootMenuSelector, toggleElementDisplay, useVisibleEncoreMenuOrder,
 } from "../dom";
 import { observeMenus } from "../observeMenus";
@@ -11,17 +11,16 @@ import { startUnavailableTrackMenu } from "./unavailableTrackMenu";
 
 const cleanLabel = "Copy Clean URL";
 const embedLabel = "Embed";
-const copyLabel = "Copy\u2063";
+const customEmbedLabel = `${embedLabel}\u2063`;
+const copyLabel = "Copy/Share\u2063";
 const nativeShareAttribute = "data-lyssna-native-share";
 const dividerAttribute = "data-lyssna-share-divider";
-const boundEmbedButtons = new WeakSet<HTMLElement>();
 const openingEmbed = new WeakSet<HTMLElement>();
 const shareTypes = new Set(["track", "album", "artist", "playlist", "show", "episode", "audiobook", "user", "concert", "venue"]);
 const noEmbed = new Set(["user", "concert", "venue"]);
 
-// Spotify's 16 px icons from the Share menu and track actions.
-const copyIcon = '<path d="M5 .75A.75.75 0 0 1 5.75 0h9.5a.75.75 0 0 1 .75.75v10.5a.75.75 0 0 1-.75.75H12v-1.5h2.5v-9h-8V3H5z"></path><path d="M.75 4a.75.75 0 0 0-.75.75v10.5c0 .414.336.75.75.75h9.5a.75.75 0 0 0 .75-.75V4.75A.75.75 0 0 0 10.25 4zm.75 10.5v-9h8v9z"></path>';
-const embedIcon = '<path d="M0 1.75A.75.75 0 0 1 .75 1h14.5a.75.75 0 0 1 .75.75v13.5a.75.75 0 0 1-.75.75H.75a.75.75 0 0 1-.75-.75zm1.5.75v12h13v-12z"></path><path d="M6.962 5.47a.75.75 0 0 1 0 1.06L4.992 8.5l1.97 1.97a.75.75 0 1 1-1.06 1.06L2.87 8.5 5.9 5.47a.75.75 0 0 1 1.061 0zm2.076 0a.75.75 0 0 0 0 1.06l1.97 1.97-1.97 1.97a.75.75 0 1 0 1.06 1.06L13.13 8.5 10.1 5.47a.75.75 0 0 0-1.06 0"></path>';
+const cleanIcon = '<path fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" d="M7 4.5l2-2a3.2 3.2 0 0 1 4.5 4.5l-2 2M9 11.5l-2 2A3.2 3.2 0 0 1 2.5 9l2-2M5.75 10.25l4.5-4.5"></path>';
+const embedIcon = '<path fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" d="M5 4.75 1.75 8 5 11.25m6-6.5L14.25 8 11 11.25M9.25 2.75l-2.5 10.5"></path>';
 
 const artistIcon = '<path d="M11.757 2.987A4.36 4.36 0 0 0 7.618 0a4.36 4.36 0 0 0-4.139 2.987 5.5 5.5 0 0 0-.22 1.894 5.6 5.6 0 0 0 1.4 3.312l.125.152a.748.748 0 0 1-.2 1.128l-2.209 1.275A4.75 4.75 0 0 0 0 14.857v1.142h8.734A5.5 5.5 0 0 1 8.15 14.5H1.517a3.25 3.25 0 0 1 1.6-2.454l2.21-1.275a2.25 2.25 0 0 0 .6-3.386l-.128-.153a4.1 4.1 0 0 1-1.05-2.44A4 4 0 0 1 4.89 3.47a2.8 2.8 0 0 1 1.555-1.713 2.89 2.89 0 0 1 3.293.691c.265.296.466.644.589 1.022.12.43.169.876.144 1.322a4.12 4.12 0 0 1-1.052 2.44l-.127.153a2.24 2.24 0 0 0-.2 2.58c.338-.45.742-.845 1.2-1.173 0-.162.055-.32.156-.447l.126-.152a5.6 5.6 0 0 0 1.4-3.312 5.5 5.5 0 0 0-.218-1.894zm3.493 3.771a.75.75 0 0 0-.75.75v3.496h-1a2.5 2.5 0 0 0-2.31 1.542 2.497 2.497 0 0 0 1.822 3.406A2.502 2.502 0 0 0 16 13.502V7.508a.75.75 0 0 0-.75-.75m-.75 6.744a.998.998 0 0 1-1.707.707 1 1 0 0 1 .707-1.706h1z"></path>';
 const albumIcon = '<path d="M8 6.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3"></path><path d="M8 5a3 3 0 1 0 0 6 3 3 0 0 0 0-6m0 1.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3"></path><path d="M8 1.5a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13M0 8a8 8 0 1 1 16 0A8 8 0 0 1 0 8"></path>';
@@ -33,9 +32,13 @@ function shareTarget(uris: string[]) {
   if (uris.length !== 1) return;
   try {
     const parsed = Spicetify.URI?.fromString(uris[0]);
-    const type = parsed?.type.toLowerCase();
-    if (!parsed || !type || !shareTypes.has(type)) return;
-    const url = new URL(parsed.toURLPath(true), "https://open.spotify.com");
+    const canonical = /^spotify:([a-z]+):([^:]+)$/.exec(uris[0]);
+    const type = parsed?.type.toLowerCase() ?? canonical?.[1];
+    if (!type || !shareTypes.has(type)) return;
+    const path = parsed?.toURLPath(true) || kit?.URI?.toUrl(uris[0]) ||
+      (canonical && `/${type}/${encodeURIComponent(canonical[2])}`);
+    if (!path) return;
+    const url = new URL(path, "https://open.spotify.com");
     if (url.origin !== "https://open.spotify.com") return;
     url.search = "";
     url.hash = "";
@@ -124,8 +127,12 @@ async function openEmbed(native?: HTMLElement) {
 }
 
 function forwardEmbed(event: Event) {
-  const button = event.currentTarget as HTMLElement;
-  const menu = button.closest<HTMLElement>(rootMenuSelector);
+  if (event instanceof KeyboardEvent && (event.key !== "Enter" && event.key !== " ")) return;
+  const button = event.target instanceof Element && event.target.closest<HTMLElement>(`${encoreMenuRow}, button, [role='menuitem']`);
+  if (!button || menuActionLabel(button) !== normalizeText(customEmbedLabel)) return;
+  const submenu = button.closest<HTMLElement>("[role='menu']");
+  const menu = (submenu && getEncoreSubmenuTrigger(submenu)?.closest<HTMLElement>(rootMenuSelector)) ??
+    button.closest<HTMLElement>(rootMenuSelector) ?? rootMenu();
   const native = menu && nativeShareItem(menuItems(menu));
   if (!native) return;
   // Keep the menu mounted until Spotify has rendered its native Embed action.
@@ -140,30 +147,15 @@ function syncMenu(menu: HTMLElement) {
   const items = menuItems(menu);
   const copy = items.find((item) => itemLabel(item) === normalizeText(copyLabel));
   const native = nativeShareItem(items);
-  const clean = items.find((item) => itemLabel(item) === normalizeText(cleanLabel));
-  const embed = items.find((item) => itemLabel(item) === normalizeText(embedLabel));
-  if (!copy && !native && !clean && !embed) return;
-  const refined = getSetting("restoreOldShareMenu") && !!clean;
-  const embedButton = embed && getMenuRowAction(embed);
-  if (embedButton && !boundEmbedButtons.has(embedButton)) {
-    embedButton.addEventListener("click", forwardEmbed, true);
-    if (embedButton.matches(encoreMenuRow)) {
-      embedButton.addEventListener("keydown", event => {
-        if (event.key === "Enter" || event.key === " ") forwardEmbed(event);
-      }, true);
-    }
-    boundEmbedButtons.add(embedButton);
-  }
-
-  let first = native ?? null;
-  for (const item of [refined ? embed : undefined, refined ? clean : undefined, copy]) {
-    if (!item) continue;
-    const button = getMenuRowAction(item);
+  if (!copy && !native) return;
+  const refined = getSetting("restoreOldShareMenu") && !!copy;
+  if (copy) {
+    const button = getMenuRowAction(copy);
     if (!button?.hasAttribute("role")) button?.setAttribute("role", "menuitem");
-    if (item.nextElementSibling !== first) menu.insertBefore(item, first);
-    first = item;
+    if (copy.nextElementSibling !== (native ?? null)) menu.insertBefore(copy, native ?? null);
   }
 
+  const first = copy ?? native;
   const existing = menu.querySelector<HTMLElement>(`:scope > [${dividerAttribute}]`);
   const previous = first?.previousElementSibling === existing ? existing?.previousElementSibling : first?.previousElementSibling;
   const hasNativeDivider = previous?.matches("div.main-contextMenu-dividerBefore, div.main-contextMenu-dividerAfter, [role='separator']");
@@ -185,12 +177,12 @@ function syncMenu(menu: HTMLElement) {
       const hidden = menu.querySelector<HTMLElement>(`:scope > [${nativeShareAttribute}]`);
       if (hidden?.getAttribute("aria-keyshortcuts")?.toLowerCase() !== event.key.toLowerCase() ||
           event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
-      const clean = menuItems(menu).find(item => itemLabel(item) === normalizeText(cleanLabel));
-      const action = clean && getMenuRowAction(clean);
+      const copy = menuItems(menu).find(item => itemLabel(item) === normalizeText(copyLabel));
+      const action = copy && getMenuRowAction(copy);
       if (!action) return;
       event.preventDefault();
       event.stopPropagation();
-      action.click();
+      openEncoreSubmenu(action);
     }, true);
   }
 }
@@ -203,17 +195,18 @@ function syncMenus() {
 
 export function startShareMenuController(host: Host) {
   const showShare = (uris: string[]) => getSetting("restoreOldShareMenu") && !!shareTarget(uris);
-  createContextMenuItem(cleanLabel, (uris) => {
+  const copyCleanUrl = (uris: string[]) => {
     const target = shareTarget(uris);
     if (target) void copyText(target.url, "Clean URL copied");
-  }, showShare, copyIcon).register();
-  createContextMenuItem(embedLabel, () => {
+  };
+  const clean = createContextMenuItem(cleanLabel, copyCleanUrl, showShare, cleanIcon);
+  const embed = createContextMenuItem(customEmbedLabel, () => {
     const menu = rootMenu();
     void openEmbed(menu && nativeShareItem(menuItems(menu)));
   }, (uris) => {
     const target = shareTarget(uris);
     return getSetting("restoreOldShareMenu") && !!target && !noEmbed.has(target.type);
-  }, embedIcon).register();
+  }, embedIcon);
 
   const showCopy = (uris: string[]) => getSetting("showTrackCopyMenu") && !!trackId(uris);
   async function copyTrackMetadata(uris: string[], kind: "song" | "isrc") {
@@ -249,10 +242,15 @@ export function startShareMenuController(host: Host) {
   const copyItems = actions.map(({ label, copy, icon }) => createContextMenuItem(label, (uris) => {
     if (trackId(uris)) copy(uris[0]);
   }, showCopy, icon));
-  createContextMenuSubMenu(copyLabel, copyItems, showCopy, copySubmenuIcon).register();
+  createContextMenuSubMenu(copyLabel, [clean, embed, ...copyItems], (uris) => showShare(uris) || showCopy(uris), copySubmenuIcon).register();
 
   document.addEventListener("contextmenu", resetMenuContext, true);
-  const syncUnavailableMenu = startUnavailableTrackMenu(actions);
+  document.addEventListener("click", forwardEmbed, true);
+  document.addEventListener("keydown", forwardEmbed, true);
+  const syncUnavailableMenu = startUnavailableTrackMenu([
+    { label: cleanLabel, copy: uri => copyCleanUrl([uri]), enabled: uri => showShare([uri]) },
+    ...actions.map(action => ({ ...action, enabled: (uri: string) => showCopy([uri]) })),
+  ]);
   const sync = () => { syncMenus(); syncUnavailableMenu(); };
   observeMenus(sync);
   window.addEventListener(SETTINGS_CHANGED_EVENT, sync);

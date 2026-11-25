@@ -209,7 +209,7 @@ return { flag, range, Look: [
         flag(
           "lyrics_translations",
           "Show translations",
-          "Show translations that come with the lyrics under each line.",
+          "Show supplied translations, or use Google Translate for online lyrics in your device’s language.",
           "translation translate language",
         ),
         flag(

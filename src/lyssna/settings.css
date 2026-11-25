@@ -979,6 +979,13 @@
   outline: 2px solid currentColor;
   outline-offset: 2px;
 }
+.lyrics-settings .pill.setting-restore {
+  height: 24px;
+  padding-inline: 8px;
+  margin-inline-start: 8px;
+  vertical-align: middle;
+  font-size: 11px;
+}
 .marker-colour {
   display: flex;
   align-items: center;

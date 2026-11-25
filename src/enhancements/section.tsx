@@ -27,8 +27,8 @@ const groups: { title: string; columns?: boolean; hide?: boolean; settings: Togg
   ] },
   { title: "Devices and sharing", columns: true, settings: [
     { key: "restoreOldDevicePicker", label: "Classic device picker", description: "Show devices in a compact popover instead of the sidebar." },
-    { key: "restoreOldShareMenu", label: "Refined share menu", description: "Replace Share with Copy Clean URL and Embed." },
-    { key: "showTrackCopyMenu", label: "Track copy menu", description: "Add a Copy submenu beside the share actions for the Spotify ID, song and artist names, and ISRC." },
+    { key: "restoreOldShareMenu", label: "Refined share menu", description: "Put Copy Clean URL and Embed in Copy/Share." },
+    { key: "showTrackCopyMenu", label: "Track copy menu", description: "Add track ID, song and artist names, and ISRC to Copy/Share." },
   ] },
 ];
 

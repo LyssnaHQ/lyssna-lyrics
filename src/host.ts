@@ -599,9 +599,16 @@ export function getHost() {
     upcoming() {
       const next = kit?.Queue?.next[0];
       if (next) return { title: next.title, artist: next.artist, image: artwork(next.image ?? "") };
-      const track = spice?.Queue?.nextTracks?.[0]?.contextTrack;
-      const title = track?.name ?? track?.metadata?.title;
-      if (title) return { title, artist: track?.metadata?.artist_name ?? "", image: artwork(track?.metadata?.image_url ?? "") };
+      const nextTrack = spice?.Queue?.nextTracks?.[0];
+      const track = nextTrack?.contextTrack;
+      const local = localSongTags(track?.uri ?? nextTrack?.uri ?? "");
+      const title = track?.name || track?.metadata?.title || local?.title;
+      if (title) {
+        const image = track ? albumArtwork(track) : "";
+        const alternate = [track?.metadata?.image_url, track?.metadata?.image_small_url]
+          .map(url => artwork(url ?? "")).find(url => url && url !== image);
+        return { title, artist: track?.artists?.[0]?.name || track?.metadata?.artist_name || local?.artist || "", image, alternate };
+      }
     },
     analysis: (trackId: string) => {
       if (trackId.startsWith("spotify:local:")) return;
