@@ -2261,6 +2261,9 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   font-size: 14px;
   line-height: 1.4;
 }
+.lyssna-submission-notice[data-error] .lyssna-submission-message {
+  box-shadow: 0 2px 14px #0009, 0 0 0 1px #ff6262c0, 0 0 18px #ff414180;
+}
 .lyssna-submission-confetti {
   position: absolute;
   top: 50%;
