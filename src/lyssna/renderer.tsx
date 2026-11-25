@@ -6,7 +6,7 @@ import { frameDue } from "./frame-cap";
 import { HighlighterWords, markerColour, nextMarkerStarts } from "./highlighter";
 import { LyricCountdown } from "./lyric-countdown";
 import { LyricWord } from "./lyric-word";
-import { glideScroll, GLIDE_MS, lineBlur, stepScroll, tuneMotion, vocalEnd, vocalGap, vocalGaps, wordGroups, type ScrollSpring, type VocalGap } from "./lyric-motion";
+import { engineLines, glideScroll, GLIDE_MS, lineBlur, stepScroll, tuneMotion, vocalEnd, vocalGap, vocalGaps, wordGroups, type ScrollSpring, type VocalGap } from "./lyric-motion";
 import type { Line, Lyrics, Word } from "./types";
 import type { Settings } from "../settings";
 import { LyricCredits } from "../credits";
@@ -15,6 +15,8 @@ export function activeLines(
   lines: { start_ms: number; end_ms: number; words?: Word[] }[],
   time: number,
 ): number[] {
+  const engine = engineLines(lines);
+  if (engine) return Array.from(engine.activeLines(time));
   return lines.flatMap((line, index) =>
     line.start_ms <= time &&
     time <
@@ -187,6 +189,13 @@ export function LyricsDisplay({
       ? (settings.lyrics_early_scroll_ms ?? 200)
       : 0);
   const active = activeLines(lyrics.lines, scrollTime);
+  const earlyBacking = active.findLast(index => {
+    if (!lyrics.lines[index].background) return false;
+    for (let lead = index - 1; lead >= 0; lead--) {
+      if (!lyrics.lines[lead].background) return lyrics.lines[lead].start_ms > scrollTime;
+    }
+    return false;
+  });
   // Overlapping vocals keep animating, while the newest start drives scrolling.
   const newestActive = active.reduce<number | undefined>((latest, index) => {
     if (latest === undefined) return index;
@@ -196,7 +205,7 @@ export function LyricsDisplay({
     return line.background && !previous.background ? latest : index;
   }, undefined);
   const primary =
-    selected ?? newestActive ??
+    selected ?? earlyBacking ?? newestActive ??
     lyrics.lines.reduce(
       (last, line, index) =>
         line.start_ms <= scrollTime && !line.background ? index : last,
@@ -690,7 +699,7 @@ const LyricRow = memo(function LyricRow({
   return (
     <button
       ref={action.ref}
-      className={`lyric-line ${playing ? "active" : ""} ${line.background ? "background-vocal" : ""} ${line.opposite ? "opposite" : ""} ${past ? "past" : ""}${line.sung_by ? ` sung-${line.sung_by}` : ""}`}
+      className={`lyric-line ${playing ? "active" : ""} ${line.background ? "background-vocal" : ""} ${line.opposite ? "opposite" : ""} ${past ? "past" : ""}`}
       style={{ "--blur": `${blur}px` } as CSSProperties}
       onClick={action.click}
       disabled={!synced}

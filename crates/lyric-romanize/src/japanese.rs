@@ -136,10 +136,41 @@ pub fn align_reading(surface: &str, reading: &str) -> Option<Vec<String>> {
                 out[run.from + offset] = to_katakana(&c.to_string());
             }
         } else {
-            out[run.from] = groups.next().unwrap_or_default();
+            let reading = groups.next().unwrap_or_default();
+            for (offset, piece) in split_over_kanji(&reading, run.text.len())
+                .into_iter()
+                .enumerate()
+            {
+                out[run.from + offset] = piece;
+            }
         }
     }
     Some(out)
+}
+
+/// A kanji run's reading shared out over its kanji, syllable by syllable,
+/// so a word sung over several syllables gets a reading on each.
+fn split_over_kanji(reading: &str, kanji: usize) -> Vec<String> {
+    let mut syllables: Vec<String> = Vec::new();
+    for c in reading.chars() {
+        let joins = match syllables.last() {
+            None => false,
+            Some(last) => {
+                let vowel = kana_to_romaji(last).chars().last();
+                "ャュョァィゥェォヮーンッ".contains(c)
+                    || (c == 'イ' && !last.ends_with(['ン', 'ッ']))
+                    || (c == 'ウ' && matches!(vowel, Some('o' | 'u')))
+            }
+        };
+        match syllables.last_mut() {
+            Some(last) if joins => last.push(c),
+            _ => syllables.push(c.to_string()),
+        }
+    }
+    let count = syllables.len();
+    (0..kanji)
+        .map(|index| syllables[index * count / kanji..(index + 1) * count / kanji].concat())
+        .collect()
 }
 
 fn hepburn() -> &'static HashMap<&'static str, &'static str> {
@@ -465,7 +496,19 @@ mod tests {
         assert_eq!(split("抱い", "ダイ"), Some(vec!["ダ".into(), "イ".into()]));
         assert_eq!(
             split("一緒", "イッショ"),
-            Some(vec!["イッショ".into(), String::new()])
+            Some(vec!["イッ".into(), "ショ".into()])
+        );
+        assert_eq!(
+            split("金輪際", "コンリンザイ"),
+            Some(vec!["コン".into(), "リン".into(), "ザイ".into()])
+        );
+        assert_eq!(
+            split("呼吸", "コキュウ"),
+            Some(vec!["コ".into(), "キュウ".into()])
+        );
+        assert_eq!(
+            split("悠久", "ユウキュウ"),
+            Some(vec!["ユウ".into(), "キュウ".into()])
         );
         assert_eq!(split("行く", "ユク"), Some(vec!["ユ".into(), "ク".into()]));
         assert_eq!(split("言う", "ユー"), None);

@@ -608,13 +608,13 @@
    mid-spring, the text is redrawn and its words jump. The animator keeps
    them a few lines longer, as dropping them at rest still shifts the text
    by a fraction of a pixel. */
-.lyric-line:is(.active, [data-settling]) .lyric-syllable,
-.lyric-line:is(.active, [data-settling]) .lyric-letter {
+:is(.lyric-line:is(.active, [data-settling]), .lyric-line.active + .lyric-line.background-vocal)
+  :is(.lyric-syllable, .lyric-letter) {
   will-change: transform;
 }
 /* Avoid retaining one compositing layer per animated glyph over live video. */
 .application.macos
-  .lyric-line:is(.active, [data-settling])
+  :is(.lyric-line:is(.active, [data-settling]), .lyric-line.active + .lyric-line.background-vocal)
   :is(.lyric-syllable, .lyric-letter) {
   will-change: auto;
 }

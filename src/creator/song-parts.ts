@@ -1,7 +1,9 @@
 /**
  * The section headers in Genius's song sections guide, each with the names
  * Genius's headers-in-other-languages page gives it. A tag in any of them
- * is saved under the English name, as Apple Music's TTML does.
+ * is saved under the English name, as Apple Music's TTML does. Pre-Drop
+ * and Post-Drop are not in the guide but are common on Genius's pages, so
+ * they count too.
  */
 const PARTS: Record<string, string[]> = {
   Intro: [
@@ -458,7 +460,9 @@ const PARTS: Record<string, string[]> = {
     "build up",
     "buildup",
   ],
+  "Pre-Drop": ["predrop", "pre drop"],
   Drop: ["дроп", "унагаах", "ड्राप", "አስቀምጥ", "דרופ"],
+  "Post-Drop": ["postdrop", "post drop"],
   Outro: [
     "бөтөм",
     "аутро",

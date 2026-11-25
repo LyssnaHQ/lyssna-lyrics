@@ -114,6 +114,7 @@
 .release-notes ul { padding-inline-start: 1.25rem; }
 .release-notes li { overflow-wrap: anywhere; }
 .release-notes li + li { margin-top: 8px; }
+.release-actions-main:only-child { margin-inline-start: auto; }
 .release-text-button {
   padding: 0;
   border: 0;

@@ -1,4 +1,5 @@
 import type { Track } from "./host";
+import type { Line, Lyrics } from "./lyssna/types";
 import { parseLocalTtml } from "./local-lyrics";
 import { fromLrc } from "./lrc";
 
@@ -55,4 +56,27 @@ export async function readNetease(track: Track, duration: number, signal: AbortS
   const aligned = new Map(translation?.lines.map((line) => [line.start_ms, line.text]));
   for (const line of lyrics.lines) line.translation = aligned.get(line.start_ms) ?? "";
   return lyrics;
+}
+export function parseSpotifyLyrics(response: unknown, duration: number): Lyrics | undefined {
+  const lyrics = (response as { lyrics?: { syncType?: string; lines?: unknown[] } } | null)?.lyrics;
+  if (!lyrics || !Array.isArray(lyrics.lines)) return;
+  const synced = lyrics.syncType === "LINE_SYNCED";
+  const lines: Line[] = [];
+  for (const raw of lyrics.lines.slice(0, 2000)) {
+    const row = raw as { words?: unknown; startTimeMs?: unknown } | null;
+    const text = typeof row?.words === "string" ? row.words.trim() : "";
+    if (!text || /^[\s♪♫♬]+$/u.test(text)) continue;
+    const time = typeof row?.startTimeMs === "string" || typeof row?.startTimeMs === "number" ? Number(row.startTimeMs) : NaN;
+    if (synced && (!Number.isFinite(time) || time < 0)) continue;
+    lines.push({ text, start_ms: synced ? time : 0, end_ms: 0, words: [],
+      translation: "", romanization: "", background: false, opposite: false });
+  }
+  if (!lines.length) return;
+  if (synced) {
+    lines.sort((a, b) => a.start_ms - b.start_ms);
+    lines.forEach((line, index) => {
+      line.end_ms = Math.max(line.start_ms, lines[index + 1]?.start_ms ?? (duration > line.start_ms ? duration : line.start_ms + 5000));
+    });
+  }
+  return { source: "Spotify", synced, instrumental: false, lines };
 }

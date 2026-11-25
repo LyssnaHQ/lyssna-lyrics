@@ -2,6 +2,10 @@ import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties
 import { ArrowUpRight, MicVocal, Star, TriangleAlert, X } from "lucide-react";
 import type { Host, Root } from "./host";
 import type { BuildOptions } from "./settings-panel";
+import { applySpotifyTweaksPreset, setSetting } from "./enhancements/config";
+import { clearLiveSpectrograms, savedSpectrogramBytes } from "./creator/spectrum-storage";
+import { stopCreatorCaptures } from "./creator/capture-sessions";
+import { legacyPreferencesMigrated } from "./settings";
 import noticeCss from "./release-notices.css?inline";
 
 export const discordInvite = "https://discord.gg/qfYAsFQawp";
@@ -9,6 +13,9 @@ const github = "https://github.com/LyssnaHQ/lyssna-lyrics";
 const guide = "https://lyssna.org/guides";
 const canaryNotesUrl = "https://ipixelgalaxy.com/lyssna-plugin/rewrite/v1.0/patch-notes.md";
 const lastBuildKey = "lyssna-lyrics.v1.last-public-build";
+const tweaksSetupKey = "lyssna-lyrics.v1.spotify-tweaks-setup";
+const spectrogramFormatKey = "lyssna-lyrics.v1.spectrogram-format";
+const spectrogramFormat = "detail";
 const integrationEvent = "lyssna-lyrics:integration-state";
 const checkInterval = 120_000;
 const ease = "cubic-bezier(0.23, 1, 0.32, 1)";
@@ -100,11 +107,13 @@ type DialogOptions = {
   content: ReactNode[];
   primary: Action;
   secondary: string;
+  secondaryAction?(): void;
+  hideLinks?: boolean;
   origin?: DOMRect;
   dismiss?(): void;
 };
 
-function ReleaseDialog({ title, content, primary, secondary, origin, dismiss, close }: DialogOptions & { close(): void }) {
+function ReleaseDialog({ title, content, primary, secondary, secondaryAction, hideLinks, origin, dismiss, close }: DialogOptions & { close(): void }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const primaryButton = useRef<HTMLButtonElement>(null);
   const titleId = useId();
@@ -158,16 +167,16 @@ function ReleaseDialog({ title, content, primary, secondary, origin, dismiss, cl
     </header>
     {content.map((node, index) => <div className="release-content" key={index} style={stagger(index + 1)}>{node}</div>)}
     <footer className="release-actions" style={stagger(content.length + 1)}>
-      <div className="release-actions-links">
+      {!hideLinks && <div className="release-actions-links">
         <a className="release-discord" href={discordInvite} aria-label="Join the Lyssna Discord" target="_blank" rel="noopener noreferrer">
           <span>Discord</span>
         </a>
         <a className="release-github" href={github} target="_blank" rel="noopener noreferrer">
           <Star size={15} aria-hidden="true" />Star us on GitHub
         </a>
-      </div>
+      </div>}
       <div className="release-actions-main">
-        <button type="button" className="release-quiet" onClick={() => leave(dismiss)}>{secondary}</button>
+        <button type="button" className="release-quiet" onClick={() => leave(secondaryAction ?? dismiss)}>{secondary}</button>
         <button ref={primaryButton} type="button" className="release-primary" onClick={() => leave(primary.run)}>{primary.label}</button>
       </div>
     </footer>
@@ -227,6 +236,7 @@ export function startReleaseNotices(host: Host, options: BuildOptions) {
   let root: Root | undefined;
   let noticeId = 0;
   let noticeOpen = false;
+  let startupPending = !options.hiddenVersion;
   let toastTimer: ReturnType<typeof setTimeout> | undefined;
   let checkTimer: ReturnType<typeof setTimeout> | undefined;
   let loadingTimer: ReturnType<typeof setTimeout> | undefined;
@@ -314,14 +324,76 @@ export function startReleaseNotices(host: Host, options: BuildOptions) {
   exposePreviews();
 
   if (!options.hiddenVersion) {
-    try {
+    const initialNotices = () => {
       const previous = localStorage.getItem(lastBuildKey);
-      if (previous !== version) {
+      const existing = !!previous || legacyPreferencesMigrated();
+      const finish = () => {
+        startupPending = false;
+        if (controller.signal.aborted || previous === version) return;
         localStorage.setItem(lastBuildKey, version);
-        if (previous && /^\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$/.test(previous)) showUpdatedDialog(previous, version);
-        else if (!previous) showFirstLoad();
+        if (!previous) showFirstLoad();
+        else if (/^\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$/.test(previous)) showUpdatedDialog(previous, version);
+      };
+      const spectrogramNotice = async () => {
+        if (localStorage.getItem(spectrogramFormatKey) === spectrogramFormat) {
+          finish();
+          return;
+        }
+        const bytes = await savedSpectrogramBytes().catch(() => undefined);
+        if (controller.signal.aborted) return;
+        const markSeen = () => localStorage.setItem(spectrogramFormatKey, spectrogramFormat);
+        if (bytes) {
+          show({
+            title: "Improved spectrograms",
+            content: [
+              <p>New captures show more detail and stay aligned across replays. Clear older spectrograms to regenerate them as you play.</p>,
+              <p className="release-small">This only clears saved spectrograms. Audio recordings and lyrics stay saved.</p>,
+            ],
+            hideLinks: true,
+            primary: { label: "Clear spectrograms", run: () => {
+              markSeen();
+              void stopCreatorCaptures().then(() => clearLiveSpectrograms())
+                .catch(() => host.notifyError("Couldn’t clear saved spectrograms. Try again in Manage Stored Data."))
+                .finally(finish);
+            } },
+            secondary: "Keep spectrograms",
+            dismiss: () => { markSeen(); finish(); },
+          });
+          return;
+        }
+        if (bytes === 0) markSeen();
+        finish();
+      };
+      const next = () => void spectrogramNotice().catch(() => { startupPending = false; });
+      if (localStorage.getItem(tweaksSetupKey)) {
+        next();
+        return;
       }
-    } catch { /* Version history is optional when settings storage is unavailable. */ }
+      if (!existing) applySpotifyTweaksPreset(false);
+      const choose = (keep: boolean) => {
+        try {
+          if (existing && keep) setSetting("enhanceSpotifyPerformance", true);
+          else applySpotifyTweaksPreset(keep);
+          localStorage.setItem(tweaksSetupKey, keep ? "yes" : "no");
+        } catch { host.notifyError("Couldn’t save Spotify Tweaks preferences."); }
+        next();
+      };
+      show({
+        title: "Spotify Tweaks",
+        content: [
+          existing
+            ? <p>Lyssna aims to improve your Spotify experience. The first version didn’t ask if you’d like Lyssna to clean up Spotify for you. Would you like Lyssna Lyrics to keep your Spotify Tweaks settings or disable them?</p>
+            : <p>Lyssna Lyrics has built-in tools to clean up Spotify’s interface and improve how it works. Would you like to use Lyssna’s suggested defaults?</p>,
+          <p className="release-small">You can change these settings later under Lyssna Settings → Spotify Tweaks. Enhance Spotify Performance stays on either way.</p>,
+        ],
+        hideLinks: true,
+        primary: { label: existing ? "Keep settings" : "Yes", run: () => choose(true) },
+        secondary: existing ? "Disable tweaks" : "No",
+        secondaryAction: () => choose(false),
+        dismiss: () => choose(existing),
+      });
+    };
+    try { initialNotices(); } catch { startupPending = false; }
 
     let announced: string | null = null;
     const latestVersion = options.latestVersion;
@@ -329,7 +401,7 @@ export function startReleaseNotices(host: Host, options: BuildOptions) {
       const check = async () => {
         try {
           const latest = await latestVersion(controller.signal);
-          if (latest && latest !== announced && !noticeOpen && !controller.signal.aborted && hasUpdate(latest, version)) {
+          if (latest && latest !== announced && !noticeOpen && !startupPending && !controller.signal.aborted && hasUpdate(latest, version)) {
             presentUpdate(latest, () => window.location.reload());
             announced = latest;
           }

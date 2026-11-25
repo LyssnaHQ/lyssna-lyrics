@@ -4,7 +4,8 @@ import { hasLyssnaSession, lyssnaAccountRequest } from "./lyssna-account";
 import { lyssnaRetryAt } from "./lyssna-api";
 import { readLyssnaLyrics } from "./lyssna-provider";
 import type { AppleOriginal } from "./lyssna/types";
-import { normalizeIsrc } from "./spotify-track-metadata";
+import { normalizeIsrc, spotifyTrackMetadata } from "./spotify-track-metadata";
+import { drawLocalArtwork, isLocalArtwork } from "./lyssna/local-artwork";
 import { localSongTags } from "./spotify-song";
 
 export const publishingRoles = ["uploader", "reviewer", "moderator", "admin"];
@@ -53,10 +54,13 @@ export async function submitLyssnaTtml(file: File, track: Track, host: Host, con
     original = verified?.apple_id === original.apple_id && verified.sha256 === original.sha256 ? verified : undefined;
   }
   const links = validIsrc ? [{ platform: "isrc", external_id: validIsrc }] : [];
+  const metadata = local ? undefined : await spotifyTrackMetadata(track.id).catch(() => undefined);
+  const extraIsrcs = [...new Set([validIsrc, ...(metadata?.isrcs ?? [])].filter((value): value is string => !!value))];
   if (!local) links.push({ platform: "spotify", external_id: track.id });
   const artists = track.artistLinks?.map(({ name }) => name).filter(Boolean);
   const response = await lyssnaAccountRequest(withActAs("/v1/submissions"), {
     ttml, links, title: track.title,
+    ...(extraIsrcs.length && { extra_isrcs: extraIsrcs }),
     ...(original && { apple_original: { apple_id: original.apple_id, sha256: original.sha256 } }),
     artists: artists?.length ? artists : [track.artists || track.artist].filter(Boolean),
     album: track.album || undefined,
@@ -84,5 +88,13 @@ export async function submitLyssnaTtml(file: File, track: Track, host: Host, con
     : status === "pending" ? `${result?.kind === "edit" ? "Your edit to " : ""}${title} is waiting for review on Lyssna.`
     : `${title} was submitted to Lyssna.`;
   const published = result?.song_id && result.head_revision_id ? { songId: result.song_id, revision: result.head_revision_id } : undefined;
+  if (local && isLocalArtwork(track.cover) && result?.song_id && /^[\da-f-]{36}$/i.test(result.song_id)) {
+    const songId = result.song_id;
+    void drawLocalArtwork(track.cover, document, 512, true).then(async (artwork) => {
+      if (!artwork) return;
+      const picture = await new Promise<Blob | null>(resolve => artwork.canvas.toBlob(resolve, "image/png"));
+      if (picture) await lyssnaAccountRequest(`/v1/songs/${songId}/cover`, picture, "PUT");
+    }).catch(() => {});
+  }
   return { approved: status === "approved", published, isrc: validIsrc, message };
 }

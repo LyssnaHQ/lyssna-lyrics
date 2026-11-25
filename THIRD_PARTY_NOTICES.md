@@ -34,6 +34,8 @@ The desktop Lyssna fonts are [Inter](https://github.com/rsms/inter) by the Inter
 
 ## Lyric romanization
 
-The WebAssembly romanizer uses [Lyssna's lyric-romanize crate](https://github.com/LyssLabs/lyssna-app/tree/25c40c8ff1f9bf32123e6bf5d4b190b3135e5abe/crates/lyric-romanize) under AGPL-3.0. The plugin includes its source and a browser adapter in `crates/lyric-romanize`. Run `npm run build:romanization` with Rust's `wasm32-unknown-unknown` target to regenerate the downloadable engine.
+The WebAssembly romanizer uses [Lyssna's lyric-romanize crate](https://github.com/LyssLabs/lyssna-app/tree/679211d7b8b3f67649270df13653c232318f0598/crates/lyric-romanize) under AGPL-3.0. The plugin includes its source and a browser adapter in `crates/lyric-romanize`. Run `npm run build:romanization` with Rust's `wasm32-unknown-unknown` target to regenerate the downloadable engine.
 
 The [Lindera IPADIC dictionary](https://github.com/lindera/mecab-ipadic) is embedded in the engine. Its copyright and license are included in `crates/lyric-romanize/licenses` alongside the Rust libraries' notices.
+
+The lyrics view uses [Lyssna's lyric-engine crate and its WebAssembly bindings](https://github.com/LyssLabs/lyssna-app/tree/679211d7b8b3f67649270df13653c232318f0598/crates/lyric-engine) under AGPL-3.0. The plugin includes the engine source in `crates/lyric-engine`. Lyssna Desktop's `scripts/build-lyric-engine.mjs` generates the bindings.

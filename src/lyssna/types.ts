@@ -13,6 +13,7 @@ export interface Line {
   text: string;
   translation: string;
   romanization: string;
+  romanization_words?: Word[];
   /** Romanized reading shown under the line, timed like the line. */
   reading?: Line;
   words: Word[];

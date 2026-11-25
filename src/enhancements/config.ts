@@ -105,6 +105,14 @@ export function saveEnhancementPreferences(patch: Partial<EnhancementSettings>) 
   for (const key of changed) window.dispatchEvent(new CustomEvent(SETTINGS_CHANGED_EVENT, { detail: { key } }));
 }
 
+export function applySpotifyTweaksPreset(useDefaults: boolean) {
+  const toggles = Object.entries(defaults).filter(([, value]) => typeof value === "boolean");
+  saveEnhancementPreferences({
+    ...Object.fromEntries(toggles.map(([key, value]) => [key, useDefaults && value])),
+    enhanceSpotifyPerformance: true,
+  });
+}
+
 export function subscribeSettings(update: () => void) {
   window.addEventListener(SETTINGS_CHANGED_EVENT, update);
   return () => window.removeEventListener(SETTINGS_CHANGED_EVENT, update);

@@ -28,7 +28,7 @@ pub enum SongScript {
     Greek,
 }
 
-fn is_space(c: char) -> bool {
+pub(crate) fn is_space(c: char) -> bool {
     js_space(c)
 }
 
@@ -754,6 +754,9 @@ pub struct Line {
     pub text: String,
     #[serde(default)]
     pub romanization: String,
+    /// The supplied romanization timed piece by piece; a word may hold several.
+    #[serde(default)]
+    pub romanization_words: Vec<Word>,
     #[serde(default)]
     pub words: Vec<Word>,
 }
@@ -904,6 +907,28 @@ fn supplied_words(line: &Line, text: &str) -> Vec<RomanizedWord> {
 }
 
 fn romanize_line(line: &Line, readers: Readers) -> Option<RomanizedLine> {
+    // Readings timed syllable by syllable keep each syllable's own timing.
+    if !line.romanization_words.is_empty() {
+        let words: Vec<RomanizedWord> = line
+            .romanization_words
+            .iter()
+            .map(|piece| RomanizedWord {
+                text: piece.text.clone(),
+                start_ms: piece.start_ms,
+                end_ms: piece.end_ms,
+                from: line
+                    .words
+                    .iter()
+                    .rposition(|word| word.start_ms <= piece.start_ms + 1.0)
+                    .or((!line.words.is_empty()).then_some(0)),
+                estimated: false,
+            })
+            .collect();
+        return Some(RomanizedLine {
+            text: words.iter().map(|word| word.text.as_str()).collect(),
+            words,
+        });
+    }
     let authored = line.romanization.trim();
     if !authored.is_empty() {
         if let Some(syllables) = per_syllable(line) {

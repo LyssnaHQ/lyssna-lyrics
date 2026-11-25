@@ -61,6 +61,11 @@ import {
   defaultMetadata,
   withSongwriters,
   applySections,
+  addMissing,
+  bracketsToBackground,
+  fixFromGenius,
+  geniusChanges,
+  type GeniusChanges,
   breakLine,
   clampCursor,
   clearAll,
@@ -89,6 +94,12 @@ import {
   applyRomanized,
   nextCursor,
   romanizeRequest,
+  readingsFrom,
+  romanParts,
+  romanPieces,
+  sameReadings,
+  splitReadings,
+  timingCursor,
   setUnitRoman,
   hasWordRoman,
   parseText,
@@ -115,6 +126,8 @@ import {
   lineVoice,
   sectionVoices,
   setLineVoice,
+  setSection,
+  setSectionSinger,
   setUnitVoice,
   unitVoice,
   unknownSections,
@@ -168,12 +181,24 @@ import {
   type MenuAction,
   type SplitChoice,
   SplitDialog,
+  ReadingSplitDialog,
+  GeniusReview,
   ReplaceDialog,
   type ReplaceChoice,
   WordMenu,
 } from "./ttml-word-menu";
 
 const MIN_SPEED = 0.25;
+const IGNORED_GENIUS = "lyssna.ttml-ignored-genius";
+
+async function getGeniusText(title: string, artist: string) {
+  const query = new URLSearchParams({ title, artist });
+  const response = await fetch(`https://lyssna.org/genius?${query}`, { credentials: "omit", signal: AbortSignal.timeout(12_000) });
+  if (!response.ok) throw new Error("Genius lyrics unavailable");
+  const { text } = await response.json() as { text?: unknown };
+  if (typeof text !== "string" || !text.trim()) throw new Error("Genius lyrics missing");
+  return text;
+}
 const MAX_SPEED = 1.5;
 const clampSpeed = (value: number) =>
   Math.min(MAX_SPEED, Math.max(MIN_SPEED, Math.round(value * 20) / 20));
@@ -296,6 +321,7 @@ export function TtmlCreator({
   onClose,
   reviewSelection,
   onCloseReview,
+  instrumentalAction,
   localIsrc,
   draftPreview = false,
 }: {
@@ -316,6 +342,7 @@ export function TtmlCreator({
   barSlot?: HTMLElement | null;
   playbar?: CreatorPlaybarSlots;
   onClose?: () => void;
+  instrumentalAction?: ReactNode;
   reviewSelection?: ReviewSelection;
   onCloseReview?: () => void;
   localIsrc?: string;
@@ -544,6 +571,16 @@ export function TtmlCreator({
   const [textMode, setTextMode] = useState(false);
   const [geniusOpen, setGeniusOpen] = useState(false);
   const [fetchingGenius, setFetchingGenius] = useState(false);
+  const [geniusReview, setGeniusReview] = useState<{ uri: string; before: CreatorLine[]; applied: CreatorLine[]; text: string }>();
+  const reviewingGenius = geniusReview?.uri === track?.uri ? geniusReview : undefined;
+  const [ignoredGenius, setIgnoredGenius] = useState<string[]>(() => {
+    try {
+      const stored: unknown = JSON.parse(readStorage(IGNORED_GENIUS) ?? "[]");
+      return Array.isArray(stored) ? stored.filter((item): item is string => typeof item === "string") : [];
+    } catch { return []; }
+  });
+  const reviewedChanges = useMemo(() => reviewingGenius && geniusChanges(reviewingGenius.before, lines, reviewingGenius.text), [lines, reviewingGenius]);
+  const ignoreKey = (difference: GeniusChanges["differs"][number]) => JSON.stringify([track?.uri, difference.text, difference.genius]);
   const openGenius = () => {
     if (!track) return;
     const query = new URLSearchParams({ q: [track.name, ...track.artists.map(({ name }) => name)].join(" ") });
@@ -555,26 +592,21 @@ export function TtmlCreator({
     if (!track || fetchingGenius) return;
     const uri = track.uri;
     const previousText = current.current.text;
-    const query = new URLSearchParams({ title: track.name, artist: track.artists[0]?.name ?? "" });
     setGeniusOpen(false);
     setFetchingGenius(true);
     try {
-      const response = await fetch(`https://lyssna.org/genius?${query}`, {
-        credentials: "omit", signal: AbortSignal.timeout(12_000),
-      });
-      if (!response.ok) throw new Error("Genius lyrics unavailable");
-      const { text: found } = await response.json() as { text?: unknown };
-      if (typeof found !== "string" || !found.trim()) throw new Error("Genius lyrics missing");
+      const found = await getGeniusText(track.name, track.artists[0]?.name ?? "");
       if (current.current.uri !== uri) return;
       if (sectionsOnly) {
-        const tagged = applySections(current.current.lines, found);
+        const before = current.current.lines;
+        const tagged = applySections(before, found);
         if (!tagged) {
           notify("Genius has no sections that match these lines.", true);
           return;
         }
-        setLines(tagged);
-        const count = tagged.filter(line => line.part).length;
-        notify(`Added ${count} ${count === 1 ? "section" : "sections"} from Genius.`);
+        const applied = joinHyphenated(tagged);
+        setLines(applied);
+        setGeniusReview({ uri, before, applied, text: found });
       } else {
         if (current.current.text !== previousText) {
           notify("Your lyrics changed while Genius was loading. Fetch again to replace the text.", true);
@@ -582,7 +614,7 @@ export function TtmlCreator({
         }
         editedFor.current = uri;
         setAppleOriginal(undefined);
-        setText(geniusBackgrounds(found));
+        setText(geniusBackgrounds(found.replace(/[\uE000-\uE003]/g, "")));
         setTextMode(true);
       }
     } catch {
@@ -798,6 +830,8 @@ export function TtmlCreator({
     line?: boolean;
   } | null>(null);
   const [splitting, setSplitting] = useState<Cursor | null>(null);
+  const [splittingReading, setSplittingReading] = useState<Cursor | null>(null);
+  const [sectionEdit, setSectionEdit] = useState<{ line: number; part: string; singer: string }>();
   const [replacing, setReplacing] = useState<Cursor | null>(null);
   const openMenu = (event: ReactMouseEvent, at: Cursor) => {
     event.preventDefault();
@@ -939,7 +973,12 @@ export function TtmlCreator({
     const source = current.current.uri;
     const request = romanizeRequest(lines);
     setRomanNote("Romanizing…");
-    const result = await romanizeLyrics(request, state.settings.romaji_as_written).catch(() => null);
+    const [result, genius] = await Promise.all([
+      romanizeLyrics(request, state.settings.romaji_as_written).catch(() => null),
+      track && request.lines.some(line => /[^\p{Script=Latin}\p{Number}\p{Punctuation}\s]/u.test(line.text))
+        ? getGeniusText(`${track.name} (Romanized)`, "Genius Romanizations").catch(() => "")
+        : "",
+    ]);
     if (source !== current.current.uri) {
       setRomanNote("");
       return;
@@ -961,7 +1000,8 @@ export function TtmlCreator({
         : "Nothing to romanize: these lyrics are already in Latin letters.",
     );
     if (!found) return;
-    setLines((current) => applyRomanized(current, request, result));
+    const reading = genius ? readingsFrom(request, result, genius.replace(/[\uE000-\uE003]/g, "")).lyrics : result;
+    setLines((current) => applyRomanized(current, request, reading));
   };
   const [drag, setDrag] = useState<Drag | null>(null);
   const [drop, setDrop] = useState("");
@@ -1106,6 +1146,10 @@ export function TtmlCreator({
         }] : []),
       ],
       ...voiceGroup(index),
+      [{
+        label: line.part ? "Edit section" : "Start section here",
+        run: () => setSectionEdit({ line: index, part: line.part ?? "", singer: line.singer ?? "" }),
+      }, ...(line.part ? [{ label: "Remove section", run: () => setLines(setSection(lines, index)) }] : [])],
       [
         {
           label: "Play from this line",
@@ -1138,6 +1182,7 @@ export function TtmlCreator({
       ...group.filter((each) => each.line === at.line).map((each) => each.unit),
     );
     return [
+      ...(unit.roman ? [[{ label: "Split reading", run: () => setSplittingReading(at) }]] : []),
       [
         { label: "Split word…", run: () => setSplitting(at) },
         {
@@ -1263,6 +1308,40 @@ export function TtmlCreator({
     setCursor({ line: 0, unit: 0 });
   };
   const [resettingSource, setResettingSource] = useState(false);
+  const [clearArmed, setClearArmed] = useState(false);
+  useEffect(() => {
+    if (!clearArmed) return;
+    const timer = window.setTimeout(() => setClearArmed(false), 3000);
+    return () => window.clearTimeout(timer);
+  }, [clearArmed, window]);
+  useEffect(() => { setClearArmed(false); setSectionEdit(undefined); setSplittingReading(null); }, [track?.uri]);
+  const clearDraft = () => {
+    if (!track || !here) return;
+    if (!clearArmed) {
+      setClearArmed(true);
+      return;
+    }
+    history.current.past = [...history.current.past.slice(-HISTORY_LIMIT), {
+      lines, draft: { text, metadata, appleOriginal },
+    }];
+    history.current.future = [];
+    editedFor.current = track.uri;
+    replaceLines([]);
+    setText("");
+    setMetadata(undefined);
+    setAppleOriginal(undefined);
+    setCursor({ line: 0, unit: 0 });
+    setClearArmed(false);
+    notify("Draft cleared. Earlier saves are still under Saves.");
+  };
+  const draftActions = <>
+    {instrumentalAction}
+    {!textMode && <button type="button" disabled={!lines.length} onClick={() => restructure(bracketsToBackground(lines))}>Brackets to background</button>}
+    <button type="button" className={clearArmed ? "danger" : undefined} onClick={clearDraft}
+      disabled={!here || (!lines.length && !text.trim() && !metadata)}>
+      <Trash2 size={15} aria-hidden="true" />{clearArmed ? "Click again to clear" : "Clear draft"}
+    </button>
+  </>;
   const resetToSource = async () => {
     if (!track || !here || resettingSource) return;
     const draft = current.current;
@@ -1573,11 +1652,16 @@ export function TtmlCreator({
           const start = lines[to.line]?.units[to.unit]?.start;
           if (start !== undefined) seek(start);
         } else if (event.repeat && timing) handled = true;
-        else if (action === "start")
-          setLines(markStart(lines, cursor, tap(event.timeStamp)));
+        else if (action === "start") {
+          const time = tap(event.timeStamp);
+          const at = timingCursor(lines, cursor, time);
+          setLines(markStart(lines, at, time));
+          if (at !== cursor) setCursor(at);
+        }
         else if (action === "next" || action === "end") {
           const mark = action === "next" ? markNext : markEnd;
-          const result = mark(lines, cursor, tap(event.timeStamp));
+          const time = tap(event.timeStamp);
+          const result = mark(lines, timingCursor(lines, cursor, time), time);
           if (result.lines !== lines) {
             scrolledAt.current = Date.now();
             revealTimingWord.current = true;
@@ -1773,6 +1857,9 @@ export function TtmlCreator({
     inline !== null ||
     menu !== null ||
     splitting !== null ||
+    splittingReading !== null ||
+    !!sectionEdit ||
+    !!reviewingGenius ||
     replacing !== null ||
     picked.size > 0 ||
     group.length > 0 ||
@@ -2371,6 +2458,7 @@ export function TtmlCreator({
           />
           <div className="ttml-write-actions">
             {previewToggle}
+            {draftActions}
             {(lines.length > 0 || !!text.trim()) && (
               <>
                 <button
@@ -2516,6 +2604,7 @@ export function TtmlCreator({
                   <Wand2 size={15} />
                   Start from current lyrics
                 </button>
+                {draftActions}
                 <button onClick={openText}>
                   <Type size={15} />
                   Edit as text
@@ -2676,6 +2765,7 @@ export function TtmlCreator({
             }}
           >
             {lines.map((line, lineIndex) => {
+              const hasSplitReadings = !syncRoman && line.units.some(unit => romanParts(unit).length > 1);
               const adder = (
                 <input
                   className="ttml-chip-add"
@@ -2722,7 +2812,9 @@ export function TtmlCreator({
               );
               return (
                 <Fragment key={lineIndex}>
-                {line.part && <p className="ttml-part">{line.singer ? `${line.part} - ${line.singer}` : line.part}</p>}
+                {line.part && <p className="ttml-part" onContextMenu={(event) => openLineMenu(event, lineIndex)}>
+                  {line.singer ? `${line.part} - ${line.singer}` : line.part}
+                </p>}
                 <div
                   data-line={lineIndex}
                   tabIndex={-1}
@@ -3033,6 +3125,19 @@ export function TtmlCreator({
                         const selected =
                           cursor.line === lineIndex &&
                           cursor.unit === unitIndex;
+                        const parts = romanParts(unit);
+                        const timings = parts.length > 1 ? romanPieces(unit) : [];
+                        const reading = parts.length > 1 ? <span className={`ttml-reading-pieces${syncRoman ? " large" : ""}`}>
+                          {parts.map((part, index) => {
+                            const span = timings[index];
+                            const active = (!!span && position >= span.start && position < span.end) ||
+                              (selected && (cursor.part ?? 0) === index);
+                            return <span key={index} className={active ? "active" : undefined} onClick={(event) => {
+                              event.stopPropagation();
+                              setCursor({ ...at, part: index });
+                            }}>{part}</span>;
+                          })}
+                        </span> : undefined;
                         const live =
                           (liveWord?.line === lineIndex &&
                             liveWord.unit === unitIndex) ||
@@ -3131,7 +3236,9 @@ export function TtmlCreator({
                             onDoubleClick={() => {
                               if (!isPlaying) {
                                 setCursor(at);
-                                setInline(at);
+                                if (syncRoman && unit.roman) {
+                                  window.requestAnimationFrame(() => root.querySelector<HTMLInputElement>('[aria-label="Reading of the selected word"]')?.focus());
+                                } else setInline(at);
                                 return;
                               }
                               if (unit.start === undefined) return;
@@ -3147,8 +3254,9 @@ export function TtmlCreator({
                                 syncRoman && unit.roman ? unit.text : undefined
                               }
                             >
-                              {syncRoman && unit.roman ? unit.roman : unit.text}
+                              {syncRoman ? reading ?? parts[0] ?? unit.text : unit.text}
                             </span>
+                            {hasSplitReadings && (reading ?? <span className="ttml-reading-pieces" aria-hidden="true" />)}
                             <TimePill ms={unit.end} end />
                           </button>
                         );
@@ -3226,6 +3334,50 @@ export function TtmlCreator({
           onClose={() => setMenu(null)}
         />
       )}
+      {reviewingGenius && reviewedChanges && <GeniusReview
+        changes={{ ...reviewedChanges, differs: reviewedChanges.differs.filter(item => !ignoredGenius.includes(ignoreKey(item))) }}
+        onIgnore={(item) => {
+          const next = [...ignoredGenius, ignoreKey(item)].slice(-500);
+          setIgnoredGenius(next);
+          writeStorage(IGNORED_GENIUS, JSON.stringify(next));
+        }}
+        onGo={(line) => { setCursor({ line, unit: 0 }); centre(line); }}
+        onKeep={() => { setGeniusReview(undefined); scrolledAt.current = Date.now(); }}
+        canUndo={lines === reviewingGenius.applied}
+        onUndo={() => { undo(); setGeniusReview(undefined); scrolledAt.current = Date.now(); }}
+        onMakeLeads={(chosen, background) => setLines(lines.map((line, index) => chosen.includes(index) ? { ...line, background } : line))}
+        onFix={(at, genius) => {
+          const fixed = fixFromGenius(lines[at], genius);
+          if (fixed) setLines(lines.map((line, index) => index === at ? fixed : line));
+        }}
+        onAddMissing={() => setLines(addMissing(lines, reviewedChanges.missing))}
+      />}
+      {splittingReading && lines[splittingReading.line]?.units[splittingReading.unit]?.roman && <ReadingSplitDialog
+        word={lines[splittingReading.line].units[splittingReading.unit].text}
+        reading={lines[splittingReading.line].units[splittingReading.unit].roman!}
+        matches={sameReadings(lines, splittingReading)}
+        onClose={() => setSplittingReading(null)}
+        onConfirm={(reading, everywhere) => {
+          const updated = setUnitRoman(lines, splittingReading, reading);
+          setLines(everywhere ? splitReadings(updated, reading) : updated);
+          setSplittingReading(null);
+        }}
+      />}
+      {sectionEdit && <div className="ttml-dialog-backdrop" onClick={() => setSectionEdit(undefined)}>
+        <form className="ttml-dialog" aria-label="Edit song section" onClick={(event) => event.stopPropagation()} onSubmit={(event) => {
+          event.preventDefault();
+          setLines(setSectionSinger(setSection(lines, sectionEdit.line, sectionEdit.part), sectionEdit.line, sectionEdit.singer));
+          setSectionEdit(undefined);
+        }}>
+          <h3>{lines[sectionEdit.line]?.part ? "Edit section" : "Start section here"}</h3>
+          <label className="ttml-field">Section name<input required value={sectionEdit.part}
+            onChange={(event) => setSectionEdit({ ...sectionEdit, part: event.currentTarget.value })} /></label>
+          <label className="ttml-field">Singers<input value={sectionEdit.singer}
+            onChange={(event) => setSectionEdit({ ...sectionEdit, singer: event.currentTarget.value })} /></label>
+          <div className="ttml-dialog-row end"><button type="button" onClick={() => setSectionEdit(undefined)}>Cancel</button>
+            <button type="submit" className="primary">Save section</button></div>
+        </form>
+      </div>}
       {splitting && lines[splitting.line]?.units[splitting.unit] && (
         <SplitDialog
           word={lines[splitting.line].units[splitting.unit].text}

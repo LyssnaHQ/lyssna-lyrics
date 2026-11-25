@@ -314,7 +314,7 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
       </SettingRow>,
     ]],
     ["Advanced", "Lyssna Account", [
-      <AccountSettings key="lyssna-account" ready={options.lyssnaSignIn === true} />,
+      <AccountSettings key="lyssna-account" ready={options.lyssnaSignIn === true} host={host} />,
     ]],
     ["Advanced", "Build Channel", [
       <SettingRow key="channel" label="Current build" help={`${activeBuild}${version ? ` · v${version}` : ""}`} keywords="build channel version canary stable beta">

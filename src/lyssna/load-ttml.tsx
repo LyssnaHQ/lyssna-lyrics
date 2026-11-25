@@ -10,6 +10,7 @@ import { publishingRoles } from "../lyssna-submission";
 import { importError, type BulkFile, type BulkLyric } from "../ttml-import";
 import type { TransferLyrics } from "./transfer-format";
 import { spotifySongKey } from "../spotify-song";
+import { lyricSources, setSongLyricSource, songLyricSource, sourceIds } from "../lyric-sources";
 import {
   BookOpen,
   Files,
@@ -138,6 +139,7 @@ function RecordingMatch({ track, duration, isrc, host, busy, act }: {
  */
 export function LoadTtml({
   song,
+  track,
   localRecording,
   reviewer,
   onReviewer,
@@ -161,6 +163,7 @@ export function LoadTtml({
   attachSong: (file: BulkFile, songs: TtmlTrack[]) => Promise<void>;
   onSubmit: (file: File) => Promise<void>;
   song?: string;
+  track?: Track;
   localRecording?: { track: Track; duration: number; host: Host; isrc?: string };
   reviewer: Settings["ttml_reviewer"];
   onReviewer: (mode: Settings["ttml_reviewer"]) => void;
@@ -300,6 +303,19 @@ export function LoadTtml({
                 <option value="always">Always Apply</option>
               </select>
             </label>
+            {track && <label className="load-ttml-reviewer">
+              <span><strong>Lyrics source for this song</strong><small>Try this source first, then use your usual source order.</small></span>
+              <select className="settings-select" aria-label="Lyrics source for this song" defaultValue={songLyricSource(track) ?? ""}
+                key={track.id} disabled={busy} onChange={(event) => {
+                  const source = sourceIds.find(id => id === event.currentTarget.value);
+                  try { setSongLyricSource(track, source); }
+                  catch { setError("Couldn’t save this song’s lyrics source."); }
+                }}>
+                <option value="">Your source order</option>
+                {sourceIds.filter(id => !track.local || (id !== "spotify" && id !== "spicy")).map(id =>
+                  <option key={id} value={id}>{lyricSources[id].name}</option>)}
+              </select>
+            </label>}
             <input
               ref={input}
               type="file"

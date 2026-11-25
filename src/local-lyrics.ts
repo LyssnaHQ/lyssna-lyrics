@@ -56,6 +56,50 @@ function timestamp(value: string | null): number | undefined {
 
 const attribute = (element: Element, name: string) => Array.from(element.attributes).find((attribute) => attribute.localName === name)?.value;
 const role = (element: Element) => attribute(element, "role") ?? "";
+const lyssnaNamespace = "https://lyssna.org/ns/ttml";
+
+function readingWords(element: Element): Word[] {
+  const words: Word[] = [];
+  let space = false;
+  for (const node of element.childNodes) {
+    if (!(node instanceof Element)) {
+      space ||= /\s/.test(node.textContent ?? "");
+      continue;
+    }
+    const start = timestamp(node.getAttribute("begin"));
+    const end = timestamp(node.getAttribute("end"));
+    const text = node.textContent ?? "";
+    if (start === undefined || end === undefined || end < start || !text.trim()) continue;
+    const parts = node.getAttributeNS(lyssnaNamespace, "pieces")?.split("|").filter(Boolean);
+    const starts = node.getAttributeNS(lyssnaNamespace, "starts")?.trim().split(/\s+/).map(timestamp);
+    const edges = [start, ...(starts ?? []), end];
+    const prefix = space && words.length && !/^\s/.test(text) ? " " : "";
+    if (parts && edges.length === parts.length + 1 &&
+      edges.every((edge, index) => edge !== undefined && (!index || edge >= edges[index - 1]!))) {
+      parts.forEach((part, index) => words.push({
+        text: index === 0 ? prefix + part : part, start_ms: edges[index]!, end_ms: edges[index + 1]!,
+      }));
+    } else words.push({ text: prefix + text, start_ms: start, end_ms: end });
+    space = /\s$/.test(text);
+  }
+  return words;
+}
+
+function timedReadings(words: Word[], pieces: Word[]) {
+  if (!pieces.length) return;
+  const covered = new Set<number>();
+  for (const piece of pieces) {
+    const index = words.findIndex(word => piece.start_ms + 1 >= word.start_ms &&
+      piece.start_ms < Math.max(word.end_ms, word.start_ms + 1));
+    if (index < 0) return;
+    covered.add(index);
+  }
+  const missing = words.filter((_, index) => !covered.has(index));
+  if (missing.some(word => /[^\x00-\x7f]/.test(word.text.replace(/[^\p{L}]/gu, "")))) return;
+  const sorted = [...pieces, ...missing].sort((a, b) => a.start_ms - b.start_ms);
+  sorted[0] = { ...sorted[0], text: sorted[0].text.trimStart() };
+  return sorted;
+}
 
 function backgroundWrapper(text: string) {
   const pair = ["()", "[]", "（）", "［］"].find(([first, last]) => text.startsWith(first) && text.endsWith(last));
@@ -73,10 +117,12 @@ function backgroundWrapper(text: string) {
 }
 
 function lyricLine(element: Element, start: number, end: number, background: boolean, opposite: boolean,
-  voiceOf: (agent?: string) => Word["sung_by"], agent?: string): Line {
+  voiceOf: (agent?: string, name?: string | null) => Word["sung_by"], agent?: string, inheritedVoice?: string | null): Line {
   let text = "";
   let translation = "";
   let romanization = "";
+  let reading: Word[] | undefined;
+  const lineVoice = element.getAttributeNS(lyssnaNamespace, "voice") ?? inheritedVoice;
   const words: Word[] = [];
   function collect(node: Node) {
     if (node.nodeType === Node.TEXT_NODE) {
@@ -91,6 +137,7 @@ function lyricLine(element: Element, start: number, end: number, background: boo
       }
       if (annotation.includes("roman") || annotation.includes("transliteration")) {
         romanization = node.textContent?.trim() ?? "";
+        reading = readingWords(node);
         return;
       }
       const begin = timestamp(node.getAttribute("begin"));
@@ -98,7 +145,8 @@ function lyricLine(element: Element, start: number, end: number, background: boo
         const value = node.textContent ?? "";
         text += value;
         const wordAgent = attribute(node, "agent");
-        const sung_by = wordAgent && wordAgent !== agent ? voiceOf(wordAgent) : undefined;
+        const wordVoice = node.getAttributeNS(lyssnaNamespace, "voice");
+        const sung_by = wordVoice || (wordAgent && wordAgent !== agent) ? voiceOf(wordAgent, wordVoice) : undefined;
         words.push({ text: value, start_ms: begin, end_ms: Math.max(begin, timestamp(node.getAttribute("end")) ?? end),
           ...(sung_by && { sung_by }) });
       } else if (node.localName === "br") {
@@ -120,12 +168,13 @@ function lyricLine(element: Element, start: number, end: number, background: boo
     }
     if (backgroundWrapper(romanization)) romanization = romanization.slice(1, -1).trim();
   }
-  const voice = voiceOf(agent);
+  const voice = voiceOf(agent, lineVoice);
   const startAt = words[0]?.start_ms ?? start;
   return {
     text, words: background ? words.filter((word) => word.text.trim()) : words,
     start_ms: startAt, end_ms: Math.max(startAt, end, words.at(-1)?.end_ms ?? 0),
     background, opposite, translation, romanization,
+    ...(reading?.length && { romanization_words: timedReadings(words, reading) }),
     ...(voice && voice !== "first" && { sung_by: voice }),
   };
 }
@@ -148,13 +197,14 @@ export function parseLocalTtml(text: string, recordingDuration?: number): Lyrics
     attribute(agent, "id"), agent.getElementsByTagNameNS("*", "name")[0]?.textContent?.trim(),
   ]));
   const leadId = lead ? attribute(lead, "id") ?? "v1" : "v1";
-  const annotations = new Map<string, { translation?: string; romanization?: string }>();
+  const annotations = new Map<string, { translation?: string; romanization?: string; reading?: Word[] }>();
   for (const entry of Array.from(xml.getElementsByTagNameNS("*", "text"))) {
     const key = attribute(entry, "for");
     const kind = entry.parentElement?.localName;
     if (!key || (kind !== "translation" && kind !== "transliteration")) continue;
     const data = annotations.get(key) ?? {};
     data[kind === "translation" ? "translation" : "romanization"] = entry.textContent?.trim() ?? "";
+    if (kind === "transliteration") data.reading = readingWords(entry);
     annotations.set(key, data);
   }
   let previousSection: Element | null = null;
@@ -169,20 +219,22 @@ export function parseLocalTtml(text: string, recordingDuration?: number): Lyrics
     const section = element.closest("div");
     const singer = section && attribute(section, "singer");
     const voices = singer ? voicesOf(singer) : [];
-    const voiceOf = (id?: string): Word["sung_by"] => {
-      if (!id || voices.length < 2) return;
-      const index = id === "v1000" ? voices.findIndex(voice => voice.includes(" & "))
-        : voices.findIndex(voice => voice.toLowerCase() === names.get(id)?.toLowerCase());
+    const voiceOf = (id?: string, name?: string | null): Word["sung_by"] => {
+      if (voices.length < 2) return;
+      const index = !name && id === "v1000" ? voices.findIndex(voice => voice.includes(" & "))
+        : voices.findIndex(voice => voice.toLowerCase() === (name ?? names.get(id))?.toLowerCase());
       return (["first", "second", "third"] as const)[index];
     };
     const main = lyricLine(element, start, end, role(element) === "x-bg", opposite, voiceOf, agent);
     const data = annotations.get(attribute(element, "key") ?? "");
     main.translation ||= data?.translation ?? "";
     main.romanization ||= data?.romanization ?? "";
+    if (!main.romanization_words?.length && data?.reading?.length) main.romanization_words = timedReadings(main.words, data.reading);
     const background = Array.from(element.getElementsByTagNameNS("*", "span"))
       .filter((vocal) => role(vocal) === "x-bg")
       .map((vocal) => lyricLine(vocal, timestamp(vocal.getAttribute("begin")) ?? start,
-        timestamp(vocal.getAttribute("end")) ?? end, true, opposite, voiceOf, attribute(vocal, "agent") ?? agent));
+        timestamp(vocal.getAttribute("end")) ?? end, true, opposite, voiceOf, attribute(vocal, "agent") ?? agent,
+        element.getAttributeNS(lyssnaNamespace, "voice")));
     const result = [main, ...background].filter((line) => line.text);
     const part = section && attribute(section, "songPart");
     if (result.length && section !== previousSection) {

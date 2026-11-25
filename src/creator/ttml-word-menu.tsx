@@ -2,6 +2,7 @@ import { useCreatorEnvironment } from "./environment";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Check, Info } from "lucide-react";
 import { type LearnedSplits, learnFrom, suggestSplit } from "./ttml-syllables";
+import { type GeniusChanges, romajiSyllables } from "./ttml-creator-model";
 
 export interface MenuAction {
   label: string;
@@ -343,6 +344,336 @@ export function SplitDialog({
             Confirm
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/** Splits a word's reading into pieces that are timed one by one. */
+export function ReadingSplitDialog({
+  word,
+  reading,
+  matches = 0,
+  onConfirm,
+  onClose,
+}: {
+  word: string;
+  reading: string;
+  /** Other words with the same reading. */
+  matches?: number;
+  onConfirm: (reading: string, everywhere: boolean) => void;
+  onClose: () => void;
+}) {
+  const [everywhere, setEverywhere] = useState(true);
+  const chars = Array.from(reading.replace(/\|/g, ""));
+  const [offsets, setOffsets] = useState<Set<number>>(() => {
+    const given = new Set<number>();
+    let at = 0;
+    for (const char of reading) {
+      if (char === "|") given.add(at);
+      else at++;
+    }
+    return given;
+  });
+  const suggestion = romajiSyllables(chars.join(""));
+  const toggle = (at: number) =>
+    setOffsets((current) => {
+      const next = new Set(current);
+      if (!next.delete(at)) next.add(at);
+      return next;
+    });
+  const confirm = () =>
+    onConfirm(
+      chars.map((char, index) => (offsets.has(index) ? `|${char}` : char)).join(""),
+      matches > 0 && everywhere,
+    );
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.stopPropagation();
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [onClose]);
+
+  return (
+    <div className="ttml-dialog-backdrop" onClick={onClose}>
+      <div
+        className="ttml-dialog"
+        role="dialog"
+        aria-label="Split reading"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <h3>Split reading of {word}</h3>
+        <p className="ttml-dialog-note">
+          <Info size={16} />
+          Each piece is timed on its own while syncing; the word keeps one
+          start and end. Untimed pieces share the word's time evenly.
+        </p>
+        <div className="ttml-splitter" aria-label="Split points">
+          {chars.map((char, index) => (
+            <span key={index} className="ttml-split-char">
+              {index > 0 && (
+                <button
+                  className={`ttml-split-gap${offsets.has(index) ? " on" : ""}`}
+                  aria-label={`Split before letter ${index + 1}`}
+                  aria-pressed={offsets.has(index)}
+                  onClick={() => toggle(index)}
+                />
+              )}
+              {char}
+            </span>
+          ))}
+        </div>
+        <div className="ttml-dialog-row end">
+          <button
+            disabled={!suggestion.length}
+            onClick={() => setOffsets(new Set(suggestion))}
+            title="Split where each syllable starts"
+          >
+            Syllable split
+          </button>
+          <button
+            disabled={!offsets.size}
+            onClick={() => setOffsets(new Set())}
+          >
+            Join all
+          </button>
+        </div>
+        {matches > 0 && (
+          <label className="ttml-check">
+            <input
+              type="checkbox"
+              checked={everywhere}
+              onChange={(event) => setEverywhere(event.target.checked)}
+            />
+            Split the {matches} other {matches === 1 ? "word" : "words"} read "
+            {chars.join("")}" the same way
+          </label>
+        )}
+        <div className="ttml-dialog-row end">
+          <button onClick={onClose}>Cancel</button>
+          <button className="primary" onClick={confirm}>
+            Confirm
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * What Sections from Genius changed, beside the draft so each change can
+ * be looked at before keeping it.
+ */
+export function GeniusReview({
+  changes,
+  onGo,
+  onKeep,
+  onUndo,
+  canUndo = true,
+  onMakeLeads,
+  onAddMissing,
+  onFix,
+  onIgnore,
+}: {
+  changes: GeniusChanges;
+  onGo: (line: number) => void;
+  onKeep: () => void;
+  onUndo: () => void;
+  /** Off once the draft was edited by hand, which Undo would discard. */
+  canUndo?: boolean;
+  /** Makes these lines background vocals, or lead lines. */
+  onMakeLeads: (lines: number[], background: boolean) => void;
+  onAddMissing: () => void;
+  /** Puts in characters a line lacks against Genius. */
+  onFix: (line: number, genius: string) => void;
+  /** Stops listing a difference, where Genius has it wrong. */
+  onIgnore: (each: GeniusChanges["differs"][number]) => void;
+}) {
+  const go = (line: number, label: string, key: string | number) => (
+    <button
+      key={key}
+      className="ttml-review-chip"
+      title={`Go to line ${line + 1}`}
+      onClick={() => onGo(line)}
+    >
+      {label}
+    </button>
+  );
+  const plural = (count: number, one: string, many: string) =>
+    `${count} ${count === 1 ? one : many}`;
+  const [showEarlier, setShowEarlier] = useState(false);
+  return (
+    <div className="ttml-dialog ttml-review" role="dialog" aria-label="Changes from Genius">
+      <h3>Changes from Genius</h3>
+      <section>
+        <h4>
+          {changes.sections.length
+            ? plural(changes.sections.length, "section", "sections")
+            : "No new sections"}
+        </h4>
+        <div className="ttml-review-chips">
+          {changes.sections.map((each, index) =>
+            go(each.line, `${each.line + 1} · ${each.part}`, index),
+          )}
+        </div>
+      </section>
+      {changes.backgrounds.length > 0 && (
+        <section>
+          <h4>
+            Moved to background vocals ({changes.backgrounds.length})
+          </h4>
+          <div className="ttml-review-chips">
+            {changes.backgrounds.map((each, index) =>
+              go(each.line, `${each.line + 1} · ${each.text}`, index),
+            )}
+          </div>
+        </section>
+      )}
+      {changes.singers.map((group) => (
+        <section key={group.voice}>
+          <h4>
+            Sung by {group.voice} ({plural(group.lines.length, "line", "lines")})
+          </h4>
+          <div className="ttml-review-chips">
+            {group.lines.map((line) => go(line, `${line + 1}`, line))}
+          </div>
+        </section>
+      ))}
+      {changes.leads.length > 0 && (
+        <section>
+          <h4>Background lines Genius sings as main lines</h4>
+          <div className="ttml-review-chips">
+            {changes.leads.map((each) =>
+              go(each.line, `${each.line + 1} · ${each.text}`, each.line),
+            )}
+          </div>
+          <button
+            className="ttml-review-action"
+            onClick={() =>
+              onMakeLeads(
+                changes.leads.map((each) => each.line),
+                false,
+              )
+            }
+          >
+            Make {changes.leads.length === 1 ? "it a main line" : "them main lines"}
+          </button>
+        </section>
+      )}
+      {changes.echoes.length > 0 && (
+        <section>
+          <h4>Main lines Genius has in brackets</h4>
+          <div className="ttml-review-chips">
+            {changes.echoes.map((each) =>
+              go(each.line, `${each.line + 1} · ${each.text}`, each.line),
+            )}
+          </div>
+          <button
+            className="ttml-review-action"
+            onClick={() =>
+              onMakeLeads(
+                changes.echoes.map((each) => each.line),
+                true,
+              )
+            }
+          >
+            Make {changes.echoes.length === 1 ? "it a background vocal" : "them background vocals"}
+          </button>
+        </section>
+      )}
+      {changes.missing.length > 0 && (
+        <section>
+          <h4>On Genius but missing from your draft</h4>
+          <div className="ttml-review-chips">
+            {changes.missing.map((each, index) =>
+              go(
+                Math.max(each.after, 0),
+                `${each.after + 1} · ${each.background ? `(${each.text})` : each.text}`,
+                index,
+              ),
+            )}
+          </div>
+          <button className="ttml-review-action" onClick={onAddMissing}>
+            Add {changes.missing.length === 1 ? "it" : "them"}, untimed
+          </button>
+        </section>
+      )}
+      {changes.differs.length > 0 && (
+        <section>
+          <h4>Differs from Genius</h4>
+          <div className="ttml-review-chips">
+            {changes.differs.map((each) => (
+              <span key={each.line} className="ttml-review-pair">
+                {go(each.line, `${each.line + 1} · Genius: ${each.genius}`, "go")}
+                {each.fixable && (
+                  <button
+                    className="ttml-review-chip primary"
+                    title="Put in what this line lacks; timings stay"
+                    onClick={() => onFix(each.line, each.genius)}
+                  >
+                    Fix
+                  </button>
+                )}
+                <button
+                  className="ttml-review-chip"
+                  title="Genius has it wrong; stop pointing this out"
+                  onClick={() => onIgnore(each)}
+                >
+                  Ignore
+                </button>
+              </span>
+            ))}
+          </div>
+        </section>
+      )}
+      {changes.commas.length > 0 && (
+        <section>
+          <h4>Removed a comma left at the end of the line</h4>
+          <div className="ttml-review-chips">
+            {changes.commas.map((line) => go(line, `${line + 1}`, line))}
+          </div>
+        </section>
+      )}
+      {changes.mixed.length > 0 && (
+        <section>
+          <h4>Words sung by another voice</h4>
+          <div className="ttml-review-chips">
+            {changes.mixed.map((line) => go(line, `${line + 1}`, line))}
+          </div>
+        </section>
+      )}
+      {changes.earlier.length > 0 && (
+        <section>
+          <button
+            className="ttml-review-action"
+            aria-expanded={showEarlier}
+            onClick={() => setShowEarlier(!showEarlier)}
+          >
+            {showEarlier ? "Hide" : "Show"} what was already there (
+            {changes.earlier.length})
+          </button>
+          {showEarlier && (
+            <div className="ttml-review-chips">
+              {changes.earlier.map((each, index) =>
+                go(each.line, `${each.line + 1} · ${each.label}`, index),
+              )}
+            </div>
+          )}
+        </section>
+      )}
+      <div className="ttml-dialog-row end">
+        {canUndo && (
+          <button onClick={onUndo} title="Put the draft back as it was">
+            Undo
+          </button>
+        )}
+        <button className="primary" onClick={onKeep}>
+          Keep
+        </button>
       </div>
     </div>
   );

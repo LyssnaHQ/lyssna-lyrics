@@ -34,9 +34,9 @@ async function send(path: string, { body, method, etag, installation, accessToke
   if (installation) headers.set("Lyssna-Install", installation);
   if (etag) headers.set("If-None-Match", etag);
   if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
-  if (body) headers.set("Content-Type", "application/json");
+  if (body) headers.set("Content-Type", body instanceof Blob ? body.type : "application/json");
   const response = await fetch(url, {
-    headers, method: method ?? (body ? "POST" : "GET"), body: body ? JSON.stringify(body) : undefined,
+    headers, method: method ?? (body ? "POST" : "GET"), body: body instanceof Blob ? body : body ? JSON.stringify(body) : undefined,
     cache: revalidate ? "no-cache" : undefined,
     credentials: "omit", redirect: "error", referrerPolicy: "no-referrer", signal: AbortSignal.timeout(8_000),
   });

@@ -12,6 +12,7 @@
  */
 
 import { isEmphasis, type AnimatedWord } from "./lyric-motion";
+import { lyricEngine } from "./lyric-engine";
 import type { Word } from "./types";
 
 export interface Rect {
@@ -59,6 +60,60 @@ export interface Body {
 }
 type Axis = "x" | "y";
 type Exit = "left" | "right" | "top" | "bottom";
+
+const KEYS = [
+  "seed",
+  "lineStart",
+  "order",
+  "x",
+  "y",
+  "vx",
+  "vy",
+  "angle",
+  "spin",
+  "bounces",
+  "speed",
+  "width",
+  "height",
+  "baseRadius",
+  "radius",
+  "scale",
+  "naturalX",
+  "naturalY",
+] as const satisfies readonly (keyof Body)[];
+const VALUES = KEYS.length;
+
+function pack(bodies: Body[]) {
+  const values = new Float64Array(bodies.length * VALUES);
+  bodies.forEach((body, index) => {
+    for (let key = 0; key < VALUES; key += 1)
+      values[index * VALUES + key] = body[KEYS[key]];
+  });
+  return values;
+}
+
+/** Writes engine values back in place, keeping any extra view state. */
+function unpack(bodies: Body[], values: ArrayLike<number>, from = 0) {
+  bodies.forEach((body, index) => {
+    for (let key = 0; key < VALUES; key += 1)
+      body[KEYS[key]] = values[from + index * VALUES + key];
+  });
+}
+
+const rectValues = (rect: Rect | undefined) =>
+  rect ? [rect.left, rect.top, rect.right, rect.bottom] : [NaN, NaN, NaN, NaN];
+
+function fieldValues(field: Field) {
+  return Float64Array.from([
+    field.bounds.width,
+    field.bounds.height,
+    ...rectValues(field.area),
+    ...rectValues(field.layout),
+    ...rectValues(field.cover),
+    ...rectValues(field.footer),
+    ...(field.blockers ?? []).flatMap(rectValues),
+  ]);
+}
 
 export const GRAVITY = {
   edgePadding: 18,
@@ -426,6 +481,12 @@ export function step(
   window: WindowMotion = { vx: 0, vy: 0 },
   exiting: Body[] = [],
 ) {
+  if (lyricEngine) {
+    const values = lyricEngine.stepBodies(pack(bodies), dt, fieldValues(field), window.vx, window.vy, pack(exiting));
+    unpack(bodies, values);
+    unpack(exiting, values, bodies.length * VALUES);
+    return;
+  }
   for (const body of bodies) recover(body);
   let remaining = Math.min(0.1, Math.max(0, dt));
   while (remaining > 0) {
@@ -535,6 +596,10 @@ export function spawn(
   // Beside artwork, words start in the lyrics column; they may drift
   // around the artwork later but never appear there.
   if (field.cover && field.layout) field = { ...field, area: field.layout };
+  if (lyricEngine) {
+    unpack([body], lyricEngine.spawnBody(pack([body]), pack(occupied), fieldValues(field), reduced, rand(), rand(), rand()));
+    return;
+  }
   const startX = body.naturalX + (rand() * 2 - 1) * body.width * 1.35,
     startY = body.naturalY + (rand() * 2 - 1) * body.height * 1.35;
   const phase = rand() * Math.PI * 2,
@@ -568,6 +633,11 @@ export function spawn(
 
 /** Reduced motion: shown lines sit centred and still, one row each. */
 export function staticLayout(lines: Body[][], field: Field) {
+  if (lyricEngine) {
+    const bodies = lines.flat();
+    unpack(bodies, lyricEngine.staticLayout(pack(bodies), Uint32Array.from(lines, line => line.length), fieldValues(field)));
+    return;
+  }
   const { width, height } = field.bounds;
   const heights = lines.map((line) =>
     Math.max(...line.map((body) => body.height)),

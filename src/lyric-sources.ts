@@ -1,7 +1,7 @@
 import type { Host, Track } from "./host";
 import { clearTemporaryLyrics, readLocalLyrics, lyricsChanged } from "./local-lyrics";
 import type { Lyrics } from "./lyssna/types";
-import { readLrcLib, readLrcRed, readNetease } from "./remote-lyrics";
+import { parseSpotifyLyrics, readLrcLib, readLrcRed, readNetease } from "./remote-lyrics";
 import type { Settings } from "./settings";
 import { readSpicyLyrics, spicyAppleSource, spicyCommunitySource } from "./spicy";
 import { clearLyssnaCache, readLyssnaLyrics, revalidateLyssnaSong } from "./lyssna-provider";
@@ -11,7 +11,8 @@ export const lyricSources = {
   local: { name: "Imported TTML", help: "Lyrics you loaded for the playing song." },
   lyssna: { name: "Lyssna Lyrics", help: "Approved community lyrics from Lyssna. Receives the Spotify track ID and may check its ISRC." },
   apple: { name: "Apple Music", help: "Finds lyrics through Lyssna by ISRC, or searches Apple by title and artist." },
-  spicy: { name: "Spicy Lyrics", help: "Word-synced community lyrics, Spotify fallback, and Apple Music when Lyssna’s Apple Music source is unavailable. Sends the track ID to Spicy Lyrics." },
+  spicy: { name: "Spicy Lyrics", help: "Word-synced community lyrics and Apple Music when Lyssna’s Apple Music source is unavailable. Sends the track ID to Spicy Lyrics." },
+  spotify: { name: "Spotify", help: "Spotify’s lyrics through your signed-in Spotify session." },
   lrcred: { name: "lrc.red", help: "Word-timed lyrics. Receives the song's ISRC." },
   lrclib: { name: "LRCLIB", help: "Open lyrics database. Receives the song title, artist, album and length." },
   netease: { name: "Netease", help: "Community lyrics through a third-party proxy. Receives the song title and artist." },
@@ -19,9 +20,26 @@ export const lyricSources = {
 
 export type LyricSource = keyof typeof lyricSources;
 export const sourceIds = Object.keys(lyricSources) as LyricSource[];
+const songSourceKey = (track: Track) => `lyssna-lyrics.song-source.${track.id}`;
+
+export function songLyricSource(track: Track) {
+  try {
+    const value = localStorage.getItem(songSourceKey(track));
+    return sourceIds.find(id => id === value);
+  } catch { return undefined; }
+}
+
+export function setSongLyricSource(track: Track, source?: LyricSource) {
+  if (source) localStorage.setItem(songSourceKey(track), source);
+  else localStorage.removeItem(songSourceKey(track));
+  window.dispatchEvent(new CustomEvent(lyricsChanged, { detail: [track.id] }));
+}
 
 export function orderedSources(order: string[]) {
-  return [...new Set<LyricSource>(["local", "lyssna", ...order.filter((id): id is LyricSource => Object.hasOwn(lyricSources, id)), ...sourceIds])];
+  const saved = order.filter((id): id is LyricSource => Object.hasOwn(lyricSources, id));
+  const spicy = saved.indexOf("spicy");
+  if (spicy >= 0 && !saved.includes("spotify")) saved.splice(spicy + 1, 0, "spotify");
+  return [...new Set<LyricSource>(["local", "lyssna", ...saved, ...sourceIds])];
 }
 
 export function enabledSources(settings: Settings) {
@@ -72,14 +90,23 @@ function hasWordTiming(lyrics: Lyrics) {
     lyrics.lines.some((line) => line.words.some((word) => word.end_ms > word.start_ms));
 }
 
-export async function readLyrics(track: Track, duration: number, sources: LyricSource[], host: Host) {
-  if (track.local) sources = sources.filter(id => id !== "spicy");
+export async function readLyrics(track: Track, duration: number, sources: LyricSource[], host: Host, {
+  preferred, onAppleUnavailable,
+}: { preferred?: LyricSource; onAppleUnavailable?: () => void } = {}): Promise<Lyrics | undefined> {
+  if (preferred) {
+    const selected = await readLyrics(track, duration, [preferred], host, { onAppleUnavailable });
+    if (selected) return selected;
+  }
+  if (track.local) sources = sources.filter(id => id !== "spicy" && id !== "spotify");
   let isrcLookup: Promise<string | undefined> | undefined;
   const lookupIsrc = track.local ? () => isrcLookup ??= localTrackIsrc(track, duration, host) : host.lookupIsrc;
   const appleEnabled = sources.includes("apple");
   const spicyEnabled = sources.includes("spicy");
   let appleLookup: Promise<Lyrics | null | undefined> | undefined;
-  const readApple = () => appleLookup ??= readLyssnaLyrics(track, lookupIsrc, "apple_music", duration).catch(() => undefined);
+  const readApple = () => appleLookup ??= readLyssnaLyrics(track, lookupIsrc, "apple_music", duration).catch(() => undefined).then(lyrics => {
+    if (lyrics === undefined) onAppleUnavailable?.();
+    return lyrics;
+  });
   const readSpicy = () => readCached(track.id, "spicy", () => readSpicyLyrics(track.id), 60_000, 5 * 60_000);
 
   async function preferWordTiming(apple: Lyrics) {
@@ -93,7 +120,7 @@ export async function readLyrics(track: Track, duration: number, sources: LyricS
       const lyrics = await readLocalLyrics(track.id, duration).catch(() => undefined);
       if (lyrics) return lyrics;
     } else if (id === "lyssna") {
-      const lyrics = await readLyssnaLyrics(track, lookupIsrc).catch(() => undefined);
+      const lyrics = await readLyssnaLyrics(track, lookupIsrc, "lyssna", duration).catch(() => undefined);
       if (lyrics) return lyrics;
     } else if (id === "apple") {
       const lyrics = await readApple();
@@ -106,11 +133,17 @@ export async function readLyrics(track: Track, duration: number, sources: LyricS
         const apple = appleEnabled ? await readApple() : undefined;
         return apple && hasWordTiming(apple) ? apple : lyrics;
       }
+      if (lyrics.source === "Spotify") continue;
       if (lyrics.source !== spicyAppleSource) return lyrics;
       if (!appleEnabled) continue;
       const preferred = await readApple();
       if (preferred) return preferred;
       if (preferred === undefined) return lyrics;
+    } else if (id === "spotify") {
+      const lyrics = await readCached(track.id, "spotify", async () => parseSpotifyLyrics(await host.spotifyLyrics(track.id), duration), 30_000);
+      if (lyrics) return lyrics;
+      const fallback = spicyEnabled ? await readSpicy() : undefined;
+      if (fallback?.source === "Spotify") return fallback;
     } else {
       const sourceTrack = id === "lrcred" && track.local ? { ...track, isrc: await lookupIsrc(track.id, track.isrc) } : track;
       if (id === "lrcred" && !sourceTrack.isrc) continue;

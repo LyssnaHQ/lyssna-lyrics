@@ -1,4 +1,5 @@
 import type { Word, Line } from "./types";
+import { lyricEngine } from "./lyric-engine";
 import {
   animatorValues,
   idleScale,
@@ -10,6 +11,27 @@ export interface AnimatedWord extends Word {
   /** A floating fragment keeps its place in the original held word. */
   letterOffset?: number;
   letterCount?: number;
+}
+
+type TimedLine = Pick<Line, "start_ms" | "end_ms"> & Partial<Pick<Line, "words" | "opposite" | "background">>;
+const songs = new WeakMap<TimedLine[], NonNullable<ReturnType<typeof parseLines>>>();
+function parseLines(lines: TimedLine[]) {
+  if (!lyricEngine) return;
+  const packed = lines.flatMap(line => [
+    line.start_ms, line.end_ms, line.opposite === undefined ? -1 : Number(line.opposite),
+    Number(!!line.background), line.words?.length ?? 0, ...(line.words ?? []).map(word => word.end_ms),
+  ]);
+  return new lyricEngine.LyricLines(Float64Array.from(packed));
+}
+
+export function engineLines(lines: TimedLine[]) {
+  if (!lyricEngine) return;
+  let song = songs.get(lines);
+  if (!song) {
+    song = parseLines(lines);
+    if (song) songs.set(lines, song);
+  }
+  return song;
 }
 
 export function vocalEnd(line: Line) {
@@ -193,6 +215,7 @@ export function vocalGap(lines: Line[], time: number) {
 export const GLIDE_MS = 700;
 /** Scroll position `elapsed` ms into a glide, eased in and out. */
 export function glideScroll(from: number, to: number, elapsed: number) {
+  if (lyricEngine) return lyricEngine.glideScroll(from, to, elapsed);
   const t = Math.min(1, Math.max(0, elapsed / GLIDE_MS));
   const eased = t < 0.5 ? 4 * t ** 3 : 1 - (-2 * t + 2) ** 3 / 2;
   return from + (to - from) * eased;
@@ -205,6 +228,10 @@ export interface ScrollSpring {
 /** Analytic critical damping preserves velocity when the active line changes,
  * so scrolling glides between lines instead of snapping. */
 export function stepScroll(spring: ScrollSpring, seconds: number): number {
+  if (lyricEngine) {
+    [spring.position, spring.velocity] = lyricEngine.stepScroll(spring.position, spring.velocity, spring.target, seconds);
+    return spring.position;
+  }
   const frequency = 7,
     offset = spring.position - spring.target;
   const combined = spring.velocity + frequency * offset;
@@ -366,6 +393,11 @@ export function tuneMotion(settings: AnimatorSettings = {}) {
   const upstream = presetOf(settings) === "Legacy",
     tuning = animatorValues(settings),
     idle = idleScale(settings);
+  lyricEngine?.tuneMotion(
+    upstream, idle, tuning.wordPeakScale, tuning.letterPeakScale, tuning.verticalStrength,
+    tuning.glowStrength, tuning.scaleFrequency, tuning.scaleDamping, tuning.verticalFrequency,
+    tuning.verticalDamping, tuning.glowFrequency, tuning.glowDamping, tuning.blurStrength,
+  );
   MOTION.idleScale = idle;
   MOTION.scale = naturalSpline([
     [0, idle],
@@ -420,6 +452,10 @@ export function wordGoal(
   end: number,
   time: number,
 ): SyllableGoal {
+  if (lyricEngine) {
+    const [scale, lift, glow, gradient] = lyricEngine.wordGoal(start, end, time);
+    return { scale, lift, glow, gradient };
+  }
   const state = sungState(start, end, time),
     at =
       state === "unsung"
@@ -443,6 +479,12 @@ export function letterGoals(
   time: number,
   count: number,
 ): SyllableGoal[] {
+  if (lyricEngine) {
+    const values = lyricEngine.letterGoals(start, end, time, count);
+    return Array.from({ length: count }, (_, index) => ({
+      scale: values[index * 4], lift: values[index * 4 + 1], glow: values[index * 4 + 2], gradient: values[index * 4 + 3],
+    }));
+  }
   const slot = (end - start) / Math.max(1, count),
     word = sungState(start, end, time);
   const rest = (at: number, gradient: number) => ({
@@ -524,7 +566,7 @@ export class SyllableSprings {
 /** Text-shadow blur, in pixels, for a line `distance` lines from the active
  * one. */
 export const lineBlur = (distance: number) =>
-  Math.min(MOTION.blurPerLine * distance, MOTION.maxBlur);
+  lyricEngine?.lineBlur(distance) ?? Math.min(MOTION.blurPerLine * distance, MOTION.maxBlur);
 /** Held syllables animate letter by letter. */
 export function isEmphasis(word: Word, text: string) {
   return (

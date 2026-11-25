@@ -1,4 +1,4 @@
-import { isRecordingComplete, withRecordingWrite } from "./captured-replay";
+import { withRecordingWrite } from "./captured-replay";
 
 export const LIVE_TILE_MS = 5_000;
 export const LIVE_SAMPLE_MS = 5;
@@ -155,9 +155,8 @@ export function mergeLiveTile(target: LiveTile, update: LiveTile) {
   return target;
 }
 
-export function saveLiveTiles(uri: string, duration: number, tiles: LiveTile[], protectCompleted: boolean) {
+export function saveLiveTiles(uri: string, tiles: LiveTile[]) {
   return withRecordingWrite(uri, async () => {
-    if (protectCompleted && await isRecordingComplete(uri, duration)) return false;
     const db = await openSpectrum(currentDatabase);
     const changed: LiveTile[] = [];
     await new Promise<void>((resolve, reject) => {
@@ -177,6 +176,5 @@ export function saveLiveTiles(uri: string, duration: number, tiles: LiveTile[], 
       }
     });
     if (changed.length) window.dispatchEvent(new CustomEvent(liveSpectrumSaved, { detail: changed }));
-    return true;
   });
 }

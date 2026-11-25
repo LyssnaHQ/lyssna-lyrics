@@ -24,7 +24,7 @@ import { downloadTtml, keepTemporaryLyricsFor, listLocalLyrics, lyricsChanged, r
 import { LoadTtml } from "./lyssna/load-ttml";
 import { useReviewerSettings } from "./ttml-reviewer";
 import { attachBulkLyrics, importLyricFile, loadBulkLyrics } from "./ttml-import";
-import { enabledSources, readLyrics, refreshLyrics, sourceIds } from "./lyric-sources";
+import { enabledSources, readLyrics, refreshLyrics, sourceIds, songLyricSource } from "./lyric-sources";
 import { LyricCredits } from "./credits";
 import { SongSheetScope } from "./song-sheet";
 import { CanvasArtwork, placeholderArtwork, SpotifyVisualiser, TrackArtwork, useCanvas } from "./spotify-artwork";
@@ -44,14 +44,13 @@ import { quickEffects, QuickEffectPicker, type QuickEffectChoice } from "./quick
 import { DJ_COVER, DJInterlude } from "./dj-interlude";
 import { readViewSession, saveViewSession } from "./view-session";
 import { lyssnaApiNotice, lyssnaInstallReady } from "./lyssna-api";
-import { accountChanged, hasLyssnaSession, readLyssnaProfile } from "./lyssna-account";
-import { markLyssnaInstrumental, revalidateLyssnaSong, resumeLyssnaRequests } from "./lyssna-provider";
+import { requestLyssnaLyrics, revalidateLyssnaSong, resumeLyssnaRequests } from "./lyssna-provider";
+import { InstrumentalAction } from "./instrumental-actions";
 import { submitLyssnaTtml } from "./lyssna-submission";
 import { useLocalTrackIsrc } from "./local-track-isrc";
 import { useFirstUploadNotice } from "./first-upload-notice";
 import { CreatorSurface, type CreatorPlayback } from "./creator/surface";
 import { reviewTopbar } from "./creator/review-topbar";
-import { canReview } from "./creator/review-api";
 import { ReviewQueuePanel, type ReviewSelection } from "./creator/review-panel";
 import { startCreatorRepeatRecovery } from "./creator/repeat";
 import { restoreCreatorPlaybackTransitions } from "./creator/playback-transitions";
@@ -90,38 +89,45 @@ function useTrackLyrics(track: Track | null, duration: number, view: Window, set
     }
     const currentTrack = track;
     const enabled = sourceKey.split(",").filter((id): id is (typeof sourceIds)[number] => sourceIds.some((source) => source === id));
-    const revalidate = enabled.includes("lyssna") || enabled.includes("apple");
     let generation = 0;
     let timer = 0;
+    let appleRetries = 0;
     async function read() {
       view.clearTimeout(timer);
       const current = ++generation;
-      if (enabled.length === 0) return;
-      const lyrics = await readLyrics(currentTrack, duration, enabled, host);
+      const preferred = songLyricSource(currentTrack);
+      let appleUnavailable = false;
+      const lyrics = await readLyrics(currentTrack, duration, enabled, host, { preferred, onAppleUnavailable: () => { appleUnavailable = true; } });
       if (generation !== current) return;
       setResult((previous) => previous?.track === currentTrack && previous.sourceKey === sourceKey &&
         previous.lyrics === lyrics && !previous.waiting
         ? previous : { track: currentTrack, sourceKey, lyrics, waiting: false });
-      if (revalidate && !view.document.hidden && navigator.onLine) {
-        timer = view.setTimeout(read, 60_000);
+      if (!view.document.hidden && navigator.onLine) {
+        if (appleUnavailable && appleRetries < 2) {
+          appleRetries++;
+          timer = view.setTimeout(read, 45_000);
+        } else if (enabled.includes("lyssna") || enabled.includes("apple") || preferred === "lyssna" || preferred === "apple") {
+          if (!appleUnavailable) appleRetries = 0;
+          timer = view.setTimeout(read, 60_000);
+        }
       }
     }
     function restart(event?: Event) {
       if (event instanceof CustomEvent && Array.isArray(event.detail) && !event.detail.includes(currentTrack.id)) return;
       setResult((previous) => ({
-        track: currentTrack, sourceKey, waiting: enabled.length > 0,
+        track: currentTrack, sourceKey, waiting: enabled.length > 0 || !!songLyricSource(currentTrack),
         lyrics: event && enabled.length && previous?.track === currentTrack ? previous.lyrics : undefined,
       }));
       void read();
     }
     const resume = () => { if (!view.document.hidden) void read(); };
     const reconnect = () => {
-      if (revalidate) resumeLyssnaRequests();
+      resumeLyssnaRequests();
       resume();
     };
     window.addEventListener(lyricsChanged, restart);
     window.addEventListener("online", reconnect);
-    if (revalidate) window.addEventListener(lyssnaInstallReady, reconnect);
+    window.addEventListener(lyssnaInstallReady, reconnect);
     view.document.addEventListener("visibilitychange", resume);
     restart();
     return () => {
@@ -141,40 +147,20 @@ function MissingLyrics({ track, host, openCreator, searchAgain, openTtml }: {
   track: Track; host: Host; openCreator?: () => void;
   searchAgain: () => void; openTtml: (trigger: HTMLButtonElement) => void;
 }) {
-  const [reviewer, setReviewer] = useState(false);
-  const [marking, setMarking] = useState(false);
+  const [requesting, setRequesting] = useState(false);
+  const [requested, setRequested] = useState(false);
   const [markNotice, setMarkNotice] = useState<{ message: string; error?: true }>();
-  useEffect(() => {
-    let revision = 0;
-    function check() {
-      const current = ++revision;
-      if (!hasLyssnaSession()) {
-        setReviewer(false);
-        return;
-      }
-      void readLyssnaProfile().then((profile) => {
-        if (current === revision && profile) setReviewer(canReview(profile.role));
-      }).catch(() => {});
-    }
-    check();
-    window.addEventListener(accountChanged, check);
-    window.addEventListener(lyssnaInstallReady, check);
-    return () => {
-      revision++;
-      window.removeEventListener(accountChanged, check);
-      window.removeEventListener(lyssnaInstallReady, check);
-    };
-  }, []);
-  async function mark() {
-    setMarking(true);
+  async function request() {
+    setRequesting(true);
     setMarkNotice(undefined);
     try {
-      await markLyssnaInstrumental(track, host);
-      setMarkNotice({ message: "Marked instrumental on Lyssna." });
+      const count = await requestLyssnaLyrics(track);
+      setRequested(true);
+      setMarkNotice({ message: count === 1 ? "Requested. You’re the first to ask for lyrics." : `Requested. ${count} people want lyrics for this song.` });
     } catch (error) {
-      setMarkNotice({ message: error instanceof Error ? error.message : "Couldn’t mark this recording instrumental.", error: true });
+      setMarkNotice({ message: error instanceof Error ? error.message : "Couldn’t request lyrics.", error: true });
     } finally {
-      setMarking(false);
+      setRequesting(false);
     }
   }
 
@@ -196,11 +182,12 @@ function MissingLyrics({ track, host, openCreator, searchAgain, openTtml }: {
       <button type="button" onClick={searchAgain}>Search again</button>
       <span aria-hidden="true">·</span>
       <button type="button" aria-haspopup="dialog" onClick={(event) => openTtml(event.currentTarget)}>Import a lyric file</button>
-      {reviewer && !track.local && <>
+      {!track.local && <>
         <span aria-hidden="true">·</span>
-        <button type="button" onClick={() => void mark()} disabled={marking || !!markNotice && !markNotice.error}>
-          {marking ? "Marking instrumental…" : "Mark as instrumental"}
-        </button>
+        <button type="button" onClick={() => void request()} disabled={requesting || requested}>
+          {requested ? "Requested" : requesting ? "Requesting…" : "Request lyrics"}</button>
+        <InstrumentalAction track={track} host={host} marked={false}
+          notify={(message, error) => setMarkNotice({ message, error: error ? true : undefined })} />
       </>}
     </div>
     {markNotice && <small role={markNotice.error ? "alert" : "status"}>{markNotice.message}</small>}
@@ -345,7 +332,7 @@ function NowPlayingBackdrop({ host, panel }: { host: Host; panel: HTMLElement })
   }, [enabled, panel]);
 
   return enabled && <Ambience image={track?.cover} animate={playing} reduceMotion={settings.reduce_motion}
-    brightness={settings.lyrics_background_brightness} followCanvas={canvas} />;
+    brightness={settings.lyrics_background_brightness} followCanvas={canvas} followMotion={settings.animated_covers && !settings.reduce_motion} />;
 }
 
 function SpotifyMotionCover({ host }: { host: Host }) {
@@ -950,7 +937,8 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
   }
   return <>
     {!showCreator && hasAmbience && <Ambience image={artwork} animate={playing && background === "animated"}
-      reduceMotion={settings.reduce_motion} brightness={settings.lyrics_background_brightness} followCanvas={canvas ? "window" : false} />}
+      reduceMotion={settings.reduce_motion} brightness={settings.lyrics_background_brightness} followCanvas={canvas ? "window" : false}
+      followMotion={background === "animated" && motion.state === "ready"} />}
     {!showCreator && backgroundImage && <img className="lyrics-background" src={backgroundImage}
       style={{ "--artwork-blur": `${settings.lyrics_background_blur}px` } as CSSProperties}
       onError={banner ? () => setArtistHeader((current) => current?.url === banner && current.uri === artistUri ? undefined : current) : undefined} alt="" />}
@@ -971,7 +959,8 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
         <div className="lyrics-album">
           {artworkDock ? playback : <>{canvas ? <CanvasArtwork key={`${track.id}:${canvas.fileId ?? canvas.url}`} info={canvas} cover={artwork ?? ""}
             playing={playing && !settings.reduce_motion} onUnavailable={setUnavailableCanvas} onVideo={setCanvasVideo} heldFrame={heldFrame} />
-            : renderCover()}
+            : renderCover(!track.local && lyrics?.source === "Lyssna" && lyrics.instrumental
+              ? <InstrumentalAction key={track.id} track={track} host={host} marked notify={setNotice} /> : undefined)}
           {details}</>}
         </div>
         {!coverOnly && <div className="lyrics-body">
@@ -1004,7 +993,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
       {!showSettings && notice && <div className="lyssna-popout-error" role="status">{notice}</div>}
       {!artworkDock && playback}
     </section>}
-    {!showCreator && showTtml && <LoadTtml song={track ? track.title || "Unknown song" : undefined}
+    {!showCreator && showTtml && <LoadTtml song={track ? track.title || "Unknown song" : undefined} track={track ?? undefined}
       localRecording={track?.local ? { track, duration, host, isrc: localIsrc } : undefined}
       glass={settings.liquid_glass} style={fonts}
       reviewer={preferences.ttml_reviewer} onReviewer={(ttml_reviewer) => change({ ttml_reviewer })}
@@ -1472,6 +1461,7 @@ export default function start(options: BuildOptions) {
   );
   const stopProfileSettings = host.profileSettings(openProfileSettings);
   reviewButton = reviewTopbar(host, toggleReviewQueue, closeReview);
+  const stopReleaseNotices = startReleaseNotices(host, options);
   const stopEnhancementStartup = startEnhancements(host);
   const stopLocalPlaylistPlayback = startLocalPlaylistPlayback(host);
   const stopVolumeDrag = startVolumeDragController(host);
@@ -1604,7 +1594,6 @@ export default function start(options: BuildOptions) {
   const stopCreatorRepeatRecovery = startCreatorRepeatRecovery(host);
   restoreCreatorPlaybackTransitions(host);
   syncHost();
-  const stopReleaseNotices = startReleaseNotices(host, options);
   return {
     dispose() {
       disposed = true;

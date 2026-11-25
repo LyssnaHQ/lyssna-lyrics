@@ -115,9 +115,7 @@ export function createSpotifyCapture(host: Host, view: Window & typeof globalThi
       dirty.clear();
       spectrumWrites = spectrumWrites.then(async () => {
         for (const [uri, tiles] of changed) {
-          if (scope === "auto" && sealed.has(uri)) continue;
-          const saved = await saveLiveTiles(uri, durations.get(uri) ?? 0, [...tiles.values()], scope === "auto");
-          if (!saved) sealed.add(uri);
+          await saveLiveTiles(uri, [...tiles.values()]);
         }
       }).catch(() => {
         if (session === active) setMessage("Couldn’t save the spectrogram to Spotify’s local storage.");
@@ -345,7 +343,6 @@ export function createSpotifyCapture(host: Host, view: Window & typeof globalThi
           spectrumTrack = uri;
           spectrumAt = view.performance.now();
         }
-        if (scope === "auto" && sealed.has(uri)) return;
         const index = Math.floor(frame / LIVE_COLUMNS);
         const column = frame % LIVE_COLUMNS;
         let tiles = dirty.get(uri);

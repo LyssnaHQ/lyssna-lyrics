@@ -1,10 +1,67 @@
 import { useEffect, useState } from "react";
 import { ExternalLink, LogOut } from "lucide-react";
-import { accountChanged, beginLyssnaSignIn, finishLyssnaSignIn, hasLyssnaSession, lyssnaSignOut, readLyssnaProfile, type LyssnaProfile, type SignIn } from "./lyssna-account";
+import { accountChanged, beginLyssnaSignIn, finishLyssnaSignIn, hasLyssnaSession, lyssnaAccountRequest, lyssnaSignOut, readLyssnaProfile, type LyssnaProfile, type SignIn } from "./lyssna-account";
 import { ActAsSettings } from "./lyssna-act-as-settings";
 import { SettingRow } from "./lyssna/setting-row";
+import type { Host } from "./host";
 
-export function AccountSettings({ ready }: { ready: boolean }) {
+async function accountPages<T>(path: string) {
+  const items: T[] = [];
+  for (;;) {
+    const response = await lyssnaAccountRequest(`${path}?limit=50&offset=${items.length}`);
+    if (!response?.ok) throw new Error("Couldn’t load Lyssna catalogue records.");
+    const page: unknown = await response.json();
+    if (!Array.isArray(page)) throw new Error("Lyssna returned an invalid catalogue page.");
+    items.push(...page);
+    if (page.length < 50) return items;
+  }
+}
+
+function IsrcBackfill({ host }: { host: Host }) {
+  const [confirming, setConfirming] = useState(false);
+  const [working, setWorking] = useState(false);
+  const [status, setStatus] = useState("");
+  return <SettingRow label="Add ISRC links" help="Find ISRCs for Lyssna songs that only have a Spotify link.">
+    <button type="button" className="pill outline" disabled={working} onClick={async () => {
+      if (!confirming) { setConfirming(true); return; }
+      setConfirming(false);
+      setWorking(true);
+      let added = 0, conflicts = 0, failed = 0;
+      try {
+        const users = await accountPages<{ id: string }>("/v1/users");
+        const songs = new Set<string>();
+        for (const user of users) {
+          for (const song of await accountPages<{ song_id: string }>(`/v1/users/${encodeURIComponent(user.id)}/contributions`))
+            songs.add(song.song_id);
+        }
+        let visited = 0;
+        for (const id of songs) {
+          setStatus(`Checking song ${++visited} of ${songs.size}…`);
+          const path = `/v1/songs/${encodeURIComponent(id)}`;
+          const response = await lyssnaAccountRequest(path).catch(() => undefined);
+          if (!response?.ok) { failed++; continue; }
+          const song = await response.json() as { links?: { platform: string; external_id: string }[] };
+          if (song.links?.some(link => link.platform === "isrc")) continue;
+          const spotify = song.links?.find(link => link.platform === "spotify");
+          if (!spotify || !/^[A-Za-z0-9]{22}$/.test(spotify.external_id)) continue;
+          const isrc = await host.lookupIsrc(spotify.external_id).catch(() => undefined);
+          if (!isrc) continue;
+          const linked = await lyssnaAccountRequest(`${path}/links`, { platform: "isrc", external_id: isrc }).catch(() => undefined);
+          if (linked?.ok) added++;
+          else if (linked?.status === 409) conflicts++;
+          else failed++;
+        }
+        setStatus(`Added ${added} links across ${songs.size} songs. ${conflicts} conflicts and ${failed} failures.`);
+      } catch (error) {
+        setStatus(`Added ${added} links. ${error instanceof Error ? error.message : "Backfill stopped."}`);
+      } finally { setWorking(false); }
+    }}>{working ? "Adding links…" : confirming ? "Confirm catalogue backfill" : "Add ISRC links"}</button>
+    {confirming && <button type="button" className="pill outline" onClick={() => setConfirming(false)}>Cancel</button>}
+    {status && <small role="status">{status}</small>}
+  </SettingRow>;
+}
+
+export function AccountSettings({ ready, host }: { ready: boolean; host: Host }) {
   const [signedIn, setSignedIn] = useState(hasLyssnaSession);
   const [profile, setProfile] = useState<LyssnaProfile | null>();
   const [pending, setPending] = useState<SignIn>();
@@ -84,5 +141,5 @@ export function AccountSettings({ ready }: { ready: boolean }) {
         onClick={() => void run(async () => setPending(await beginLyssnaSignIn()))}>Sign in</button>)}
     {error && <p className="settings-alert" role="alert">{error}</p>}
   </SettingRow>
-  {account?.role === "admin" && <ActAsSettings />}</>;
+  {account?.role === "admin" && <><ActAsSettings /><IsrcBackfill host={host} /></>}</>;
 }

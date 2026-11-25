@@ -37,7 +37,7 @@ const cooling = new Map<string, number>();
 const refreshes = new Set<string>();
 const approvals = new Map<string, RecentApproval>();
 const trackIsrc = new Map<string, string>();
-const applePaths = new Map<string, Set<string>>();
+const songPaths = new Map<string, Set<string>>();
 const parsed = new WeakMap<LyricsView, Lyrics>();
 const appleCredits = new Map<string, Promise<boolean | undefined>>();
 let disk: Promise<Cache | undefined> | undefined;
@@ -141,7 +141,7 @@ export function revalidateLyssnaSong(trackId: string, isrc?: string, approved?: 
   // The address a lookup used depends on whether the ISRC was known then, so both are refreshed.
   const paths = [communityPath(trackId, normalizedIsrc)];
   if (!local && normalizedIsrc) paths.push(communityPath(trackId));
-  paths.push(...(applePaths.get(trackId) ?? []));
+  paths.push(...(songPaths.get(trackId) ?? []));
   for (const path of paths) {
     pending.delete(path);
     cooling.delete(path);
@@ -151,7 +151,8 @@ export function revalidateLyssnaSong(trackId: string, isrc?: string, approved?: 
   while (refreshes.size > cacheLimit) refreshes.delete(refreshes.keys().next().value!);
   if (approved && uuid.test(approved.songId) && uuid.test(approved.revision)) {
     for (const path of paths) {
-      if (path.endsWith("source=lyssna")) approvals.set(path, { ...approved, expires: Date.now() + 300_000 });
+      if (new URL(path, "https://api.lyssna.org").searchParams.get("source") === "lyssna")
+        approvals.set(path, { ...approved, expires: Date.now() + 300_000 });
     }
     while (approvals.size > cacheLimit) approvals.delete(approvals.keys().next().value!);
   }
@@ -268,14 +269,14 @@ function read(path: string) {
   return request;
 }
 
-function applePath(trackId: string, platform: "isrc" | "apple_music", id: string, duration: number) {
+function timedLookupPath(trackId: string, route: string, duration: number) {
   const length = duration >= 1_000 && duration <= 3_600_000 ? `&duration_ms=${Math.round(duration)}` : "";
-  const path = `/v1/lyrics/${platform}/${id}?source=apple_music${length}`;
-  const paths = applePaths.get(trackId) ?? new Set<string>();
+  const path = route + length;
+  const paths = songPaths.get(trackId) ?? new Set<string>();
   paths.add(path);
   if (paths.size > 10) paths.delete(paths.values().next().value!);
-  applePaths.set(trackId, paths);
-  if (applePaths.size > cacheLimit) applePaths.delete(applePaths.keys().next().value!);
+  songPaths.set(trackId, paths);
+  if (songPaths.size > cacheLimit) songPaths.delete(songPaths.keys().next().value!);
   return path;
 }
 
@@ -328,7 +329,7 @@ async function readAppleLyrics(track: Track, isrc: string | undefined, duration:
     }
   }
   async function byId(platform: "isrc" | "apple_music", id: string) {
-    const value = await read(applePath(track.id, platform, id, length));
+    const value = await read(timedLookupPath(track.id, `/v1/lyrics/${platform}/${id}?source=apple_music`, length));
     if (value?.source === "apple_music") return parseLyrics(value, platform === "isrc" ? id : undefined, length);
     return value === undefined ? undefined : null;
   }
@@ -348,7 +349,7 @@ export async function readLyssnaLyrics(track: Track, lookupIsrc: Host["lookupIsr
   const isrc = await trackCode(track, lookupIsrc);
   if (source === "apple_music") return readAppleLyrics(track, isrc, duration);
   if (track.local && !isrc) return null;
-  const value = await read(communityPath(track.id, isrc));
+  const value = await read(timedLookupPath(track.id, communityPath(track.id, isrc), duration));
   if (!value) return value;
   if (value.source !== "apple_music") return parseLyrics(value);
 }
@@ -365,7 +366,7 @@ async function parseLyrics(value: LyricsView, isrc?: string, duration?: number):
     revisionId: value.revision_id,
     contributors: Array.isArray(value.contributors) ? value.contributors : [],
   };
-  if (value.instrumental || value.song?.instrumental) {
+  if ((value.instrumental || value.song?.instrumental) && !value.ttml?.trim()) {
     const result: Lyrics = { source: "Lyssna", credit, lyssna: attribution, lines: [], synced: false, instrumental: true };
     parsed.set(value, result);
     return result;
@@ -386,6 +387,7 @@ async function parseLyrics(value: LyricsView, isrc?: string, duration?: number):
     return {
       ...line, start_ms: line.start_ms + offset, end_ms: line.end_ms + offset,
       words: line.words.map((word) => ({ ...word, start_ms: word.start_ms + offset, end_ms: word.end_ms + offset })),
+      romanization_words: line.romanization_words?.map((word) => ({ ...word, start_ms: word.start_ms + offset, end_ms: word.end_ms + offset })),
       reading: line.reading && timed(line.reading),
     };
   }
@@ -400,27 +402,36 @@ async function parseLyrics(value: LyricsView, isrc?: string, duration?: number):
   return result;
 }
 
-export async function markLyssnaInstrumental(track: Track, host: Host) {
+export async function markLyssnaInstrumental(track: Track, host: Host, unmark = false) {
   if (!/^[A-Za-z0-9]{22}$/.test(track.id)) throw new Error("Only Spotify tracks can be marked instrumental.");
   const isrc = await trackCode(track, host.lookupIsrc);
   if (!isrc) throw new Error("Spotify doesn’t have an ISRC for this recording.");
-  const response = await lyssnaAccountRequest("/v1/instrumental", { isrcs: [isrc], instrumental: true }, "PUT");
+  const metadata = await spotifyTrackMetadata(track.id).catch(() => undefined);
+  const isrcs = [...new Set([isrc, ...(metadata?.isrcs ?? [])])];
+  const response = unmark ? await lyssnaAccountRequest("/v1/instrumental", { isrcs, instrumental: null }, "PUT")
+    : await lyssnaAccountRequest("/v1/submissions", {
+      instrumental: true, extra_isrcs: isrcs, title: track.title, album: track.album,
+      artists: track.artistLinks?.map(artist => artist.name) ?? [track.artists || track.artist].filter(Boolean),
+      links: [{ platform: "isrc", external_id: isrc }, { platform: "spotify", external_id: track.id }],
+    });
   if (!hasLyssnaSession() || response?.status === 401) throw new Error("Sign in to Lyssna in Settings.");
   if (response?.status === 403) throw new Error("Your Lyssna account can’t mark recordings instrumental.");
-  if (!response?.ok) throw new Error("Couldn’t mark this recording instrumental. Try again later.");
-  const result = await response.json() as { isrcs?: { isrc: string; instrumental: boolean }[] };
-  if (!result.isrcs?.some((item) => item.isrc === isrc && item.instrumental === true)) {
-    throw new Error("Lyssna couldn’t confirm the instrumental mark.");
-  }
-
+  if (!response?.ok) throw new Error("Couldn’t update this recording’s instrumental status.");
+  const result = await response.json() as { status?: string };
+  if (!unmark && result.status === "pending") return "Sent to Lyssna for review as instrumental.";
   revalidateLyssnaSong(track.id, isrc);
-  // Some edge caches can serve the earlier miss for five minutes after the write.
-  const value: LyricsView = { source: "lyssna", isrc, instrumental: true, offset_ms: 0, ttml: "" };
-  const maxAge = 300;
-  for (const path of [communityPath(track.id, isrc), communityPath(track.id)]) {
-    approvals.delete(path);
-    refreshes.delete(path);
-    saveCache(path, { value, maxAge, freshUntil: Date.now() + maxAge * 1000 });
-  }
   window.dispatchEvent(new CustomEvent(lyricsChanged, { detail: [track.id] }));
+  return unmark ? "Instrumental mark taken back." : "Marked instrumental on Lyssna.";
+}
+
+export async function requestLyssnaLyrics(track: Track) {
+  if (!/^[A-Za-z0-9]{22}$/.test(track.id)) throw new Error("Only Spotify songs can be requested.");
+  const path = `/v1/tracks/spotify/${track.id}/request`;
+  const response = hasLyssnaSession() ? await lyssnaAccountRequest(path, {})
+    : await lyssnaRequest(path, { body: {}, waitForInstall: true });
+  const result = await response?.json().catch(() => undefined) as { requests?: number; error?: string } | undefined;
+  if (result?.error === "has_lyrics") throw new Error("This song already has lyrics on Lyssna.");
+  if (result?.error === "instrumental") throw new Error("Lyssna has this song marked instrumental.");
+  if (!response?.ok || !Number.isSafeInteger(result?.requests)) throw new Error("Couldn’t request lyrics. Try again later.");
+  return result!.requests!;
 }

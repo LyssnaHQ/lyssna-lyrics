@@ -77,7 +77,7 @@ export const defaults = {
   npv_ambience: true,
   lyrics_cache_button: true,
   lyrics_cache_action: "song" as "song" | "reload" | "all",
-  lyrics_source_order: ["local", "lyssna", "apple", "spicy", "lrcred", "lrclib", "netease"] as string[],
+  lyrics_source_order: ["local", "lyssna", "apple", "spicy", "spotify", "lrcred", "lrclib", "netease"] as string[],
   lyrics_sources_disabled: ["lrcred", "lrclib", "netease"] as string[],
   sync_other_plugin_preferences: false,
   settings_remember_place: true,

@@ -5,6 +5,7 @@ import { spotifySongUri } from "../spotify-song";
 import type { Settings } from "../settings";
 import { usePlayback } from "../playback";
 import { TrackArtwork } from "../spotify-artwork";
+import { InstrumentalAction } from "../instrumental-actions";
 import { enabledSources, type LyricSource } from "../lyric-sources";
 import { useLocalTrackIsrc } from "../local-track-isrc";
 import { lyricsChanged, parseLocalTtml, saveLocalLyrics } from "../local-lyrics";
@@ -537,6 +538,11 @@ export function CreatorSurface({ host, view: owner, settings, close, reviewSelec
           reviewSelection={reviewSelection}
           onCloseReview={closeReview}
           localIsrc={localIsrc}
+          instrumentalAction={track && !track.local && seed?.uri === current?.uri &&
+            (!seed?.lyrics?.lines.length || seed.lyrics.instrumental)
+            ? <InstrumentalAction key={`${track.id}:${!!seed?.lyrics?.instrumental}`} track={track} host={host}
+              marked={seed?.lyrics?.source === "Lyssna" && !!seed.lyrics.instrumental} notify={notify} />
+            : undefined}
           onResetToSource={async (song) => {
             if (track?.id !== song.id || host.track()?.id !== song.id) return;
             const sources = enabledSources(settings).filter(source => source !== "local");

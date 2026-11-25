@@ -17,6 +17,7 @@ export const Ambience = memo(function Ambience({
   brightness = 100,
   saturation = 3,
   followCanvas = false,
+  followMotion = false,
 }: {
   /** Artwork URL used instead of the track's album art. */
   image?: string;
@@ -38,6 +39,7 @@ export const Ambience = memo(function Ambience({
    * the window shows, the lyrics page's first. A function selects a native
    * Canvas outside this ambience layer. */
   followCanvas?: boolean | "window" | (() => HTMLVideoElement | undefined);
+  followMotion?: boolean;
 }) {
   const source = image ?? "",
     surface = useRef<HTMLCanvasElement>(null),
@@ -188,10 +190,10 @@ export const Ambience = memo(function Ambience({
     };
   }, [generation]);
   useEffect(() => {
-    if (!followCanvas) return;
+    if (!followCanvas && !followMotion) return;
     const engine = renderer.current;
     if (!engine) return;
-    let failed: HTMLVideoElement | null = null;
+    const failed = new WeakSet<HTMLVideoElement>();
     const stopFollowing = () => {
       if (!following.current) return;
       following.current = null;
@@ -211,7 +213,7 @@ export const Ambience = memo(function Ambience({
     const panel = surface.current?.parentElement?.parentElement;
     const root = panel?.getRootNode() as Document | ShadowRoot | undefined;
     const look = () => {
-      const video = typeof followCanvas === "function"
+      const canvasVideo = typeof followCanvas === "function"
         ? followCanvas()
         : followCanvas === "window"
           ? (root?.querySelector<HTMLVideoElement>(
@@ -220,32 +222,34 @@ export const Ambience = memo(function Ambience({
             panel?.ownerDocument.querySelector<HTMLVideoElement>(
               ".now-playing video[data-canvas-video]",
             ))
-          : panel?.querySelector<HTMLVideoElement>("video[data-canvas-video]");
-      if (!video || video === failed) return stopFollowing();
+          : followCanvas ? panel?.querySelector<HTMLVideoElement>("video[data-canvas-video]") : undefined;
+      const motionVideo = followMotion ? panel?.querySelector<HTMLVideoElement>("video[data-motion-cover]") : undefined;
+      const video = [canvasVideo, motionVideo].find(candidate => candidate && !failed.has(candidate) &&
+        (candidate === following.current || (!candidate.seeking && candidate.readyState >= candidate.HAVE_CURRENT_DATA)));
+      if (!video) return stopFollowing();
       if (video === following.current) return;
-      if (video.seeking || video.readyState < video.HAVE_CURRENT_DATA) return stopFollowing();
       following.current = video;
       try {
         engine.loadVideo(video, {
           // Canvases are 9:16; keep that shape in the colour map.
-          sampleWidth: 72,
-          sampleHeight: 128,
+          sampleWidth: video === motionVideo ? 96 : 72,
+          sampleHeight: video === motionVideo ? 96 : 128,
           // Background windows sample fewer frames, as they draw fewer.
           frameRate: Math.max(1, ambienceFps(openerActivity())),
           // Fast cuts ease in instead of flashing across the panel.
           smoothing: 100,
           onError: () => {
-            failed = video;
+            failed.add(video);
             stopFollowing();
           },
         });
       } catch {
-        failed = video;
+        failed.add(video);
         stopFollowing();
         return;
       }
       if (following.current !== video) return;
-      if (surface.current) surface.current.dataset.source = "canvas";
+      if (surface.current) surface.current.dataset.source = video === motionVideo ? "motion" : "canvas";
       resume.current?.();
     };
     look();
@@ -254,7 +258,7 @@ export const Ambience = memo(function Ambience({
       clearInterval(timer);
       stopFollowing();
     };
-  }, [followCanvas, generation]);
+  }, [followCanvas, followMotion, generation]);
   useEffect(() => {
     if (!source || following.current || !surface.current || !renderer.current) return;
     let cancelled = false;

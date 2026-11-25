@@ -7,7 +7,7 @@ import type { Lyrics, Word } from "./types";
 type RomanizedWord = Pick<Word, "text" | "start_ms" | "end_ms"> & { from: number | null; estimated: boolean };
 type RomanizedLine = { text: string; words: RomanizedWord[] } | null;
 type Request = {
-  lines: { text: string; romanization: string; words: Pick<Word, "text" | "start_ms" | "end_ms">[] }[];
+  lines: { text: string; romanization: string; words: Word[]; romanization_words?: Word[] }[];
   options: { romaji_as_written: boolean };
 };
 
@@ -68,13 +68,14 @@ function suppliedWord(word: Word, text: string) {
 }
 
 export async function romanizeLyrics(lyrics: Lyrics, romajiAsWritten = true): Promise<Lyrics> {
-  if (!lyrics.lines.some(line => line.romanization || needsReading.test(line.text) ||
+  if (!lyrics.lines.some(line => line.romanization_words?.length || line.romanization || needsReading.test(line.text) ||
       line.words.some(word => word.romanization || needsReading.test(word.text)))) return lyrics;
 
   const readings = await requestReadings({
     lines: lyrics.lines.map(line => ({
       text: line.text,
       romanization: line.words.some(word => word.romanization?.trim()) ? "" : line.romanization,
+      romanization_words: line.romanization_words,
       words: line.words.map(({ text, start_ms, end_ms }) => ({ text, start_ms, end_ms })),
     })),
     options: { romaji_as_written: romajiAsWritten },
@@ -91,7 +92,7 @@ export async function romanizeLyrics(lyrics: Lyrics, romajiAsWritten = true): Pr
       estimated ||= guess;
       return {
         ...source,
-        text: source ? suppliedWord(source, text) : text,
+        text: source && !line.romanization_words?.length ? suppliedWord(source, text) : text,
         start_ms,
         end_ms,
         ...(guess ? { estimated: true } : {}),
@@ -106,7 +107,7 @@ export async function romanizeLyrics(lyrics: Lyrics, romajiAsWritten = true): Pr
     if (!text.trim() || (text === line.text && words.length === line.words.length &&
         words.every((word, i) => word.text === line.words[i].text))) return line;
     changed = true;
-    return { ...line, text, words, romanization: "" };
+    return { ...line, text, words, romanization: "", romanization_words: undefined };
   });
   return changed ? { ...lyrics, lines, estimated_words: estimated } : lyrics;
 }
@@ -114,6 +115,10 @@ export async function romanizeLyrics(lyrics: Lyrics, romajiAsWritten = true): Pr
 const cache = [new WeakMap<Lyrics, Promise<Lyrics>>(), new WeakMap<Lyrics, Promise<Lyrics>>()];
 const readings = new WeakMap<Lyrics, Lyrics>();
 const letters = (text: string) => text.normalize("NFKD").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+const mostlyLatin = (text: string) => {
+  const characters = text.match(/\p{L}/gu) ?? [];
+  return characters.length > 0 && characters.filter(character => /\p{Script=Latin}/u.test(character)).length / characters.length >= 0.9;
+};
 
 function withReadings(lyrics: Lyrics, romanized: Lyrics) {
   if (lyrics === romanized) return lyrics;
@@ -123,7 +128,7 @@ function withReadings(lyrics: Lyrics, romanized: Lyrics) {
       ...lyrics,
       lines: lyrics.lines.map((line, index) => {
         const reading = romanized.lines[index];
-        return reading && letters(line.text) !== letters(reading.text) ? { ...line, reading } : line;
+        return reading && !mostlyLatin(line.text) && letters(line.text) !== letters(reading.text) ? { ...line, reading } : line;
       }),
     };
     readings.set(romanized, result);

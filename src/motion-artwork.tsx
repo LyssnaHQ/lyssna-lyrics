@@ -313,7 +313,7 @@ function MotionVideo({ url, playing, progress }: { url: string; playing: boolean
     return () => page.removeEventListener("visibilitychange", sync);
   }, [playing, url, failed]);
   return failed ? null : <>
-    <video ref={ref} className="cover" style={ready ? undefined : { visibility: "hidden" }} src={url} preload="auto"
+    <video ref={ref} className="cover" data-motion-cover="" style={ready ? undefined : { visibility: "hidden" }} src={url} preload="auto"
       onLoadedData={() => setReady(true)}
       muted loop playsInline onError={() => setFailed(true)} aria-label="Apple Music animated cover" />
     {!ready && <CoverProgress value={progress} />}
