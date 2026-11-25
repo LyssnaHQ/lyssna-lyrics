@@ -20,9 +20,10 @@ function wordTimedInput(lyrics: Lyrics) {
   const groups: Group[] = [];
   for (const line of lyrics.lines) {
     const vocal: Vocal = { StartTime: line.start_ms / 1_000, EndTime: line.end_ms / 1_000, original: line,
-      Syllables: line.words.map((word, index) => ({ Text: word.text.trimStart(), StartTime: word.start_ms / 1_000,
-        EndTime: word.end_ms / 1_000, IsPartOfWord: index + 1 < line.words.length && !/^\s/.test(line.words[index + 1].text),
-        TransliteratedText: word.romanization?.trimStart(), estimated: word.estimated })) };
+      Syllables: line.words.map((word, index) => ({ Text: word.text.trim(), StartTime: word.start_ms / 1_000,
+        EndTime: word.end_ms / 1_000, IsPartOfWord: index + 1 < line.words.length &&
+          !/\s$/.test(word.text) && !/^\s/.test(line.words[index + 1].text),
+        TransliteratedText: word.romanization?.trim(), estimated: word.estimated })) };
     const last = groups.at(-1);
     if (line.background && last?.OppositeAligned === line.opposite) (last.Background ??= []).push(vocal);
     else groups.push({ Type: "Vocal", Lead: vocal, OppositeAligned: line.opposite });
@@ -67,7 +68,8 @@ export function displayLyrics(lyrics: Lyrics | undefined, wordSync: boolean, dur
       ? { Type: "Line", Content: lineTimedInput(lyrics) } : { Type: "Static", Lines: lineTimedInput(lyrics) };
     const result: TimingResult = estimate ? lyrics.synced
       ? ConvertLineLyricsToExperimentalWordSync(input, analysis) : ConvertStaticLyricsToExperimentalWordSync(input, analysis, duration / 1_000)
-      : apple && wordTimed ? RepairAppleMusicWordSync(input) : brackets ? ExtractBracketBackgroundVocals(input) : input;
+      : apple && wordTimed ? RepairAppleMusicWordSync(input)
+        : brackets && wordTimed ? ExtractBracketBackgroundVocals(input, true) : input;
     if (result !== input && result.Type === "Syllable") {
       const lines = normalizedOutput(result, lyrics);
       if (lines.length) lyrics = { ...lyrics, lines, synced: true, estimated_words: !!result.experimentalWordSync,

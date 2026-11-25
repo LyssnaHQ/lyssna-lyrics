@@ -1451,7 +1451,7 @@ function separateBracketedSyllables(words: GeneratedWord[]) {
   return background.length ? { lead, background } : null;
 }
 
-export function ExtractBracketBackgroundVocals(lyrics: any): any {
+export function ExtractBracketBackgroundVocals(lyrics: any, preserveStandalone = false): any {
   if (!Array.isArray(lyrics?.Content)) return lyrics;
   if (lyrics.Type === "Line") {
     if (!(lyrics.Content as LineLyricsEntry[]).some(line => OPEN_BRACKET_TEST.test(line.Text))) return lyrics;
@@ -1468,7 +1468,7 @@ export function ExtractBracketBackgroundVocals(lyrics: any): any {
         },
       })),
     };
-    const result = ExtractBracketBackgroundVocals(timed);
+    const result = ExtractBracketBackgroundVocals(timed, preserveStandalone);
     return result === timed ? lyrics : result;
   }
   if (lyrics.Type !== "Syllable") return lyrics;
@@ -1489,7 +1489,7 @@ export function ExtractBracketBackgroundVocals(lyrics: any): any {
     const originalSyllables = originalLead?.Syllables ?? [];
     const separated = originalSyllables.some(word => OPEN_BRACKET_TEST.test(word.Text))
       ? separateBracketedSyllables(originalSyllables) : null;
-    if (!separated || !originalLead) {
+    if (!separated || !originalLead || (preserveStandalone && separated.lead.length === 0)) {
       if (pendingBackground.length > 0 && line.Lead) {
         content.push({ ...line, Background: [...pendingBackground, ...(line.Background ?? [])] });
         pendingBackground = [];
