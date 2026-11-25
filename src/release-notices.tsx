@@ -17,14 +17,9 @@ const tweaksSetupKey = "lyssna-lyrics.v1.spotify-tweaks-setup";
 const spectrogramFormatKey = "lyssna-lyrics.v1.spectrogram-format";
 const spectrogramFormat = "detail";
 const integrationEvent = "lyssna-lyrics:integration-state";
-const firstRunPreviewEvent = "lyssna-lyrics:preview-first-run";
 const checkInterval = 120_000;
 const ease = "cubic-bezier(0.23, 1, 0.32, 1)";
 const openExternal = (url: string) => window.open(url, "_blank", "noopener,noreferrer");
-
-export function previewFirstRun() {
-  window.dispatchEvent(new Event(firstRunPreviewEvent));
-}
 
 function compareVersions(a: string, b: string) {
   const [aCore, ...aSuffix] = a.split("-");
@@ -290,7 +285,6 @@ export function startReleaseNotices(host: Host, options: BuildOptions) {
   function showFirstRun() {
     if (!startupPending) showSpotifyTweaks(false, showFirstLoad);
   }
-  window.addEventListener(firstRunPreviewEvent, showFirstRun);
 
   function showUpdatedDialog(from: string, to: string) {
     const upgraded = from !== "0.0.0" && to !== "0.0.0" && hasUpdate(to, from);
@@ -433,7 +427,6 @@ export function startReleaseNotices(host: Host, options: BuildOptions) {
     clearTimeout(loadingTimer);
     stopLoading?.();
     window.removeEventListener(integrationEvent, exposePreviews);
-    window.removeEventListener(firstRunPreviewEvent, showFirstRun);
     const api = previewWindow.LyssnaLyrics;
     if (api?.showStartup === previews.showStartup) {
       const remaining = { ...api };
