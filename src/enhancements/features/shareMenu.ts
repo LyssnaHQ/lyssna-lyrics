@@ -236,20 +236,20 @@ export function startShareMenuController(host: Host) {
       const id = trackId([uri]);
       if (id) void copyText(id, "Spotify ID copied");
     } },
-    { label: "Copy Song Name & Artist", icon: artistIcon, copy: (uri: string) => void copyTrackMetadata([uri], "song") },
     { label: "Copy ISRC", icon: albumIcon, copy: (uri: string) => void copyTrackMetadata([uri], "isrc") },
+    { label: "Copy Song Name & Artist", icon: artistIcon, copy: (uri: string) => void copyTrackMetadata([uri], "song") },
   ];
   const copyItems = actions.map(({ label, copy, icon }) => createContextMenuItem(label, (uris) => {
     if (trackId(uris)) copy(uris[0]);
   }, showCopy, icon));
-  createContextMenuSubMenu(copyLabel, [clean, embed, ...copyItems], (uris) => showShare(uris) || showCopy(uris), copySubmenuIcon).register();
+  createContextMenuSubMenu(copyLabel, [...copyItems, clean, embed], (uris) => showShare(uris) || showCopy(uris), copySubmenuIcon).register();
 
   document.addEventListener("contextmenu", resetMenuContext, true);
   document.addEventListener("click", forwardEmbed, true);
   document.addEventListener("keydown", forwardEmbed, true);
   const syncUnavailableMenu = startUnavailableTrackMenu([
-    { label: cleanLabel, copy: uri => copyCleanUrl([uri]), enabled: uri => showShare([uri]) },
     ...actions.map(action => ({ ...action, enabled: (uri: string) => showCopy([uri]) })),
+    { label: cleanLabel, copy: uri => copyCleanUrl([uri]), enabled: uri => showShare([uri]) },
   ]);
   const sync = () => { syncMenus(); syncUnavailableMenu(); };
   observeMenus(sync);
