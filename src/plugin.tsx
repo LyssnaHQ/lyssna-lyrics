@@ -25,7 +25,7 @@ import { downloadTtml, keepTemporaryLyricsFor, listLocalLyrics, lyricsChanged, r
 import { LoadTtml } from "./lyssna/load-ttml";
 import { useReviewerSettings } from "./ttml-reviewer";
 import { attachBulkLyrics, importLyricFile, loadBulkLyrics } from "./ttml-import";
-import { enabledSources, readLyrics, refreshLyrics, refreshPublishedLyrics, sourceIds, songLyricSource } from "./lyric-sources";
+import { enabledSources, readLyrics, readMissingSongwriters, refreshLyrics, refreshPublishedLyrics, sourceIds, songLyricSource } from "./lyric-sources";
 import { LyricCredits } from "./credits";
 import { SongSheetScope } from "./song-sheet";
 import { CanvasArtwork, placeholderArtwork, SpotifyVisualiser, TrackArtwork, useCanvas } from "./spotify-artwork";
@@ -221,17 +221,16 @@ function TrackLyrics({ track, host, playing, settings, compact = false, view = w
     !lyrics.instrumental && (lyrics.synced || duration > 0);
   const estimateTiming = settings.experimental_word_sync || gravity || (!lyrics?.synced && settings.lyrics_highlighter);
   const [analysis, setAnalysis] = useState<AudioAnalysisData>();
-  const [appleWriters, setAppleWriters] = useState<{ trackId: string; names: string[] }>();
-  const needsWriters = !!lyrics?.lines.length && !lyrics.songwriters?.length &&
-    !lyrics.external && !settings.lyrics_sources_disabled.includes("apple");
+  const [extraWriters, setExtraWriters] = useState<{ trackId: string; lyrics: Lyrics; appleEnabled: boolean; names: string[] }>();
+  const appleEnabled = !settings.lyrics_sources_disabled.includes("apple");
   useEffect(() => {
-    if (!needsWriters) return;
+    if (!lyrics?.lines.length || lyrics.songwriters?.length) return;
     let active = true;
-    void readLyrics(track, duration, ["apple"], host).then((apple) => {
-      if (active && apple?.songwriters?.length) setAppleWriters({ trackId: track.id, names: apple.songwriters });
+    void readMissingSongwriters(track, duration, lyrics, host, appleEnabled).then((names) => {
+      if (active && names?.length) setExtraWriters({ trackId: track.id, lyrics, appleEnabled, names });
     }).catch(() => {});
     return () => { active = false; };
-  }, [track, duration, host, needsWriters]);
+  }, [track, duration, host, lyrics, appleEnabled]);
   const analyse = !!lyrics && estimateTiming && needsWordSync(lyrics, duration);
   useEffect(() => {
     if (!analyse) return;
@@ -247,7 +246,8 @@ function TrackLyrics({ track, host, playing, settings, compact = false, view = w
   const romanized = useRomanizedLyrics(timedLyrics, settings.romanized,
     settings.romanization_below && !gravity, settings.romaji_as_written);
   const rendered = filterWords(romanized, settings.lyrics_word_filter);
-  const fallbackWriters = needsWriters && appleWriters?.trackId === track.id ? appleWriters.names : undefined;
+  const fallbackWriters = extraWriters?.trackId === track.id && extraWriters.lyrics === lyrics &&
+    extraWriters.appleEnabled === appleEnabled ? extraWriters.names : undefined;
   const defaultFont = useDefaultLyricsFont(selectedFont(settings, "lyric_font"), rendered, view.document);
   const fontClass = defaultFont ? "lyssna-default-lyrics-font" : undefined;
   const upcoming = fullView && settings.lyrics_up_next && duration > 0 && position >= duration - 30_000 ? host.upcoming() : undefined;

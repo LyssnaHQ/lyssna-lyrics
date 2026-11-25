@@ -40,6 +40,7 @@ const trackIsrc = new Map<string, string>();
 const songPaths = new Map<string, Set<string>>();
 const parsed = new WeakMap<LyricsView, Lyrics>();
 const appleCredits = new Map<string, Promise<boolean | undefined>>();
+const songwriters = new Map<string, { expires: number; value: Promise<string[]> }>();
 let disk: Promise<Cache | undefined> | undefined;
 let writes = Promise.resolve();
 let cacheGeneration = 0;
@@ -71,6 +72,31 @@ export function readLyssnaAppleCredit(songId: string, revisionId: string) {
   appleCredits.set(revisionId, request);
   if (appleCredits.size > cacheLimit) appleCredits.delete(appleCredits.keys().next().value!);
   return request;
+}
+
+export function readLyssnaSongwriters(songId: string) {
+  if (!uuid.test(songId)) return Promise.resolve([]);
+  const cached = songwriters.get(songId);
+  if (cached && cached.expires > Date.now()) return cached.value;
+
+  const entry = { expires: Infinity, value: load() };
+  songwriters.set(songId, entry);
+  if (songwriters.size > cacheLimit) songwriters.delete(songwriters.keys().next().value!);
+  return entry.value;
+
+  async function load() {
+    try {
+      const response = await lyssnaRequest(`/v1/songs/${songId}`);
+      if (!response?.ok) return [];
+      const { credits } = await response.json() as { credits?: { role: string; name: string }[] };
+      return [...new Set(credits?.flatMap(({ role, name }) =>
+        /^(writer|composer|lyricist)$/i.test(role) && name.trim() ? [name.trim()] : []) ?? [])];
+    } catch {
+      return [];
+    } finally {
+      entry.expires = Date.now() + 60_000;
+    }
+  }
 }
 
 function remember(path: string, entry: CacheEntry) {
@@ -121,6 +147,7 @@ export function clearLyssnaCache() {
   cooling.clear();
   refreshes.clear();
   appleCredits.clear();
+  songwriters.clear();
   for (const approval of approvals.values()) approval.fallback = undefined;
   writes = writes.then(async () => {
     await globalThis.caches?.delete(cacheName);

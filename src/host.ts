@@ -33,7 +33,9 @@ type SpotifyHttp = { get(url: string): Promise<unknown> };
 type PlaybackToggle = { getValue(): Promise<boolean>; setValue(value: boolean): Promise<unknown> };
 type HeaderImages = { sources?: ImageSource[] };
 type CatalogueResult = {
-  data?: { trackUnion?: { canvas?: CanvasInfo | null }; albumUnion?: {
+  data?: { trackUnion?: { canvas?: CanvasInfo | null; creditsTrait?: {
+    contributors?: { items?: { name?: string; role?: string }[] };
+  } }; albumUnion?: {
     date?: { isoString?: string; year?: number };
     tracksV2?: { totalCount?: number; items?: { track?: {
       uri?: string;
@@ -304,6 +306,7 @@ export function getHost() {
   const artistHeaders = new Map<string, Promise<string | undefined>>();
   const artistGalleryPhotos = new Map<string, Promise<string | undefined>>();
   const releaseYears = new Map<string, Promise<string | undefined>>();
+  const trackWriters = new Map<string, Promise<string[]>>();
   const canvases = new Map<string, Promise<CanvasInfo | null | undefined>>();
   const analyses = new Map<string, Promise<AudioAnalysis | null>>();
   const currentTrack = () => kit?.Player.state?.item ?? kit?.Player.track ?? spice?.Player.data?.item;
@@ -522,6 +525,26 @@ export function getHost() {
       throw new Error("This album has too many tracks to match at once. Enter a track link instead.");
     },
     lookupTrack,
+    lookupSongwriters(id: string) {
+      if (!/^[A-Za-z0-9]{22}$/.test(id)) return;
+      const cached = trackWriters.get(id);
+      if (cached) return cached;
+      const { definitions, request } = graph();
+      const definition = definitions?.queryTrackCreditsGroupedModal;
+      if (!definition || !request) return;
+      const pending = request(definition, { trackUri: `spotify:track:${id}`, contributorsLimit: 100, contributorsOffset: 0 }).then(result => {
+        const credits = result.data?.trackUnion?.creditsTrait?.contributors?.items ?? [];
+        const writers = credits.flatMap(({ name, role }) =>
+          name?.trim() && /writer|composer|lyricist/i.test(role ?? "") ? [name.trim()] : []);
+        return [...new Set(writers)];
+      }).catch(() => {
+        if (trackWriters.get(id) === pending) trackWriters.delete(id);
+        return [];
+      });
+      trackWriters.set(id, pending);
+      if (trackWriters.size > 96) trackWriters.delete(trackWriters.keys().next().value!);
+      return pending;
+    },
     async lookupIsrc(id: string, known?: string) {
       return normalizeIsrc(known) ?? (await spotifyTrackMetadata(id))?.external_ids?.isrc
         ?? normalizeIsrc((await lookupWebTrack(id))?.external_ids?.isrc);

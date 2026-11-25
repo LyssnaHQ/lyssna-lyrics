@@ -4,7 +4,7 @@ import type { Lyrics } from "./lyssna/types";
 import { parseSpotifyLyrics, readLrcLib, readLrcRed, readNetease, within } from "./remote-lyrics";
 import type { Settings } from "./settings";
 import { readSpicyLyrics, spicyAppleSource, spicyCommunitySource } from "./spicy";
-import { clearLyssnaCache, readLyssnaLyrics, revalidateLyssnaSong } from "./lyssna-provider";
+import { clearLyssnaCache, readLyssnaLyrics, readLyssnaSongwriters, revalidateLyssnaSong } from "./lyssna-provider";
 import { localTrackIsrc } from "./local-track-isrc";
 
 export const lyricSources = {
@@ -47,6 +47,18 @@ export function orderedSources(order: string[]) {
 
 export function enabledSources(settings: Settings) {
   return orderedSources(settings.lyrics_source_order).filter((id) => !settings.lyrics_sources_disabled.includes(id));
+}
+
+export async function readMissingSongwriters(track: Track, duration: number, lyrics: Lyrics, host: Host, appleEnabled: boolean) {
+  if (lyrics.lyssna?.songId) {
+    const writers = await readLyssnaSongwriters(lyrics.lyssna.songId);
+    if (writers.length) return writers;
+  }
+  if (appleEnabled && !lyrics.source.startsWith("Apple Music")) {
+    const apple = await readLyrics(track, duration, ["apple"], host);
+    if (apple?.songwriters?.length) return apple.songwriters;
+  }
+  return host.lookupSongwriters(track.id);
 }
 
 const remoteReaders = { lrcred: readLrcRed, lrclib: readLrcLib, netease: readNetease };
