@@ -1,5 +1,9 @@
 # Lyssna Lyrics patch notes
 
+## v1.1.0-2a20e16
+
+- Add a red glow around Creator upload errors so they stand out against the editor.
+
 ## v1.1.0-eec63ae
 
 - Raise Creator upload errors by 40 pixels to clear the playback controls.
