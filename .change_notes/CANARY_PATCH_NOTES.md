@@ -1,5 +1,9 @@
 # Lyssna Lyrics patch notes
 
+## v1.1.0-d7863c2
+
+- Center Lyssna upload confirmations in the Spotify window. Show a short confetti burst when an upload goes live unless reduced motion is enabled.
+
 ## v1.1.0-afd5bc9
 
 - Put Copy ID, Copy ISRC, and Copy Song Name & Artist first in Copy/Share, followed by Copy Clean URL and Embed.
