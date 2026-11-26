@@ -1,5 +1,10 @@
 # Lyssna Lyrics patch notes
 
+## v1.2.0-0f6afdf
+
+- Brighten the scrollbar thumb on hover and dim it while held. Center the lyrics scrollbar vertically when credits are pinned.
+- Make Build Channels follow the Liquid Glass toggle. Remove corner lighting from Settings and Build Channels.
+
 ## v1.2.0-84b88ad
 
 - End the lyrics scrollbar above pinned credits. Credits that scroll with the lyrics stay within its range.
