@@ -1,5 +1,13 @@
 # Lyssna Lyrics patch notes
 
+## v1.2.0-806bb4c
+
+- Open the review queue in TTML Creator. Play a lyric submission to open its draft while listening. Instrumental submissions are labeled in the queue and can be approved, rejected, or sent back for changes without a lyric file.
+- Merge a word or syllable with the next one from its context menu. Split a whole draft into syllables or split Japanese lyrics by symbol in one step.
+- Review lyric fixes and section tags separately in the Genius menu. Artist-only headers become verses credited to that singer, and long lines wrap in the review panel.
+- Keep drafts with 150 or more lines responsive by drawing word controls only near the visible area.
+- Retry uploads without Apple Music credit when Lyssna rejects the credit because Apple supplied line sync.
+
 ## v1.2.0-feda33d
 
 - Bring back the original Discord and Ko-fi outline shapes, fit them to the filled logos, and make the footer buttons shorter with 24 px icons.
