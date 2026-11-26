@@ -1,5 +1,10 @@
 # Lyssna Lyrics patch notes
 
+## v1.2.0-f37b8e9
+
+- Add Apple Music Style as the second animator preset, with a soft highlight through each word and a glow on held notes. Move Lyssna (Legacy) below Bouncy Lyrics.
+- Apply Liquid Glass to update prompts, migration and welcome dialogs, source and font pickers, and Creator popups.
+
 ## v1.2.0-fe3dcf8
 
 - Give the Settings tab strip a clearer border on all sides.
