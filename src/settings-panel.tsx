@@ -582,7 +582,7 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
           {footerLinks.map(({ label, href, logo, outline }) => <a key={href} className="settings-footer-action"
             href={href} target="_blank" rel="noopener noreferrer">
             <span className="settings-footer-logo" style={{ "--footer-logo-outline": `url("${outline}")` } as CSSProperties}>
-              <img src={logo} alt="" width={20} height={20} />
+              <img src={logo} alt="" width={35} height={24} />
             </span>
             {label}
           </a>)}
