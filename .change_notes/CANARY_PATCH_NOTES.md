@@ -1,5 +1,11 @@
 # Lyssna Lyrics patch notes
 
+## v1.2.0-3b92380
+
+- Show play and pause feedback immediately in Creator. Rapid presses keep the final playback choice, and the playhead updates as soon as a seek takes effect.
+- Reduce rendering work during playback and batch draft saves during quick edits.
+- Add a thin, translucent scrollbar to the lyrics view. Drag it to browse the song.
+
 ## v1.2.0-63d18f0
 
 - Omit cover artwork URLs from Creator’s TTML metadata.
