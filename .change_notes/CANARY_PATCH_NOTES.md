@@ -1,5 +1,10 @@
 # Lyssna Lyrics patch notes
 
+## v1.2.0-76f2750
+
+- Soften the outline around the Settings tabs.
+- Use the official Discord and Ko-fi logos in the Settings footer. The buttons have a light outline and fill on hover or keyboard focus.
+
 ## v1.2.0-4eb994a
 
 - Bring back the Settings footer with Discord and Ko-fi on the left and the version on the right. Click the version to open Build Channels.
