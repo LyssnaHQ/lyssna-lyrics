@@ -1,5 +1,10 @@
 # Lyssna Lyrics patch notes
 
+## v1.2.0-e6026bc
+
+- Align the Settings scrollbar track with the first visible card and mirror the top clearance at the bottom.
+- Make the overlay scrollbar follow the pointer from the first press and keep tracking if you drag outside the gutter.
+
 ## v1.2.0-0f6afdf
 
 - Brighten the scrollbar thumb on hover and dim it while held. Center the lyrics scrollbar vertically when credits are pinned.
