@@ -1,5 +1,9 @@
 # Lyssna Lyrics patch notes
 
+## v1.2.0-f297c9a
+
+- Give every word in Apple Music Style a gentle rise and fall. Syllables in the same word move together.
+
 ## v1.2.0-2f57e62
 
 - Smooth out Apple Music Style. Short words stay in place as the highlight passes through, and held notes glide gently.
