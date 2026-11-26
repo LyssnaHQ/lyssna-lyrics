@@ -28,7 +28,7 @@ SOFTWARE.
 
 The Lucide icons are distributed under the ISC license. Some are derived from Feather under MIT. The [Lucide license](https://github.com/lucide-icons/lucide/blob/main/LICENSE) accompanies the built plugin.
 
-The Settings footer uses the official [Discord symbol](https://discord.com/branding) and [Ko-fi cup](https://more.ko-fi.com/brand-assets) as link icons. The marks belong to their respective owners.
+The Settings footer uses the official [Discord symbol](https://discord.com/branding) and [Ko-fi cup](https://more.ko-fi.com/brand-assets) as link icons, with custom outlines for their idle states. The marks belong to their respective owners.
 
 Lyssna's gibberish dictionary and filter, and the full screen transport glyphs, come from [the pixels-spicy-lyrics fork](https://github.com/iPixelGalaxy/spicy-lyrics) under AGPL-3.0. The app snapshot records the source revision in `src/lyssna/UPSTREAM`.
 

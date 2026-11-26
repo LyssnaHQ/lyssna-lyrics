@@ -1,7 +1,9 @@
 import { cloneElement, isValidElement, useEffect, useLayoutEffect, useRef, useState, type ComponentProps, type CSSProperties, type ReactElement, type ReactNode, type RefObject, type UIEventHandler } from "react";
 import { AlignLeft, AppWindow, ChevronLeft, ChevronUp, FileText, FlaskConical, Palette, Pin, Search, Settings2, SlidersHorizontal, WandSparkles, Wrench, X } from "lucide-react";
+import discordOutline from "../assets/discord-outline.svg";
 import discordSymbol from "../assets/discord-symbol.svg";
 import kofiCup from "../assets/kofi-cup.png";
+import kofiOutline from "../assets/kofi-outline.svg";
 import EnhancementsSection from "./enhancements/section";
 import { AnimatorPanel } from "./lyssna/animator-settings";
 import { appFontStyles, FontControl } from "./font-settings";
@@ -43,6 +45,10 @@ type Tab = (typeof tabs)[number][0];
 const tabId = (label: Tab) => `lyssna-settings-tab-${label.toLowerCase().replaceAll(" ", "-")}`;
 type Section = [Tab, string, ReactNode[], columns?: boolean];
 const placeKey = "lyssna-lyrics.settings-place";
+const footerLinks = [
+  { label: "Discord", href: discordInvite, logo: discordSymbol, outline: discordOutline },
+  { label: "Support us on Ko-fi", href: "https://ko-fi.com/lyssna", logo: kofiCup, outline: kofiOutline },
+];
 const submenus = {
   sources: "Manage Sources",
   library: "TTML Database",
@@ -573,12 +579,13 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
       </SettingsScrollArea>
       {!submenu && <footer className="lyrics-settings-footer">
         <nav className="settings-footer-links" aria-label="Lyssna links">
-          <a className="settings-footer-action" href={discordInvite} target="_blank" rel="noopener noreferrer">
-            <img src={discordSymbol} alt="" width={16} height={16} />Discord
-          </a>
-          <a className="settings-footer-action" href="https://ko-fi.com/lyssna" target="_blank" rel="noopener noreferrer">
-            <img src={kofiCup} alt="" width={16} height={16} />Ko-fi
-          </a>
+          {footerLinks.map(({ label, href, logo, outline }) => <a key={href} className="settings-footer-action"
+            href={href} target="_blank" rel="noopener noreferrer">
+            <span className="settings-footer-logo" style={{ "--footer-logo-outline": `url("${outline}")` } as CSSProperties}>
+              <img src={logo} alt="" width={19} height={19} />
+            </span>
+            {label}
+          </a>)}
         </nav>
         <button type="button" id="lyssna-open-builds" className="settings-footer-action settings-build-trigger"
           aria-haspopup="dialog" aria-expanded={showChannels}
