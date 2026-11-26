@@ -1,5 +1,9 @@
 # Lyssna Lyrics patch notes
 
+## v1.2.0-e0dbec3
+
+- Move the overlay scrollbar thumb farther from the edge, reveal it from a wider area, and keep the regular pointer over it.
+
 ## v1.2.0-5594e42
 
 - Lowercase only the first character of each continuation joined into a backing vocal.
