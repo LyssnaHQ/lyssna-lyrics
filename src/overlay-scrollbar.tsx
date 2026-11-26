@@ -28,14 +28,17 @@ export const OverlayScrollbar = memo(function OverlayScrollbar({ scroll, label, 
 
     let frame = 0;
     let clientX = 0;
+    let clientY = 0;
     const move = (event: PointerEvent) => {
       if (event.pointerType === "touch" || rail.hidden) return;
       clientX = event.clientX;
+      clientY = event.clientY;
       if (frame) return;
       frame = view.requestAnimationFrame(() => {
         frame = 0;
-        const distance = area.getBoundingClientRect().right - clientX;
-        rail.toggleAttribute("data-near-edge", distance >= 0 && distance <= REVEAL_DISTANCE);
+        const { right, top, bottom } = rail.getBoundingClientRect();
+        const distance = right - clientX;
+        rail.toggleAttribute("data-near-edge", distance >= 0 && distance <= REVEAL_DISTANCE && clientY >= top && clientY <= bottom);
       });
     };
     const leave = () => {
@@ -57,16 +60,34 @@ export const OverlayScrollbar = memo(function OverlayScrollbar({ scroll, label, 
   useLayoutEffect(() => {
     const node = scroll.current;
     const rail = thumb.current;
-    if (!node || !rail) return;
+    const area = rail?.parentElement;
+    if (!node || !rail || !area) return;
     let extent = 0;
     const position = () => {
       if (extent > 0) rail.valueAsNumber = Math.max(0, Math.min(100, node.scrollTop / extent * 100));
     };
     const measure = () => {
       extent = node.scrollHeight - node.clientHeight;
-      rail.hidden = extent <= 1;
-      if (rail.hidden) return;
+      if (extent <= 1) {
+        rail.hidden = true;
+        return;
+      }
+
+      // The rail can sit at the page edge while the scroller ends above a pinned footer.
+      const anchor = area.getBoundingClientRect();
+      const viewport = node.getBoundingClientRect();
+      const scale = anchor.height / area.offsetHeight || 1;
+      const top = (viewport.top - anchor.top) / scale + node.clientTop - area.clientTop;
+      const start = Math.max(0, top);
+      const end = Math.min(area.clientHeight, top + node.clientHeight);
+      rail.style.setProperty("--overlay-scroll-top", `${start}px`);
+      rail.style.setProperty("--overlay-scroll-height", `${Math.max(0, end - start)}px`);
+      rail.hidden = false;
       const height = rail.clientHeight;
+      if (height <= 0) {
+        rail.hidden = true;
+        return;
+      }
       const thumbHeight = Math.min(height, Math.max(24, height * node.clientHeight / node.scrollHeight));
       rail.style.setProperty("--overlay-scroll-thumb-height", `${thumbHeight}px`);
       position();
@@ -81,7 +102,7 @@ export const OverlayScrollbar = memo(function OverlayScrollbar({ scroll, label, 
     const observe = () => {
       resize.disconnect();
       resize.observe(node);
-      resize.observe(rail);
+      resize.observe(area);
       if (observeContent) for (const child of node.children) resize.observe(child);
     };
     const children = observeContent ? new MutationObserver(() => { observe(); measure(); }) : undefined;

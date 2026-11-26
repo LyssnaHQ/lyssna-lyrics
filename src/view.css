@@ -1986,6 +1986,7 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
 
 .lyssna-lyrics-view .plugin-settings .lyrics-settings-tabs {
   flex-wrap: nowrap;
+  margin-bottom: 0;
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -2002,6 +2003,10 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   padding-top: 5px;
   min-width: 0;
   overflow-x: hidden;
+}
+
+.lyssna-lyrics-view .plugin-settings .lyrics-settings-tabs + .settings-scroll-frame .lyrics-settings-scroll {
+  padding-top: 9px;
 }
 
 .lyssna-lyrics-view .plugin-settings-submenu .lyrics-settings-head {

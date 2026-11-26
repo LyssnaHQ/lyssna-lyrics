@@ -464,6 +464,7 @@
   transition: none;
 }
 .settings-scroll-frame {
+  --settings-scroll-padding: 20px;
   position: relative;
   display: flex;
   flex: 1;
@@ -477,7 +478,11 @@
   flex-direction: column;
   min-height: 0;
   overflow-y: auto;
-  padding: 4px 20px 20px;
+  padding: 4px var(--settings-scroll-padding, 20px) 20px;
+}
+.lyrics-settings-scroll + .overlay-scrollbar {
+  --overlay-scroll-inset-top: 0px;
+  --overlay-scroll-thumb-gap: calc((var(--settings-scroll-padding) - var(--overlay-scroll-thumb-width)) / 2);
 }
 .lyrics-settings [role="tabpanel"] {
   margin-bottom: 24px;

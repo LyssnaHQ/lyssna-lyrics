@@ -43,12 +43,15 @@
 }
 
 .overlay-scrollbar {
+  --overlay-scroll-thumb-width: 6px;
+  --overlay-scroll-thumb-gap: 12px;
+  --overlay-scroll-inset-top: 8px;
   position: absolute;
-  top: 8px;
+  top: calc(var(--overlay-scroll-top, 0px) + var(--overlay-scroll-inset-top));
   right: 0;
   z-index: 4;
   width: 28px;
-  height: calc(100% - 16px);
+  height: max(0px, calc(var(--overlay-scroll-height, 100%) - var(--overlay-scroll-inset-top) - 8px));
   margin: 0;
   padding: 0;
   border: 0;
@@ -62,6 +65,10 @@
 .overlay-scrollbar:is([data-near-edge], :hover, :active, :focus-visible) {
   opacity: 1;
 }
+.overlay-scrollbar:focus {
+  outline: none;
+  box-shadow: none;
+}
 @media (prefers-reduced-motion: no-preference) {
   .overlay-scrollbar:not(.reduce-motion *) {
     transition: opacity 220ms ease;
@@ -72,10 +79,12 @@
 }
 .overlay-scrollbar::-webkit-slider-thumb {
   appearance: none;
-  width: 6px;
+  width: var(--overlay-scroll-thumb-width);
   height: var(--overlay-scroll-thumb-height, 24px);
-  /* The grab area is 28px wide, with the thumb 12px from the edge. */
-  transform: translateX(-1px);
+  transform: translateX(calc((28px - var(--overlay-scroll-thumb-width)) / 2 - var(--overlay-scroll-thumb-gap)));
   border-radius: 999px;
   background: light-dark(#0006, #fff6);
+}
+.overlay-scrollbar:focus-visible::-webkit-slider-thumb {
+  background: light-dark(#000a, #fffc);
 }

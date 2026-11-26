@@ -369,6 +369,7 @@
   grid-template-rows: minmax(0, 1fr) auto;
 }
 .has-pinned-footer .lyric-scroll {
+  box-sizing: border-box;
   padding-bottom: 24px;
 }
 /* Like Spicy Lyrics, the credits grow with the lyrics, so they stay
