@@ -72,6 +72,8 @@ import creatorCss from "./creator/ttml-creator.css?inline";
 import meterCss from "./creator/recording-meter.css?inline";
 import scrollbars from "./scrollbars.css?inline";
 
+const popupGlassAttribute = "data-lyssna-liquid-glass";
+
 function useLiveSettings() {
   const [settings, setSettings] = useState(readSettings);
   useEffect(() => {
@@ -1177,8 +1179,12 @@ export default function start(options: BuildOptions) {
     dismissReviewQueue?.();
     if (reviewOpen) setCreator(creatorEnabled && reviewReusesCreator, false);
   }
+  type DetachedMode = "popout" | "cinema";
+  let detached: { mode: DetachedMode; view: Window; dismiss(): void; renderPreview(): void } | undefined;
   function applyRuntimeSettings() {
     const settings = readSettings();
+    document.documentElement.toggleAttribute(popupGlassAttribute, !!settings.liquid_glass);
+    detached?.view.document.documentElement.toggleAttribute(popupGlassAttribute, !!settings.liquid_glass);
     const nextAutoRecord = settings.ttml_creator && settings.auto_record;
     if (autoRecord && !nextAutoRecord) capture.stopAuto();
     autoRecord = nextAutoRecord;
@@ -1199,6 +1205,7 @@ export default function start(options: BuildOptions) {
   window.addEventListener(settingsEvent, applyRuntimeSettings);
   function disposeRuntimeSettings() {
     window.removeEventListener(settingsEvent, applyRuntimeSettings);
+    document.documentElement.removeAttribute(popupGlassAttribute);
     recorder?.root.unmount();
     recorder?.container.remove();
     recorder = undefined;
@@ -1215,8 +1222,6 @@ export default function start(options: BuildOptions) {
   let mutedPreviewPanel: HTMLElement | undefined;
   let backdrop: { panel: HTMLElement; container: HTMLElement; dispose(): void } | undefined;
   let sidebarCover: string | undefined;
-  type DetachedMode = "popout" | "cinema";
-  let detached: { mode: DetachedMode; view: Window; dismiss(): void; renderPreview(): void } | undefined;
   let opening = false;
   let switchingLyricsView = false;
   let rememberedView = readViewSession();
@@ -1306,6 +1311,7 @@ export default function start(options: BuildOptions) {
       detached?.dismiss();
       try {
         view.document.head.append(stylesheet.cloneNode(true));
+        view.document.documentElement.toggleAttribute(popupGlassAttribute, !!readSettings().liquid_glass);
         copySpotifyFonts(view.document);
         const parent = view.document.createElement("div");
         parent.className = cinema ? "lyssna-lyrics-view lyssna-cinema-window immersive" : "lyssna-lyrics-view lyssna-popout-view";

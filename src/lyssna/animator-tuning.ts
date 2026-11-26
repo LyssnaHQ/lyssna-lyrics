@@ -4,18 +4,20 @@
  * Lyssna is the fork's Lyssna preset: these defaults on the tuned curves.
  * Legacy is Lyssna's earlier animation. Custom applies edited values. */
 
-export type AnimatorPreset = "Lyssna" | "Legacy" | "Bouncy" | "Custom";
+export type AnimatorPreset = "Lyssna" | "AppleStyle" | "Legacy" | "Bouncy" | "Custom";
 export type AnimatorDetail = "Basic" | "Advanced" | "Full" | "Full + Extras";
 export const ANIMATOR_PRESETS: AnimatorPreset[] = [
   "Lyssna",
-  "Legacy",
+  "AppleStyle",
   "Bouncy",
+  "Legacy",
   "Custom",
 ];
 export const ANIMATOR_PRESET_LABELS: Record<AnimatorPreset, string> = {
   Lyssna: "Lyssna (Default)",
-  Legacy: "Lyssna (Legacy)",
+  AppleStyle: "Apple Music Style",
   Bouncy: "Bouncy Lyrics",
+  Legacy: "Lyssna (Legacy)",
   Custom: "Custom",
 };
 export const ANIMATOR_DETAILS: AnimatorDetail[] = [
@@ -289,10 +291,12 @@ export function cleanSavedPresets(input: unknown): SavedAnimatorPreset[] {
       : [],
   );
 }
-export const presetOf = (settings: AnimatorSettings = {}): AnimatorPreset =>
-  ANIMATOR_PRESETS.includes(settings.preset as AnimatorPreset)
-    ? settings.preset!
-    : "Lyssna";
+export function presetOf(settings: AnimatorSettings = {}): AnimatorPreset {
+  const stored: unknown = settings.preset;
+  // Preserve the selection saved by the previous Canary build.
+  if (stored === "Bloom") return "AppleStyle";
+  return ANIMATOR_PRESETS.includes(stored as AnimatorPreset) ? stored as AnimatorPreset : "Lyssna";
+}
 /** The values the animator plays. */
 export function animatorValues(
   settings: AnimatorSettings = {},

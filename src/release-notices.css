@@ -21,7 +21,8 @@
   overscroll-behavior: contain;
   border: 1px solid color-mix(in oklab, var(--ink) 16%, transparent);
   border-radius: 16px;
-  background: var(--surface);
+  background: var(--lyssna-popup-fill-dark, var(--surface));
+  backdrop-filter: var(--lyssna-popup-blur, none);
   box-shadow: inset 0 1px color-mix(in oklab, var(--ink) 22%, transparent), 0 20px 48px -20px #0009;
   color: var(--ink);
 }
@@ -34,7 +35,7 @@
 }
 
 .release-dialog::backdrop {
-  background: rgb(0 0 0 / 55%);
+  background: var(--lyssna-popup-scrim, rgb(0 0 0 / 55%));
   backdrop-filter: blur(4px);
   animation: release-fade .22s var(--ease) both;
 }
@@ -217,7 +218,8 @@
   box-sizing: border-box;
   border: 1px solid color-mix(in oklab, var(--ink) 16%, transparent);
   border-radius: 14px;
-  background: var(--surface);
+  background: var(--lyssna-popup-fill-dark, var(--surface));
+  backdrop-filter: var(--lyssna-popup-blur, none);
   box-shadow: inset 0 1px color-mix(in oklab, var(--ink) 22%, transparent), 0 12px 32px -12px #0009;
   color: var(--ink);
   animation: release-enter .4s var(--ease) both;

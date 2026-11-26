@@ -39,7 +39,8 @@
   overflow: hidden auto;
   border: 1px solid #ffffff1f;
   border-radius: 14px;
-  background: #202020;
+  background: var(--lyssna-popup-fill-dark, #202020);
+  backdrop-filter: var(--lyssna-popup-blur, none);
   color: #f5f5f5;
   color-scheme: dark;
   box-shadow: 0 12px 32px #0009, inset 0 1px #ffffff0d;

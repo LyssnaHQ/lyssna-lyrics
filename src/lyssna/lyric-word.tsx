@@ -6,11 +6,13 @@ export const LyricWord = memo(function LyricWord({
   words,
   offset = 0,
   total = words.length,
+  animateLetters = true,
 }: {
   words: AnimatedWord[];
   /** Where these syllables sit in a word split over several boxes. */
   offset?: number;
   total?: number;
+  animateLetters?: boolean;
 }) {
   const whitespace = words[0]?.text.match(/^\s+/u)?.[0] ?? "";
   const trailing = /\s$/u.test(words.at(-1)?.text ?? "");
@@ -22,7 +24,7 @@ export const LyricWord = memo(function LyricWord({
           const content =
             part === 0 ? word.text.slice(whitespace.length) : word.text;
           const text = part === words.length - 1 ? content.trimEnd() : content;
-          const emphasis = isEmphasis(word, text);
+          const emphasis = animateLetters && isEmphasis(word, text);
           // Split syllables scale away from their joints so no seam opens.
           const at = offset + part;
           const joined =

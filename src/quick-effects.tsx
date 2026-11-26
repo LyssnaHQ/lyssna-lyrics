@@ -1,5 +1,5 @@
 import { useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type RefObject } from "react";
-import { ArrowUpDown, Ban, CaseLower, CaseSensitive, CaseUpper, ChartNoAxesColumn, Check, ChevronDown, History, Shuffle, SlidersHorizontal, Sparkles, Type } from "lucide-react";
+import { ArrowUpDown, Ban, CaseLower, CaseSensitive, CaseUpper, ChartNoAxesColumn, Check, ChevronDown, History, Shuffle, SlidersHorizontal, Sparkles, Sun, Type } from "lucide-react";
 import { useAnchoredPopover } from "./anchored-popover";
 import { FontControl } from "./font-settings";
 import type { Track } from "./host";
@@ -51,7 +51,7 @@ export const quickEffects = [
 export type QuickEffectChoice = Extract<(typeof quickEffects)[number], { kind: "picker" }>;
 
 const choiceIcons = {
-  Lyssna: Sparkles, Legacy: History, Bouncy: ArrowUpDown, Custom: SlidersHorizontal,
+  Lyssna: Sparkles, AppleStyle: Sun, Legacy: History, Bouncy: ArrowUpDown, Custom: SlidersHorizontal,
   off: Ban, gibberish: Shuffle, lower: CaseLower, upper: CaseUpper,
 };
 

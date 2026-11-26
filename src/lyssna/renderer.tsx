@@ -225,6 +225,8 @@ export function LyricsDisplay({
   const animator = useRef<LyricAnimator>(undefined);
   // New springs pick up the animator preset's curves and tuning.
   const tuning = JSON.stringify(settings.lyrics_animator ?? {});
+  const preset = presetOf(settings.lyrics_animator);
+  const appleStyle = preset === "AppleStyle" && lyrics.synced && !settings.lyrics_simple && !settings.lyrics_highlighter;
   useLayoutEffect(() => {
     tuneMotion(JSON.parse(tuning));
     const instance = new LyricAnimator(
@@ -235,15 +237,16 @@ export function LyricsDisplay({
       scroll.current?.ownerDocument.defaultView ?? window,
       1,
       !!settings.lyrics_highlighter && lyrics.synced,
+      appleStyle,
     );
     animator.current = instance;
     return () => instance.dispose();
-  }, [lyrics, settings.reduce_motion, settings.lyrics_simple, settings.lyrics_highlighter, tuning]);
+  }, [lyrics, settings.reduce_motion, settings.lyrics_simple, settings.lyrics_highlighter, tuning, appleStyle]);
   useLayoutEffect(() => {
     if (!lyrics.synced) return;
     if (positionJumped || cueLine) animator.current?.reset();
     animator.current?.update(lyricTime);
-  }, [lyricTime, cueLine, lyrics, settings.reduce_motion, settings.lyrics_simple, settings.lyrics_highlighter, tuning]);
+  }, [lyricTime, cueLine, lyrics, settings.reduce_motion, settings.lyrics_simple, settings.lyrics_highlighter, tuning, appleStyle]);
   // Romanization, translations or a word filter change only the words: the
   // view stays on the current line instead of sliding to where it rewraps.
   const timing = useMemo(
@@ -510,7 +513,8 @@ export function LyricsDisplay({
     <div
       className={`lyrics-display ${compact ? "compact" : ""} ${footerMode !== "off" ? "has-pinned-footer" : ""} ${!lyrics.synced ? "static-lyrics" : ""} ${settings.reduce_motion ? "reduce-motion" : ""} ${settings.lyrics_simple ? "simple-lyrics" : ""} ${settings.lyrics_right_align ? "lyrics-right" : ""} ${settings.lyrics_flip_duet ? "lyrics-flip-duet" : ""} ${settings.lyrics_wide_duet === false ? "" : "lyrics-wide-duet"} ${settings.lyrics_line_hover ? "lyrics-line-hover" : ""} ${lyrics.lines.some((line) => line.opposite) ? "has-duet" : ""} ${settings.lyrics_minimal && !compact ? "minimal" : ""} ${highlighter ? "highlighter" : ""} ${settings.lyrics_keep_overlaps !== false ? "keep-overlaps" : ""} ${lyrics.synced && lyrics.lines.length && lyricTime >= Math.max(...lyrics.lines.map(vocalEnd)) ? "all-sung" : ""} ${settings.lyrics_credits_follow && endsOnRight(lyrics.lines, !!(settings.lyrics_flip_duet || settings.lyrics_right_align)) ? "credits-right" : ""}`}
       data-following={following}
-      data-animator={presetOf(settings.lyrics_animator)}
+      data-animator={preset}
+      data-apple-style={appleStyle || undefined}
       style={
         {
           ...(compact
@@ -587,6 +591,7 @@ export function LyricsDisplay({
                 blur={compact || playing ? 0 : lineBlur(distance)}
                 synced={lyrics.synced}
                 highlighter={highlighter}
+                animateLetters={!appleStyle}
                 followingStart={highlighter ? markerStarts[index] : undefined}
                 // A line keeps following the song until its last word ends,
                 // even after the next line takes over, so the pen finishes
@@ -681,6 +686,7 @@ const LyricRow = memo(function LyricRow({
   blur,
   synced,
   highlighter,
+  animateLetters,
   followingStart,
   time,
   translation,
@@ -695,6 +701,7 @@ const LyricRow = memo(function LyricRow({
   blur: number;
   synced: boolean;
   highlighter: boolean;
+  animateLetters: boolean;
   followingStart?: number;
   time: number;
   translation?: boolean;
@@ -714,7 +721,7 @@ const LyricRow = memo(function LyricRow({
         {highlighter ? (
           <HighlighterWords line={line} time={time} followingStart={followingStart} />
         ) : (
-          <LyricWords line={line} />
+          <LyricWords line={line} animateLetters={animateLetters} />
         )}
       </span>
       {/* Lyrics can carry translations, such as Chinese under English; like
@@ -722,7 +729,7 @@ const LyricRow = memo(function LyricRow({
       {line.reading && (
         // Sung like the line above it, with calmer motion.
         <span className="lyric-romanization sung">
-          <LyricWords line={line.reading} />
+          <LyricWords line={line.reading} animateLetters={animateLetters} />
         </span>
       )}
       {translation && line.translation && (
@@ -732,7 +739,7 @@ const LyricRow = memo(function LyricRow({
   );
 });
 
-const LyricWords = memo(function LyricWords({ line }: { line: Line }) {
+const LyricWords = memo(function LyricWords({ line, animateLetters }: { line: Line; animateLetters: boolean }) {
   const groups = useMemo(() => wordGroups(line.words), [line]);
   if (!line.words.length)
     return <span className="lyric-plain">{line.text}</span>;
@@ -757,6 +764,7 @@ const LyricWords = memo(function LyricWords({ line }: { line: Line }) {
               words={run}
               offset={at}
               total={group.length}
+              animateLetters={animateLetters}
             />
           );
         });

@@ -378,7 +378,7 @@ return { flag, range, Look: [
         <SettingRow
           key="animator"
           label="Animator Presets"
-          help="Lyssna (Default) is the standard animation, Lyssna (Legacy) the earlier one. Custom stores live tuning."
+          help="Apple Music Style sweeps a soft highlight through each word and adds a glow to held notes. Custom stores live tuning."
           keywords={`animator preset default custom tuning spring ${ANIMATOR_PARAMETERS.map(({ label }) => label).join(" ")}`}
         >
           <AnimatorPresetControl

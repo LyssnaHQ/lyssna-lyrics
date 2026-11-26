@@ -67,6 +67,30 @@ function clear(target: Piece) {
   target.written.clear();
 }
 
+function smoothRamp(value: number) {
+  const progress = Math.max(0, Math.min(1, value));
+  return progress * progress * (3 - 2 * progress);
+}
+
+function animateAppleStyle(syllable: Syllable, time: number, reduceMotion: boolean) {
+  const elapsed = time - syllable.start;
+  const remaining = syllable.end - time;
+  const duration = Math.max(1, syllable.end - syllable.start);
+  const progress = Math.max(0, Math.min(1, elapsed / duration));
+  write(syllable, "--gradient-ratio", (1.36 * progress - 0.36).toFixed(4));
+  if (reduceMotion || progress === 0 || progress === 1) {
+    write(syllable, "translate", "none");
+    write(syllable, "--glow", "");
+    return;
+  }
+  const attack = smoothRamp(elapsed / Math.min(170, duration / 3));
+  const release = smoothRamp(remaining / Math.min(240, duration / 3));
+  const envelope = attack * release * syllable.calm;
+  write(syllable, "translate", `0 ${(-0.045 * envelope).toFixed(4)}em`);
+  const glow = 0.35 * envelope * smoothRamp((duration - 450) / 900);
+  write(syllable, "--glow", glow > 0 ? `0 0 .15em rgb(255 255 255 / ${glow.toFixed(3)})` : "");
+}
+
 /** Drives syllable springs on rendered lyric lines. Lines being sung, and
  * lines whose springs are still settling, are stepped every frame and written
  * straight to the DOM. Other lines rest on static styles. */
@@ -87,6 +111,7 @@ export class LyricAnimator {
     private view: Window = window,
     private motionStrength = 1,
     private animateEstimatedWords = false,
+    private appleStyle = false,
   ) {
     this.ends = lyrics.lines.map(vocalEnd);
   }
@@ -298,7 +323,13 @@ export class LyricAnimator {
         this.layered.delete(index);
         // Its text keeps its own layer until it rests, as a line ending
         // otherwise redraws mid-spring and its words jump.
-        this.line(index)?.setAttribute("data-settling", "");
+        if (!this.appleStyle) this.line(index)?.setAttribute("data-settling", "");
+      }
+      if (this.appleStyle) {
+        if (active) {
+          for (const syllable of syllables) animateAppleStyle(syllable, time, this.reduceMotion);
+        } else this.release(index, syllables);
+        return;
       }
       let awake = false;
       for (const syllable of syllables) {
