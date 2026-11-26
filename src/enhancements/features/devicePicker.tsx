@@ -383,7 +383,7 @@ async function renderPopupContents(root: HTMLDivElement) {
     </div>
     <div className="SpotifyPlusDevicePickerSection">
       <div className="SpotifyPlusDevicePickerSectionHeading">Select another device</div>
-      <div className="SpotifyPlusDevicePickerList">
+      <div className="SpotifyPlusDevicePickerList lyssna-device-scroll">
         {others.length ? others.map(device =>
           <button className="SpotifyPlusDevicePickerRow" type="button" key={device.id} onClick={async event => {
             const button = event.currentTarget;

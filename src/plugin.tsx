@@ -39,6 +39,7 @@ import { startLocalPlaylistPlayback } from "./enhancements/features/localPlaylis
 import { getSetting, subscribeSettings } from "./enhancements/config";
 import { startVolumeDragController } from "./enhancements/features/volumeDrag";
 import { startPreferenceSync } from "./preference-sync";
+import { uploadAsTopbar } from "./upload-as-topbar";
 import { playbarViewButtons } from "./playbar-fullscreen";
 import { findPlaybarControls } from "./playbar-controls";
 import { quickEffects, QuickEffectPicker, SongSourcePicker, type QuickEffectChoice } from "./quick-effects";
@@ -69,6 +70,7 @@ import ttmlCss from "./lyssna/load-ttml.css?inline";
 import viewCss from "./view.css?inline";
 import creatorCss from "./creator/ttml-creator.css?inline";
 import meterCss from "./creator/recording-meter.css?inline";
+import scrollbars from "./scrollbars.css?inline";
 
 function useLiveSettings() {
   const [settings, setSettings] = useState(readSettings);
@@ -1107,7 +1109,7 @@ export default function start(options: BuildOptions) {
   const capture = createSpotifyCapture(host);
   const stopPreferenceSync = startPreferenceSync();
   const stylesheet = document.createElement("style");
-  stylesheet.textContent = `${fontCss}\n${desktopCss}\n${settingsCss}\n${ttmlCss}\n${meterCss}\n${viewCss}`;
+  stylesheet.textContent = `${fontCss}\n${desktopCss}\n${settingsCss}\n${ttmlCss}\n${meterCss}\n${viewCss}\n${scrollbars}`;
   document.head.append(stylesheet);
   let button: ReturnType<Host["button"]> | undefined;
   let playbarButtons: ReturnType<typeof playbarViewButtons> | undefined;
@@ -1378,7 +1380,7 @@ export default function start(options: BuildOptions) {
     container.className = "lyssna-lyrics-view lyssna-review-queue-host";
     const shadow = container.attachShadow({ mode: "open" });
     const style = document.createElement("style");
-    style.textContent = creatorCss;
+    style.textContent = `${creatorCss}\n${scrollbars}`;
     const panel = document.createElement("div");
     shadow.append(style, panel);
     document.body.append(container);
@@ -1513,7 +1515,8 @@ export default function start(options: BuildOptions) {
     openCinemaWindow,
     () => void open("creator"),
   );
-  const stopProfileSettings = host.profileSettings(openProfileSettings);
+  const stopProfileSettings = host.profileMenuItem("Lyssna Lyrics settings", openProfileSettings);
+  const uploadAs = uploadAsTopbar(host);
   reviewButton = reviewTopbar(host, toggleReviewQueue, closeReview);
   const stopReleaseNotices = startReleaseNotices(host, options);
   const stopEnhancementStartup = startEnhancements(host);
@@ -1610,6 +1613,7 @@ export default function start(options: BuildOptions) {
   function syncHost() {
     if (unloading) return;
     syncPlaybar();
+    uploadAs.sync();
     reviewButton?.sync(reviewOpen || !!dismissReviewQueue);
     if (pendingView) restoreView();
     else if (!rememberedView && !switchingLyricsView && host.viewLocation()) rememberView(false);
@@ -1667,6 +1671,7 @@ export default function start(options: BuildOptions) {
       closeProfileSettings?.();
       dismissReviewQueue?.();
       stopProfileSettings();
+      uploadAs.dispose();
       button?.remove();
       reviewButton?.dispose();
       viewButtons.dispose();

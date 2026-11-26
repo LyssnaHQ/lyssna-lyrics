@@ -7,6 +7,7 @@ import { clearLiveSpectrograms, savedSpectrogramBytes } from "./creator/spectrum
 import { stopCreatorCaptures } from "./creator/capture-sessions";
 import { legacyPreferencesMigrated } from "./settings";
 import noticeCss from "./release-notices.css?inline";
+import scrollbars from "./scrollbars.css?inline";
 
 export const discordInvite = "https://discord.gg/qfYAsFQawp";
 const github = "https://github.com/LyssnaHQ/lyssna-lyrics";
@@ -252,7 +253,7 @@ export function startReleaseNotices(host: Host, options: BuildOptions) {
   mount.className = "lyssna-rewrite-release-notices";
   const shadow = mount.attachShadow({ mode: "open" });
   const style = document.createElement("style");
-  style.textContent = noticeCss;
+  style.textContent = `${noticeCss}\n${scrollbars}`;
   const container = document.createElement("div");
   shadow.append(style, container);
   let root: Root | undefined;

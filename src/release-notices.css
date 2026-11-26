@@ -9,6 +9,7 @@
 }
 
 .release-dialog {
+  color-scheme: dark;
   position: fixed;
   inset: 0;
   margin: auto;

@@ -57,6 +57,36 @@ html.lyssna-optimize-volume .main-nowPlayingBar-volumeBar .playback-progressbar-
   display: contents;
 }
 
+.lyssna-upload-as-profile {
+  position: relative;
+}
+
+.lyssna-upload-as-avatar {
+  position: absolute;
+  inset: 0;
+  width: 32px;
+  height: 32px;
+  margin: auto;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  outline: 1px solid #f7bd70;
+  overflow: hidden;
+  background: #30271b;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  pointer-events: none;
+}
+
+.lyssna-upload-as-avatar img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 .lyssna-auto-record {
   position: fixed;
   inset: auto 16px calc(var(--panel-gap, 8px) + 96px) auto;
@@ -2106,11 +2136,6 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   border-radius: 10px;
 }
 
-.lyssna-lyrics-view .lyrics-settings-scroll {
-  scrollbar-width: thin;
-  scrollbar-color: light-dark(#0004, #fff4) transparent;
-}
-
 .lyssna-lyrics-view .lyrics-settings .file-input {
   display: none;
 }
@@ -2552,7 +2577,7 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   }
 
   .lyssna-lyrics-view .plugin-settings .lyrics-settings-tabs {
-    scrollbar-width: thin;
+    scrollbar-width: auto;
   }
 
   .lyssna-lyrics-view .plugin-settings :is(.setting-control, .lyssna-font-control, .settings-range) {

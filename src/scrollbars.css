@@ -1,0 +1,31 @@
+:where(.lyssna-lyrics-view, .review-queue-standalone, .release-dialog, .lyssna-device-scroll) {
+  &::-webkit-scrollbar,
+  & ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-button,
+  & ::-webkit-scrollbar-button {
+    display: none;
+  }
+
+  &::-webkit-scrollbar-track,
+  & ::-webkit-scrollbar-track,
+  &::-webkit-scrollbar-corner,
+  & ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb,
+  & ::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: var(--lyssna-scroll-thumb, light-dark(#0004, #fff4));
+  }
+
+  &::-webkit-scrollbar-thumb:hover,
+  & ::-webkit-scrollbar-thumb:hover {
+    background: var(--lyssna-scroll-thumb-hover, light-dark(#0007, #fff7));
+  }
+}

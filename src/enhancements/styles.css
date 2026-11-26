@@ -211,16 +211,8 @@ html.ll-enhancements-profile-cleanup :is(
   gap: 4px;
   max-height: 240px;
   overflow-y: auto;
-  scrollbar-width: thin;
-}
-
-.SpotifyPlusDevicePickerList::-webkit-scrollbar {
-  width: 4px;
-}
-
-.SpotifyPlusDevicePickerList::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.16);
-  border-radius: 999px;
+  --lyssna-scroll-thumb: #ffffff29;
+  --lyssna-scroll-thumb-hover: #ffffff66;
 }
 
 .SpotifyPlusDevicePickerRow {

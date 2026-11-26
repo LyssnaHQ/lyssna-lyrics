@@ -444,9 +444,7 @@ export function getHost() {
   }
 
   return {
-    profileSettings(onSelect: () => void): Removal {
-      const label = "Lyssna Lyrics settings";
-      const menuIcon = icon.replace('width="20" height="20"', 'width="16" height="16"');
+    profileMenuItem(label: string, onSelect: () => void, menuIcon = icon.replace('width="20" height="20"', 'width="16" height="16"')): Removal {
       if (kit?.ProfileMenu) {
         const item = kit.ProfileMenu.add({ label, icon: menuIcon, onSelect });
         return () => item.remove();

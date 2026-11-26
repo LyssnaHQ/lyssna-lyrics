@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { actAsChanged, clearActAs, readActAs, setActAs, type ActAs } from "./lyssna-act-as";
+import { clearActAs, readActAs, setActAs, subscribeActAs, type ActAs } from "./lyssna-act-as";
 import { lyssnaAccountRequest } from "./lyssna-account";
 import { SettingRow } from "./lyssna/setting-row";
 
@@ -28,15 +28,7 @@ export function ActAsSettings() {
   const [busy, setBusy] = useState(false);
   const latest = useRef(0);
 
-  useEffect(() => {
-    const update = () => setActive(readActAs());
-    window.addEventListener(actAsChanged, update);
-    window.addEventListener("storage", update);
-    return () => {
-      window.removeEventListener(actAsChanged, update);
-      window.removeEventListener("storage", update);
-    };
-  }, []);
+  useEffect(() => subscribeActAs(() => setActive(readActAs())), []);
 
   useEffect(() => {
     const text = query.trim();

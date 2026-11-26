@@ -1,10 +1,11 @@
-import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { ChevronDown, ChevronUp, Music2 } from "lucide-react";
 import { LyricAnimator } from "./lyric-animator";
 import { presetOf } from "./animator-tuning";
 import { frameDue } from "./frame-cap";
 import { HighlighterWords, markerColour, nextMarkerStarts } from "./highlighter";
 import { LyricCountdown } from "./lyric-countdown";
+import { LyricScrollbar } from "./lyric-scrollbar";
 import { LyricWord } from "./lyric-word";
 import { engineLines, glideScroll, GLIDE_MS, lineBlur, stepScroll, tuneMotion, vocalEnd, vocalGap, vocalGaps, wordGroups, type ScrollSpring, type VocalGap } from "./lyric-motion";
 import type { Line, Lyrics, Word } from "./types";
@@ -99,13 +100,12 @@ export function LyricsDisplay({
   // scrolling with the current lyric still on screen; scrolled away from
   // it, browsing stays until they return or select a lyric.
   const glide = useRef<{ from: number; start: number }>(undefined);
-  const automaticScrollTop = useRef<number>(undefined);
   const browsedAt = useRef(0);
-  const browse = () => {
+  const browse = useCallback(() => {
     glide.current = undefined;
     browsedAt.current = performance.now();
     setFollowing(false);
-  };
+  }, []);
   const lines = useRef<(HTMLButtonElement | null)[]>([]);
   const [pausedLine, setPausedLine] = useState<{ line: Line; index: number; from: number; target: number }>();
   const transport = useRef({ playing, positionMs, onSeek });
@@ -283,10 +283,6 @@ export function LyricsDisplay({
     let frame = 0,
       last = performance.now();
     spring.current.position = container.scrollTop;
-    const placeScroll = (top: number) => {
-      container.scrollTop = top;
-      automaticScrollTop.current = container.scrollTop;
-    };
     const tick = () => {
       const time = performance.now();
       frame = 0;
@@ -298,12 +294,11 @@ export function LyricsDisplay({
         slide = glide.current;
       if (slide) {
         const elapsed = time - slide.start;
-        motion.position = glideScroll(
+        container.scrollTop = motion.position = glideScroll(
           slide.from,
           motion.target,
           elapsed,
         );
-        placeScroll(motion.position);
         motion.velocity = 0;
         last = time;
         if (elapsed < GLIDE_MS) frame = view.requestAnimationFrame(tick);
@@ -313,10 +308,10 @@ export function LyricsDisplay({
         }
         return;
       }
-      placeScroll(stepScroll(
+      container.scrollTop = stepScroll(
         motion,
         Math.min(0.064, Math.max(0, (time - last) / 1000)),
-      ));
+      );
       last = time;
       if (
         Math.abs(motion.position - motion.target) > 0.2 ||
@@ -324,7 +319,7 @@ export function LyricsDisplay({
       )
         frame = view.requestAnimationFrame(tick);
       else {
-        placeScroll(motion.target);
+        container.scrollTop = motion.target;
         noteHeldRest(container, true);
       }
     };
@@ -431,8 +426,7 @@ export function LyricsDisplay({
         view.cancelAnimationFrame(frame);
         frame = 0;
         glide.current = undefined;
-        spring.current.position = spring.current.target;
-        placeScroll(spring.current.target);
+        container.scrollTop = spring.current.position = spring.current.target;
         spring.current.velocity = 0;
         return;
       }
@@ -444,11 +438,10 @@ export function LyricsDisplay({
           start: performance.now(),
         };
       if (settings.reduce_motion || native) {
-        if (settings.reduce_motion) placeScroll(spring.current.target);
-        else {
-          automaticScrollTop.current = undefined;
-          container.scrollTo({ top: spring.current.target, behavior: "smooth" });
-        }
+        container.scrollTo({
+          top: spring.current.target,
+          behavior: native && !settings.reduce_motion ? "smooth" : "instant",
+        });
         spring.current.position = spring.current.target;
         spring.current.velocity = 0;
       } else if (!frame) {
@@ -540,8 +533,6 @@ export function LyricsDisplay({
         data-at-end={atEnd}
         onScroll={(event) => {
           const node = event.currentTarget;
-          const autoTop = automaticScrollTop.current;
-          if (!compact && following && lyrics.synced && autoTop !== undefined && Math.abs(node.scrollTop - autoTop) > 2) browse();
           const writersEnd = scrollingWriters.current;
           let end = scrollBounds.current?.end ?? node.scrollHeight - node.clientHeight;
           if (!following && writersEnd) {
@@ -566,10 +557,6 @@ export function LyricsDisplay({
         ref={scroll}
         onWheel={browse}
         onTouchStart={browse}
-        onPointerDown={(event) => {
-          const node = event.currentTarget;
-          if (!compact && node.scrollHeight > node.clientHeight && event.clientX > node.getBoundingClientRect().right - 10) browse();
-        }}
         tabIndex={0}
         onKeyDown={(event) => {
           if (
@@ -639,6 +626,7 @@ export function LyricsDisplay({
           </div>
         )}
       </div>
+      {!compact && <LyricScrollbar scroll={scroll} lyrics={lyrics} browse={browse} />}
       {footerMode !== "off" && (
         <div
           className="lyric-end-credits lyric-pinned-footer"

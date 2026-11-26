@@ -409,13 +409,12 @@
   padding-inline: calc(var(--lyric-size) * 0.35);
   /* The bottom edge fades in and out instead of switching at the end. */
   --lyric-end-alpha: 0;
-  --lyric-edge-mask: linear-gradient(
+  mask-image: linear-gradient(
     transparent,
     #000 10%,
     #000 88%,
     rgb(0 0 0 / var(--lyric-end-alpha))
   );
-  mask-image: var(--lyric-edge-mask);
   transition: --lyric-end-alpha 0.45s ease;
 }
 @property --lyric-end-alpha {
@@ -434,28 +433,36 @@
 .lyric-scroll::-webkit-scrollbar {
   display: none;
 }
-.lyrics-display:not(.compact) > .lyric-scroll {
-  scrollbar-width: thin;
-  scrollbar-color: #ffffff38 transparent;
-  mask-image: var(--lyric-edge-mask), linear-gradient(#000, #000);
-  mask-position: center, right;
-  mask-size: 100% 100%, 10px 100%;
-  mask-repeat: no-repeat;
+.lyric-scrollbar {
+  position: absolute;
+  top: 8px;
+  right: 0;
+  z-index: 4;
+  width: 16px;
+  height: calc(100% - 16px);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  appearance: none;
+  writing-mode: vertical-lr;
+  direction: ltr;
+  background: transparent;
+  cursor: ns-resize;
 }
-.lyrics-display:not(.compact) > .lyric-scroll:is(:hover, :focus-visible) {
-  scrollbar-color: #ffffff66 transparent;
+.lyric-scrollbar::-webkit-slider-runnable-track {
+  background: transparent;
 }
-.lyrics-display:not(.compact) > .lyric-scroll::-webkit-scrollbar {
-  display: block;
-  width: 8px;
-  height: 0;
+.lyric-scrollbar::-webkit-slider-thumb {
+  appearance: none;
+  width: 6px;
+  height: var(--lyric-scroll-thumb, 24px);
+  transform: translateX(5px);
+  border-radius: 999px;
+  background: light-dark(#0007, #fff8);
+  opacity: 0;
 }
-.lyrics-display:not(.compact) > .lyric-scroll::-webkit-scrollbar-thumb {
-  background: #ffffff38;
-  border-radius: 8px;
-}
-.lyrics-display:not(.compact) > .lyric-scroll::-webkit-scrollbar-thumb:hover {
-  background: #ffffff66;
+.lyric-scrollbar:is(:hover, :active, :focus-visible)::-webkit-slider-thumb {
+  opacity: 1;
 }
 .lyric-scroll:has(> .lyric-writers-end > .writer-credits) {
   display: flex;
@@ -1725,7 +1732,7 @@
   inset: 0;
   z-index: 0;
 }
-.lyrics-popout > :not(.ambience, .lyrics-popout-close, .lyrics-popout-controls) {
+.lyrics-popout > :not(.ambience, .lyrics-popout-close, .lyrics-popout-controls, .lyric-scrollbar) {
   position: relative;
   z-index: 1;
 }
