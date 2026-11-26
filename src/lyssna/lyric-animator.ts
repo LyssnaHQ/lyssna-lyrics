@@ -45,8 +45,9 @@ interface Syllable extends Piece {
 type StyleTarget = Pick<Piece, "element" | "written">;
 interface WordMotion extends StyleTarget {
   start: number;
-  duration: number;
-  height: number;
+  riseMs: number;
+  settleMs: number;
+  heightEm: number;
 }
 const LAYERED_LINES = 4;
 const STYLES = [
@@ -82,8 +83,10 @@ function smoothRamp(value: number) {
 function animateAppleStyle(syllable: Syllable, time: number, reduceMotion: boolean) {
   const word = syllable.wordMotion;
   if (word) {
-    const progress = (time - word.start) / word.duration;
-    const lift = progress > 0 && progress < 1 ? word.height * Math.sin(Math.PI * progress) ** 2 : 0;
+    const age = time - word.start;
+    const rise = smoothRamp(age / word.riseMs);
+    const settle = smoothRamp((age - word.riseMs) / word.settleMs);
+    const lift = word.heightEm * rise * (1 - settle);
     write(word, "translate", lift > 0 ? `0 ${(-lift).toFixed(4)}em` : "");
   }
   const elapsed = time - syllable.start;
@@ -223,12 +226,14 @@ export class LyricAnimator {
       if (this.appleStyle && !this.reduceMotion && word?.firstElementChild === node && word.dataset.wordStart !== undefined) {
         const start = Number(word.dataset.wordStart);
         const duration = Math.max(1, Number(word.dataset.wordEnd) - start);
+        const riseMs = Math.max(350, Math.min(800, duration * 0.55));
         wordMotion = {
           element: word,
           written: new Map(),
           start,
-          duration,
-          height: (0.017 + 0.009 * smoothRamp(duration / 850)) * base.calm,
+          riseMs,
+          settleMs: Math.max(420, duration - riseMs),
+          heightEm: (0.022 + 0.014 * smoothRamp(duration / 1000)) * base.calm,
         };
       }
       if (this.simple)
@@ -353,9 +358,14 @@ export class LyricAnimator {
         if (!this.appleStyle) this.line(index)?.setAttribute("data-settling", "");
       }
       if (this.appleStyle) {
-        if (active) {
-          for (const syllable of syllables) animateAppleStyle(syllable, time, this.reduceMotion);
-        } else this.release(index, syllables);
+        // A short word can still be settling after the line finishes.
+        let settling = false;
+        for (const syllable of syllables) {
+          animateAppleStyle(syllable, time, this.reduceMotion);
+          const word = syllable.wordMotion;
+          settling ||= !!word && time < word.start + word.riseMs + word.settleMs;
+        }
+        if (!active && !settling) this.release(index, syllables);
         return;
       }
       let awake = false;

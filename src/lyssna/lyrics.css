@@ -805,6 +805,9 @@
 .lyrics-display[data-apple-style] .lyric-paint {
   --sweep-soft: 0.36;
 }
+.lyrics-display[data-apple-style]:not(.reduce-motion) .lyric-word {
+  transition: translate 80ms linear;
+}
 .lyrics-display[data-apple-style] .lyric-line .lyric-syllable {
   translate: none;
 }
