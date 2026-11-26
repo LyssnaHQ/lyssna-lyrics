@@ -78,8 +78,13 @@ export const OverlayScrollbar = memo(function OverlayScrollbar({ scroll, label, 
       const viewport = node.getBoundingClientRect();
       const scale = anchor.height / area.offsetHeight || 1;
       const top = (viewport.top - anchor.top) / scale + node.clientTop - area.clientTop;
-      const start = Math.max(0, top);
-      const end = Math.min(area.clientHeight, top + node.clientHeight);
+      const viewportStart = Math.max(0, top);
+      const viewportEnd = Math.min(area.clientHeight, top + node.clientHeight);
+      // Match the top and bottom insets when the rail is at the lyrics page edge.
+      const inset = Math.max(viewportStart, area.clientHeight - viewportEnd);
+      const symmetric = edge && inset * 2 < area.clientHeight;
+      const start = symmetric ? inset : viewportStart;
+      const end = symmetric ? area.clientHeight - inset : viewportEnd;
       rail.style.setProperty("--overlay-scroll-top", `${start}px`);
       rail.style.setProperty("--overlay-scroll-height", `${Math.max(0, end - start)}px`);
       rail.hidden = false;

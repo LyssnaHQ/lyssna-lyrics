@@ -1875,16 +1875,9 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   padding: 0;
   color: inherit;
   pointer-events: auto;
-  --glass-fill: light-dark(#e9e9e5d9, #16161adb);
-  background-image: none;
   box-shadow: 0 24px 80px #0006, 0 6px 24px #0003;
   -webkit-app-region: no-drag;
   app-region: no-drag;
-}
-
-.lyssna-lyrics-view .lyssna-build-channels::before,
-.lyssna-lyrics-view .lyssna-build-channels::after {
-  content: none;
 }
 
 .lyssna-lyrics-view .lyssna-build-channels:not([open]) {
@@ -1893,11 +1886,16 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
 
 .lyssna-lyrics-view .lyssna-build-channels:not(.liquid-glass) {
   background: light-dark(#e6e6e6, #191919);
+  -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
 
 .lyssna-lyrics-view .lyssna-build-channels::backdrop {
   background: #0006;
+}
+
+.lyssna-lyrics-view .lyssna-build-channels.liquid-glass::backdrop {
+  background: #0003;
 }
 
 .lyssna-lyrics-view .lyssna-build-channels .setting-help {
@@ -1908,7 +1906,7 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   margin-top: 12px;
 }
 
-.lyssna-lyrics-view .lyrics-settings-backdrop.liquid-glass {
+.lyssna-lyrics-view :is(.lyrics-settings-backdrop, .lyssna-build-channels).liquid-glass {
   --glass-fill: light-dark(#e9e9e56b, #16161a6b);
 }
 

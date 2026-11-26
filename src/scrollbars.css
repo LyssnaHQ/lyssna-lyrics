@@ -73,6 +73,9 @@
   .overlay-scrollbar:not(.reduce-motion *) {
     transition: opacity 220ms ease;
   }
+  .overlay-scrollbar:not(.reduce-motion *)::-webkit-slider-thumb {
+    transition: background-color 120ms ease;
+  }
 }
 .overlay-scrollbar::-webkit-slider-runnable-track {
   background: transparent;
@@ -83,8 +86,11 @@
   height: var(--overlay-scroll-thumb-height, 24px);
   transform: translateX(calc((28px - var(--overlay-scroll-thumb-width)) / 2 - var(--overlay-scroll-thumb-gap)));
   border-radius: 999px;
-  background: light-dark(#0006, #fff6);
+  background-color: light-dark(#0006, #fff6);
 }
-.overlay-scrollbar:focus-visible::-webkit-slider-thumb {
-  background: light-dark(#000a, #fffc);
+.overlay-scrollbar:is(:hover, :focus-visible)::-webkit-slider-thumb {
+  background-color: light-dark(#000c, #fffd);
+}
+.overlay-scrollbar:active::-webkit-slider-thumb {
+  background-color: light-dark(#0005, #fff5);
 }
