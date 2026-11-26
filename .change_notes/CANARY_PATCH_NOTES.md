@@ -1,5 +1,9 @@
 # Lyssna Lyrics patch notes
 
+## v1.2.0-4eb994a
+
+- Bring back the Settings footer with Discord and Ko-fi on the left and the version on the right. Click the version to open Build Channels.
+
 ## v1.2.0-f745ea3
 
 - Keep quick words still in Apple Music Style while the glow sweeps across. Sustained words get a subtle ripple through the letters.
