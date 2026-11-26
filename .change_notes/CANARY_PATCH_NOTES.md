@@ -1,5 +1,9 @@
 # Lyssna Lyrics patch notes
 
+## v1.2.0-2f57e62
+
+- Smooth out Apple Music Style. Short words stay in place as the highlight passes through, and held notes glide gently.
+
 ## v1.2.0-f37b8e9
 
 - Add Apple Music Style as the second animator preset, with a soft highlight through each word and a glow on held notes. Move Lyssna (Legacy) below Bouncy Lyrics.
