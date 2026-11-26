@@ -1,6 +1,7 @@
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { SettingRow } from "./setting-row";
+import { OverlayScrollbar } from "../overlay-scrollbar";
 import {
   ANIMATOR_DEFAULTS,
   ANIMATOR_DETAILS,
@@ -378,6 +379,7 @@ export function AnimatorPanel({
   onBack: () => void;
   onClose: () => void;
 }) {
+  const scroll = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
@@ -404,12 +406,11 @@ export function AnimatorPanel({
           <X size={18} />
         </button>
       </header>
-      <div className="animator-panel-body lyrics-settings-group">
-        <AnimatorBehavior
-          animator={animator}
-          onChange={onChange}
-          onBack={onBack}
-        />
+      <div className="settings-scroll-frame">
+        <div className="animator-panel-body lyrics-settings-group overlay-scroll-content" ref={scroll}>
+          <AnimatorBehavior animator={animator} onChange={onChange} onBack={onBack} />
+        </div>
+        <OverlayScrollbar scroll={scroll} label="Scroll animator settings" observeContent />
       </div>
     </aside>
   );

@@ -433,43 +433,6 @@
 .lyric-scroll::-webkit-scrollbar {
   display: none;
 }
-.lyric-scrollbar {
-  position: absolute;
-  top: 8px;
-  right: 0;
-  z-index: 4;
-  width: 28px;
-  height: calc(100% - 16px);
-  margin: 0;
-  padding: 0;
-  border: 0;
-  appearance: none;
-  writing-mode: vertical-lr;
-  direction: ltr;
-  background: transparent;
-  cursor: ns-resize;
-  opacity: 0;
-}
-.lyric-scrollbar:is(:hover, :active, :focus-visible) {
-  opacity: 1;
-}
-@media (prefers-reduced-motion: no-preference) {
-  .lyric-scrollbar:not(.reduce-motion *) {
-    transition: opacity 220ms ease;
-  }
-}
-.lyric-scrollbar::-webkit-slider-runnable-track {
-  background: transparent;
-}
-.lyric-scrollbar::-webkit-slider-thumb {
-  appearance: none;
-  width: 6px;
-  height: var(--lyric-scroll-thumb, 24px);
-  /* Keep the thumb 4px inside the edge of its hover area. */
-  transform: translateX(7px);
-  border-radius: 999px;
-  background: light-dark(#0006, #fff6);
-}
 .lyric-scroll:has(> .lyric-writers-end > .writer-credits) {
   display: flex;
   flex-direction: column;
@@ -1738,7 +1701,7 @@
   inset: 0;
   z-index: 0;
 }
-.lyrics-popout > :not(.ambience, .lyrics-popout-close, .lyrics-popout-controls, .lyric-scrollbar) {
+.lyrics-popout > :not(.ambience, .lyrics-popout-close, .lyrics-popout-controls, .overlay-scrollbar) {
   position: relative;
   z-index: 1;
 }

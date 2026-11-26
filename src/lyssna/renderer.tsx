@@ -5,7 +5,7 @@ import { presetOf } from "./animator-tuning";
 import { frameDue } from "./frame-cap";
 import { HighlighterWords, markerColour, nextMarkerStarts } from "./highlighter";
 import { LyricCountdown } from "./lyric-countdown";
-import { LyricScrollbar } from "./lyric-scrollbar";
+import { OverlayScrollbar } from "../overlay-scrollbar";
 import { LyricWord } from "./lyric-word";
 import { engineLines, glideScroll, GLIDE_MS, lineBlur, stepScroll, tuneMotion, vocalEnd, vocalGap, vocalGaps, wordGroups, type ScrollSpring, type VocalGap } from "./lyric-motion";
 import type { Line, Lyrics, Word } from "./types";
@@ -626,7 +626,8 @@ export function LyricsDisplay({
           </div>
         )}
       </div>
-      {!compact && <LyricScrollbar scroll={scroll} lyrics={lyrics} browse={browse} />}
+      {!compact && <OverlayScrollbar scroll={scroll} label="Scroll lyrics" browse={browse}
+        edgeSelector=".lyrics-page, .lyrics-popout" contentKey={lyrics} />}
       {footerMode !== "off" && (
         <div
           className="lyric-end-credits lyric-pinned-footer"

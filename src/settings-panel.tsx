@@ -1,4 +1,4 @@
-import { cloneElement, isValidElement, useEffect, useLayoutEffect, useRef, useState, type ComponentProps, type CSSProperties, type ReactElement, type ReactNode } from "react";
+import { cloneElement, isValidElement, useEffect, useLayoutEffect, useRef, useState, type ComponentProps, type CSSProperties, type ReactElement, type ReactNode, type RefObject, type UIEventHandler } from "react";
 import { AlignLeft, AppWindow, ChevronLeft, FileText, FlaskConical, Palette, Pin, Search, Settings2, SlidersHorizontal, WandSparkles, Wrench, X } from "lucide-react";
 import EnhancementsSection from "./enhancements/section";
 import { AnimatorPanel } from "./lyssna/animator-settings";
@@ -14,6 +14,7 @@ import { quickEffects } from "./quick-effects";
 import { AccountSettings, useSettingsAccount } from "./account-settings";
 import { StoredDataSettings } from "./creator/stored-data-settings";
 import { activeHiddenBuildKey, forgetHiddenBuild, readSavedHiddenBuilds, rememberHiddenBuild } from "./hidden-builds";
+import { OverlayScrollbar } from "./overlay-scrollbar";
 import type { Host, Track } from "./host";
 
 export type Channel = "stable" | "beta" | "canary";
@@ -79,6 +80,18 @@ function visualRowKey(row: ReactNode) {
   return isValidElement(row) && row.key !== null ? String(row.key) : "";
 }
 
+function SettingsScrollArea({ scroll, label, onScroll, children }: {
+  scroll: RefObject<HTMLDivElement | null>;
+  label: string;
+  onScroll?: UIEventHandler<HTMLDivElement>;
+  children: ReactNode;
+}) {
+  return <div className="settings-scroll-frame">
+    <div className="lyrics-settings-scroll overlay-scroll-content" ref={scroll} onScroll={onScroll}>{children}</div>
+    <OverlayScrollbar scroll={scroll} label={label} observeContent />
+  </div>;
+}
+
 export function SettingsPanel({ host, settings, change, close, options, track, notice, setNotice, view = window, developerMode, initialSubmenu, onEnableAutoRecord, canvasFrame }: {
   host: Host;
   settings: Settings;
@@ -112,6 +125,7 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
   const modal = useRef<HTMLDialogElement>(null);
   const channelsDialog = useRef<HTMLDialogElement>(null);
   const scroll = useRef<HTMLDivElement>(null);
+  const channelScroll = useRef<HTMLDivElement>(null);
   const mainScroll = useRef(initial.scroll);
   const submenuScroll = useRef(initial.submenuScroll ?? 0);
   const parentSubmenu = useRef<{ key: Submenu; scroll: number }>(undefined);
@@ -527,7 +541,7 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
             tabButtons.current[next]?.focus();
           }}><Icon size={16} />{label}</button>)}
       </div>}
-      <div className="lyrics-settings-scroll" ref={scroll} onScroll={(event) => {
+      <SettingsScrollArea scroll={scroll} label="Scroll settings" onScroll={(event) => {
         const top = event.currentTarget.scrollTop;
         if (submenu) submenuScroll.current = top;
         else if (!searching) mainScroll.current = top;
@@ -558,7 +572,7 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
           </div>
         </SettingsQuery.Provider></HiddenSettings.Provider>}
         {notice && <p className="settings-alert" role="status">{notice}</p>}
-      </div>
+      </SettingsScrollArea>
     </section>}
   </div>;
   return tuning ? content : <>
@@ -581,7 +595,7 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
         <h2 id="lyssna-build-channels-title">Build Channels</h2>
         <button type="button" className="icon-button" aria-label="Close build channels" onClick={() => setShowChannels(false)}><X size={18} /></button>
       </header>
-      <div className="lyrics-settings-scroll">
+      <SettingsScrollArea scroll={channelScroll} label="Scroll build channels">
         <div className="lyrics-settings-group">
           {(Object.keys(options.channels) as Channel[]).map((channel) => {
             const current = channel === options.channel && !clearHiddenBuild;
@@ -628,7 +642,7 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
         )}
         {buildError && <p className="settings-alert" role="alert">{buildError}</p>}
         {channelError && <p className="settings-alert" role="alert">{channelError}</p>}
-      </div>
+      </SettingsScrollArea>
     </dialog>
   </>;
 }
