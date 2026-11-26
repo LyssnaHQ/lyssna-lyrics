@@ -29,6 +29,7 @@ export interface ReviewSubmission {
   song_id: string;
   song_title: string;
   kind: "new" | "edit";
+  instrumental?: boolean;
   base_revision_id?: string;
   head_revision_id?: string;
   submitter_id: string;

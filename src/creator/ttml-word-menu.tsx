@@ -465,8 +465,8 @@ export function ReadingSplitDialog({
 }
 
 /**
- * What Sections from Genius changed, beside the draft so each change can
- * be looked at before keeping it.
+ * What Sections or Lyrics fixes from Genius changed, beside the draft so
+ * each change can be looked at before keeping it.
  */
 export function GeniusReview({
   changes,
@@ -506,21 +506,40 @@ export function GeniusReview({
   const plural = (count: number, one: string, many: string) =>
     `${count} ${count === 1 ? one : many}`;
   const [showEarlier, setShowEarlier] = useState(false);
+  const title =
+    changes.kind === "sections" ? "Sections from Genius" : "Fix lyrics from Genius";
   return (
-    <div className="ttml-dialog ttml-review" role="dialog" aria-label="Changes from Genius">
-      <h3>Changes from Genius</h3>
-      <section>
-        <h4>
-          {changes.sections.length
-            ? plural(changes.sections.length, "section", "sections")
-            : "No new sections"}
-        </h4>
-        <div className="ttml-review-chips">
-          {changes.sections.map((each, index) =>
-            go(each.line, `${each.line + 1} · ${each.part}`, index),
-          )}
-        </div>
-      </section>
+    <div
+      className="ttml-dialog ttml-review"
+      role="dialog"
+      aria-label={title}
+    >
+      <h3>{title}</h3>
+      {changes.kind === "sections" && (
+        <section>
+          <h4>
+            {changes.sections.length
+              ? plural(changes.sections.length, "section", "sections")
+              : "No new sections"}
+          </h4>
+          <div className="ttml-review-chips">
+            {changes.sections.map((each, index) =>
+              go(each.line, `${each.line + 1} · ${each.part}`, index),
+            )}
+          </div>
+        </section>
+      )}
+      {changes.kind === "lyrics" &&
+        !changes.backgrounds.length &&
+        !changes.commas.length &&
+        !changes.leads.length &&
+        !changes.echoes.length &&
+        !changes.missing.length &&
+        !changes.differs.length && (
+          <section>
+            <h4>Your lyrics match Genius</h4>
+          </section>
+        )}
       {changes.backgrounds.length > 0 && (
         <section>
           <h4>

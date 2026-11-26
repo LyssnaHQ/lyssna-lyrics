@@ -61,17 +61,28 @@ export async function submitLyssnaTtml(file: File, track: Track, host: Host, con
   const extraIsrcs = [...new Set([validIsrc, ...(metadata?.isrcs ?? [])].filter((value): value is string => !!value))];
   if (!local) links.push({ platform: "spotify", external_id: track.id });
   const artists = track.artistLinks?.map(({ name }) => name).filter(Boolean);
-  const response = await lyssnaAccountRequest(withActAs("/v1/submissions"), {
+  const path = withActAs("/v1/submissions");
+  const body = {
     ttml, links, title: track.title,
     ...(extraIsrcs.length && { extra_isrcs: extraIsrcs }),
-    ...(original && { apple_original: { apple_id: original.apple_id, sha256: original.sha256 } }),
     artists: artists?.length ? artists : [track.artists || track.artist].filter(Boolean),
     album: track.album || undefined,
-  }).catch(() => {
+  };
+  const send = (payload: object) => lyssnaAccountRequest(path, payload).catch(() => {
     throw new Error("Couldn’t confirm the upload. Check your submissions on Lyssna before trying again.");
   });
+  let response = await send(original
+    ? { ...body, apple_original: { apple_id: original.apple_id, sha256: original.sha256 } }
+    : body);
+  const rejection = async (response?: Response) => await response?.json().catch(() => null) as
+    { error?: string; message?: string } | null | undefined;
+  let problem = response?.ok ? undefined : await rejection(response);
+  // Lyssna rejects line-synced Apple attribution before saving the submission.
+  if (original && problem?.error === "apple_not_word_synced") {
+    response = await send(body);
+    problem = response?.ok ? undefined : await rejection(response);
+  }
   if (!response?.ok) {
-    const problem = await response?.json().catch(() => null) as { error?: string; message?: string } | null | undefined;
     const known = problem?.error && Object.hasOwn(submissionErrors, problem.error) && submissionErrors[problem.error];
     if (known) throw new Error(known);
     if (response?.status === 429 || Date.now() < lyssnaRetryAt()) throw new Error("Lyssna is rate limiting uploads. Try again later.");

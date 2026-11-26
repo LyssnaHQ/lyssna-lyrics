@@ -54,7 +54,6 @@ import { useLocalTrackIsrc } from "./local-track-isrc";
 import { useFirstUploadNotice } from "./first-upload-notice";
 import { CreatorSurface, type CreatorPlayback } from "./creator/surface";
 import { reviewTopbar } from "./creator/review-topbar";
-import { ReviewQueuePanel, type ReviewSelection } from "./creator/review-panel";
 import { startCreatorRepeatRecovery } from "./creator/repeat";
 import { restoreCreatorPlaybackTransitions } from "./creator/playback-transitions";
 import { createSpotifyCapture, type SpotifyCapture } from "./creator/spotify-capture";
@@ -68,7 +67,6 @@ import desktopCss from "./lyssna/lyrics.css?inline";
 import settingsCss from "./lyssna/settings.css?inline";
 import ttmlCss from "./lyssna/load-ttml.css?inline";
 import viewCss from "./view.css?inline";
-import creatorCss from "./creator/ttml-creator.css?inline";
 import meterCss from "./creator/recording-meter.css?inline";
 import scrollbars from "./scrollbars.css?inline";
 
@@ -561,14 +559,13 @@ function requestDisplayFullscreen(parent: HTMLElement) {
 }
 
 function LyricsView({ host, options, close, parent, view = window, fullscreenRequest = 0, settingsRequest,
-  openCreator, closeCreator, reviewSelection, closeReview, onSidebarCover, onRecordingPlayback, capture, detachedPreview }: {
+  openCreator, closeCreator, closeReview, onSidebarCover, onRecordingPlayback, capture, detachedPreview }: {
   host: Host; options: BuildOptions; close: () => void; parent: HTMLElement; view?: Window;
   capture: SpotifyCapture;
   fullscreenRequest?: number;
   settingsRequest?: SettingsRequest;
   openCreator?(): void;
   closeCreator?(): void;
-  reviewSelection?: ReviewSelection;
   closeReview?(): void;
   onSidebarCover?(cover?: string): void;
   onRecordingPlayback?(playback?: CreatorPlayback): void;
@@ -1000,7 +997,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
       style={{ "--artwork-blur": `${settings.lyrics_background_blur}px` } as CSSProperties}
       onError={banner ? () => setArtistHeader((current) => current?.url === banner && current.uri === artistUri ? undefined : current) : undefined} alt="" />}
     {(showCreator || keepCreator) && <div className="lyssna-creator-container" ref={creatorPage} style={pageStyle} data-draft-preview={keepCreator || undefined}>
-      <CreatorSurface host={host} view={view} settings={preferences} close={closeCreator ?? close} reviewSelection={reviewSelection}
+      <CreatorSurface host={host} view={view} settings={preferences} close={closeCreator ?? close}
         closeReview={closeReview} previewing={keepCreator} capture={capture} confirmFirstUpload={confirmFirstUpload}
         onSubmitted={showSubmission}
         onLocalPlayback={setCreatorPlayback} manageStoredData={(trigger) => {
@@ -1123,9 +1120,7 @@ export default function start(options: BuildOptions) {
   let creatorEnabled = false;
   let creatorOpen = false;
   let reviewOpen = false;
-  let reviewSelection: ReviewSelection | undefined;
   let reviewReusesCreator = false;
-  let dismissReviewQueue: (() => void) | undefined;
   let disposed = false;
   let autoRecord = false;
   let recorder: { root: Root; container: HTMLElement } | undefined;
@@ -1168,15 +1163,13 @@ export default function start(options: BuildOptions) {
     if (creatorOpen === open && reviewOpen === review) return;
     creatorOpen = open;
     reviewOpen = review;
-    if (!review) reviewSelection = undefined;
     renderMainView?.();
     syncPlaybar();
     syncRecorder();
     detached?.renderPreview();
-    reviewButton?.sync(reviewOpen || !!dismissReviewQueue);
+    reviewButton?.sync(reviewOpen);
   }
   function closeReview() {
-    dismissReviewQueue?.();
     if (reviewOpen) setCreator(creatorEnabled && reviewReusesCreator, false);
   }
   type DetachedMode = "popout" | "cinema";
@@ -1369,52 +1362,26 @@ export default function start(options: BuildOptions) {
     });
   }
 
-  function activateReview(selection: ReviewSelection) {
-    reviewSelection = selection;
+  function activateReview() {
     reviewReusesCreator = creatorOpen;
     setCreator(true, true);
-    dismissReviewQueue?.();
   }
 
   function toggleReviewQueue() {
     if (disposed) return;
-    if (reviewOpen || dismissReviewQueue) {
-      closeReview();
-      return;
-    }
-    const container = document.createElement("div");
-    container.className = "lyssna-lyrics-view lyssna-review-queue-host";
-    const shadow = container.attachShadow({ mode: "open" });
-    const style = document.createElement("style");
-    style.textContent = `${creatorCss}\n${scrollbars}`;
-    const panel = document.createElement("div");
-    shadow.append(style, panel);
-    document.body.append(container);
-    const root = host.mount(panel);
-    dismissReviewQueue = () => {
-      dismissReviewQueue = undefined;
-      root.unmount();
-      container.remove();
-      reviewButton?.sync(reviewOpen);
-    };
-    reviewButton?.sync(true);
-    root.render(<ReviewQueuePanel onPick={open} onClose={() => {
-      closeReview();
-      reviewButton?.focus();
-    }} />);
+    if (reviewOpen) closeReview();
+    else void open("review");
   }
 
-  async function open(mode?: FullscreenMode | "creator" | ReviewSelection) {
+  async function open(mode?: FullscreenMode | "creator" | "review") {
     if (mode === "cinema" && creatorOpen) {
       openCinemaWindow();
       return;
     }
-    const queue = typeof mode === "object" ? dismissReviewQueue : undefined;
-    if (typeof mode === "object" && !queue) return;
     if (mode === "creator" && !creatorEnabled) return;
     pendingView = undefined;
     if (close) {
-      if (typeof mode === "object") activateReview(mode);
+      if (mode === "review") activateReview();
       else if (mode === "creator") setCreator(!creatorOpen);
       else if (mode) {
         setCreator(false);
@@ -1429,10 +1396,10 @@ export default function start(options: BuildOptions) {
     try { await host.leaveOtherLyricsView(); }
     catch (error) {
       console.warn("[Lyssna Lyrics] Could not leave the other lyrics view:", error);
-      if (queue) throw new Error("Couldn’t open the Creator. Try selecting the submission again.");
+      if (mode === "review") host.notifyError("Couldn’t open the Creator. Try opening the review queue again.");
       return;
     } finally { switchingLyricsView = false; }
-    if (disposed || (queue && dismissReviewQueue !== queue)) return;
+    if (disposed) return;
     const parent = document.createElement("div");
     parent.className = "lyssna-lyrics-view";
     const main = host.mainView();
@@ -1477,7 +1444,7 @@ export default function start(options: BuildOptions) {
     };
     renderMainView = () => root.render(<SongSheetScope><LyricsView host={host} options={options} close={closeView} parent={parent} capture={capture}
       fullscreenRequest={fullscreenRequest} settingsRequest={settingsRequest} openCreator={() => setCreator(true)}
-      closeCreator={creatorOpen ? closeCreator : undefined} reviewSelection={reviewSelection}
+      closeCreator={creatorOpen ? closeCreator : undefined}
       closeReview={reviewOpen ? dismissReview : undefined} onSidebarCover={setSidebarCover} onRecordingPlayback={setRecordingPlayback} /></SongSheetScope>);
     showMainSettings = (request) => {
       settingsRequest = request;
@@ -1488,7 +1455,7 @@ export default function start(options: BuildOptions) {
       renderMainView?.();
       if (next === "display") requestDisplayFullscreen(parent);
     };
-    if (typeof mode === "object") activateReview(mode);
+    if (mode === "review") activateReview();
     else if (mode === "creator" && creatorEnabled) setCreator(true);
     else if (mode && mode !== "creator") enterFullscreen(mode);
     else renderMainView();
@@ -1620,7 +1587,7 @@ export default function start(options: BuildOptions) {
     if (unloading) return;
     syncPlaybar();
     uploadAs.sync();
-    reviewButton?.sync(reviewOpen || !!dismissReviewQueue);
+    reviewButton?.sync(reviewOpen);
     if (pendingView) restoreView();
     else if (!rememberedView && !switchingLyricsView && host.viewLocation()) rememberView(false);
     const main = mainContainer && host.mainView();
@@ -1675,7 +1642,6 @@ export default function start(options: BuildOptions) {
       detached?.dismiss();
       close?.(false);
       closeProfileSettings?.();
-      dismissReviewQueue?.();
       stopProfileSettings();
       uploadAs.dispose();
       button?.remove();

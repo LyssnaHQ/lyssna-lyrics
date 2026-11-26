@@ -336,8 +336,9 @@ function headerStyles(raw: string, voices: string[]) {
  */
 export function applySections(
   lines: CreatorLine[],
-  text: string,
+  genius: string,
 ): CreatorLine[] | undefined {
+  const text = namedVerses(genius);
   const ours: string[] = [];
   const lineOf: number[] = [];
   const firstWord = new Map<number, number>();
@@ -413,7 +414,41 @@ export function applySections(
     const section = parts.get(index);
     return section ? { ...rest, ...section } : rest;
   });
-  return geniusVoices(tagged, text, headers);
+  return geniusVoices(tagged, text, headers, "sections");
+}
+
+/**
+ * Lyrics fixes from Genius on a synced draft: what Genius brackets moves to
+ * background lines, lines start with Genius's capitals, and commas left at a
+ * line's end go. Sections, words and timings stay. Undefined when nothing
+ * changed.
+ */
+export function applyGeniusLyrics(
+  lines: CreatorLine[],
+  genius: string,
+): CreatorLine[] | undefined {
+  const text = namedVerses(genius);
+  const fixed = geniusVoices(lines, text, styledHeaders(text), "lyrics");
+  return JSON.stringify(fixed) === JSON.stringify(lines) ? undefined : fixed;
+}
+
+/**
+ * Rap battles and cyphers head each verse on Genius with only who raps it,
+ * "[Dan Bull]"; those read as "[Verse: Dan Bull]". Typed lyrics keep such
+ * lines as unknown headers instead.
+ */
+function namedVerses(text: string) {
+  return text.replace(
+    /^([\uE000-\uE003]*)\[([^\]\n]+)\]([\uE000-\uE003]*)[ \t]*$/gm,
+    (line, open: string, header: string, close: string) => {
+      const name = unmark(header).replace(/\s+/g, " ").trim();
+      return sectionOf(`[${name}]`) ||
+        !/\p{L}/u.test(name) ||
+        /[:?]/.test(name)
+        ? line
+        : `${open}[Verse: ${header.trim()}]${close}`;
+    },
+  );
 }
 
 interface Token {
@@ -969,8 +1004,10 @@ function geniusVoices(
   placed: CreatorLine[],
   text: string,
   headers: Map<string, { italic?: string; bold?: string }>,
+  kind: GeniusKind,
 ): CreatorLine[] {
   const { tokensOf, match, groupSize } = alignGenius(placed, text, headers);
+  const sections = kind === "sections";
 
   // Placing sections skips Genius's bracketed words, so a section whose
   // first lines the draft sings from them ("Waking something ancient")
@@ -982,7 +1019,7 @@ function geniusVoices(
   const tagged = [...placed];
   tagged.forEach((line, index) => {
     const at = sectionOfLine[index];
-    if (!line.part || at === undefined) return;
+    if (!sections || !line.part || at === undefined) return;
     let start = index;
     for (let before = index - 1; before >= 0; before--) {
       if (tagged[before].part) break;
@@ -1001,22 +1038,24 @@ function geniusVoices(
   });
 
   const voicedLines = tagged.map((unpunctuated, index) => {
-    // Genius ends a line where a draft split it after a comma ("廻れ、").
-    const original = {
-      ...unpunctuated,
-      units: dropEndComma(unpunctuated.units),
-    };
-    // A lead line Genius starts with a capital starts with one here too.
-    const opening = tokensOf[index][0];
-    const line =
-      !original.background &&
-      opening?.units[0] === 0 &&
-      match.get(opening)?.capital
+    if (!sections) {
+      // Genius ends a line where a draft split it after a comma ("廻れ、").
+      const original = {
+        ...unpunctuated,
+        units: dropEndComma(unpunctuated.units),
+      };
+      // A lead line Genius starts with a capital starts with one here too.
+      const opening = tokensOf[index][0];
+      return !original.background &&
+        opening?.units[0] === 0 &&
+        match.get(opening)?.capital
         ? {
             ...original,
             units: [capitalFirst(original.units[0]), ...original.units.slice(1)],
           }
         : original;
+    }
+    const line = unpunctuated;
     const voices = sectionVoices(tagged, index);
     if (voices.length < 2) return line;
     let lineVoice: string | undefined;
@@ -1042,6 +1081,7 @@ function geniusVoices(
     };
   });
 
+  if (sections) return voicedLines;
   return voicedLines.flatMap((line, index) => {
     const runs = bracketRuns(line, tokensOf[index], match, groupSize);
     if (!runs.length) return [line];
@@ -1108,7 +1148,12 @@ function geniusVoices(
   });
 }
 
+/** Which half of Genius's help a draft took: sections and who sings
+ *  them, or the lyrics' brackets, capitals and missing lines. */
+export type GeniusKind = "sections" | "lyrics";
+
 export interface GeniusChanges {
+  kind: GeniusKind;
   sections: { line: number; part: string }[];
   /** Lines that became background vocals. */
   backgrounds: { line: number; text: string }[];
@@ -1135,15 +1180,20 @@ const textOf = (line: CreatorLine) =>
     .map((unit, index) => (index && !unit.joined ? " " : "") + unit.text)
     .join("");
 
-/** What Sections from Genius changed, for a look before keeping it. */
+/** What Sections or Lyrics fixes from Genius changed, for a look before
+ *  keeping it. */
 export function geniusChanges(
   before: CreatorLine[],
   after: CreatorLine[],
   genius?: string,
+  kind: GeniusKind = "sections",
 ): GeniusChanges {
-  const { leads, echoes: bracketed } = genius
-    ? geniusDisputes(after, genius)
-    : { leads: [], echoes: [] };
+  const lyrics = kind === "lyrics";
+  const source = lyrics && genius ? namedVerses(genius) : undefined;
+  const { leads, echoes: bracketed } =
+    source
+      ? geniusDisputes(after, source)
+      : { leads: [], echoes: [] };
   // What the draft already had isn't a change: each line's state before,
   // counted so a repeated chorus line matches once per copy.
   const had = (key: (line: CreatorLine) => string | undefined) => {
@@ -1174,14 +1224,15 @@ export function geniusChanges(
       : undefined,
   );
   const changes: GeniusChanges = {
+    kind,
     sections: [],
     backgrounds: [],
     singers: [],
     mixed: [],
     leads: leads.map((line) => ({ line, text: textOf(after[line]) })),
     echoes: bracketed.map((line) => ({ line, text: textOf(after[line]) })),
-    ...(genius
-      ? geniusGaps(after, genius)
+    ...(source
+      ? geniusGaps(after, source)
       : { missing: [], differs: [] }),
     commas: [],
     earlier: [],
@@ -1195,15 +1246,23 @@ export function geniusChanges(
     if (bare !== text) trimmed.set(bare, (trimmed.get(bare) ?? 0) + 1);
   }
   after.forEach((line, index) => {
+    if (lyrics) {
+      if (line.background) {
+        if (!hadBackground(line))
+          changes.backgrounds.push({ line: index, text: textOf(line) });
+        else earlier(index, `(${textOf(line)})`);
+      }
+      const left = trimmed.get(textOf(line)) ?? 0;
+      if (left) {
+        trimmed.set(textOf(line), left - 1);
+        changes.commas.push(index);
+      }
+      return;
+    }
     if (line.part) {
       if (!hadSection(line))
         changes.sections.push({ line: index, part: line.part });
       else earlier(index, line.part);
-    }
-    if (line.background) {
-      if (!hadBackground(line))
-        changes.backgrounds.push({ line: index, text: textOf(line) });
-      else earlier(index, `(${textOf(line)})`);
     }
     if (line.sungBy && hadSinger(line))
       earlier(index, `Sung by ${line.sungBy}`);
@@ -1218,11 +1277,6 @@ export function geniusChanges(
     if (line.units.some((unit) => unit.sungBy)) {
       if (!hadMixed(line)) changes.mixed.push(index);
       else earlier(index, "Words sung by another voice");
-    }
-    const left = trimmed.get(textOf(line)) ?? 0;
-    if (left) {
-      trimmed.set(textOf(line), left - 1);
-      changes.commas.push(index);
     }
   });
   return changes;
@@ -2058,7 +2112,7 @@ function divided(unit: CreatorUnit, parts: string[]): CreatorUnit[] {
   const total = parts.length;
   let before = 0;
   return parts.map((text, index) => {
-    const piece: CreatorUnit = { text, joined: index ? true : unit.joined };
+    const piece: CreatorUnit = { text, joined: index ? true : unit.joined, sungBy: unit.sungBy };
     if (start !== undefined && end !== undefined) {
       piece.start = Math.round(start + ((end - start) * before) / total);
       before += 1;
@@ -2107,6 +2161,64 @@ export function splitMatching(
       same(unit.text) ? divided(unit, cut(unit.text).filter(Boolean)) : [unit],
     ),
   }));
+}
+
+/**
+ * Cuts every whole word with `cut`. Words already split into syllables keep
+ * the split they have. Returns `lines` itself when nothing changed.
+ */
+export function splitAllWords(
+  lines: CreatorLine[],
+  cut: (text: string) => string[],
+): CreatorLine[] {
+  let changed = false;
+  const next = lines.map((line) => {
+    let lineChanged = false;
+    const units = line.units.flatMap((unit, index) => {
+      if (unit.roman || unit.joined || line.units[index + 1]?.joined) return [unit];
+      const parts = cut(unit.text).filter(Boolean);
+      if (parts.length < 2) return [unit];
+      lineChanged = true;
+      return divided(unit, parts);
+    });
+    if (!lineChanged) return line;
+    changed = true;
+    return { ...line, units };
+  });
+  return changed ? next : lines;
+}
+
+const KANA = /[\p{Script=Hiragana}\p{Script=Katakana}]/u;
+
+/** Whether any word is Japanese; kana tells it apart from Chinese. */
+export const hasJapanese = (lines: CreatorLine[]) =>
+  lines.some((line) => line.units.some((unit) => KANA.test(unit.text)));
+
+/**
+ * Cuts Japanese words into one piece per symbol, as typed lyrics are:
+ * small kana and ー stay with their mora. Words with a reading keep it and
+ * stay whole. Returns `lines` itself when nothing changed.
+ */
+export function splitJapanese(lines: CreatorLine[]): CreatorLine[] {
+  let changed = false;
+  const next = lines.map((line) => {
+    let lineChanged = false;
+    const units = line.units.flatMap((unit) => {
+      if (
+        unit.roman ||
+        (!KANA.test(unit.text) && !/\p{Script=Han}/u.test(unit.text))
+      )
+        return [unit];
+      const parts = symbolPieces(unit.text).filter(Boolean);
+      if (parts.length < 2) return [unit];
+      lineChanged = true;
+      return divided(unit, parts);
+    });
+    if (!lineChanged) return line;
+    changed = true;
+    return { ...line, units };
+  });
+  return changed ? next : lines;
 }
 
 /** A line split in two ends where a comma stood; the comma goes. */
@@ -2216,6 +2328,53 @@ export const duplicateLine = (lines: CreatorLine[], index: number) =>
         ...lines.slice(index + 1),
       ]
     : lines;
+
+/**
+ * Combines the word or syllable at `at` with the one after it, timed from
+ * the first one's start to the second one's end. Separate words keep a space
+ * between them.
+ */
+export function mergeNext(lines: CreatorLine[], at: Cursor): CreatorLine[] {
+  const line = lines[at.line];
+  const first = line?.units[at.unit];
+  const second = line?.units[at.unit + 1];
+  if (!first || !second) return lines;
+  const firstParts = romanParts(first);
+  const secondParts = romanParts(second);
+  const roman = [...firstParts, ...secondParts].join("|");
+  const romanStarts = [
+    ...firstParts.slice(1).map((_, index) => first.romanStarts?.[index] ?? null),
+    ...(firstParts.length && secondParts.length ? [second.start ?? null] : []),
+    ...secondParts.slice(1).map((_, index) => second.romanStarts?.[index] ?? null),
+  ];
+  const merged: CreatorUnit = {
+    text: first.text + (second.joined ? "" : " ") + second.text,
+    joined: first.joined,
+    ...(roman && { roman }),
+    ...(romanStarts.some((start) => start !== null) && { romanStarts }),
+    ...(roman && first.romanAuto && second.romanAuto && { romanAuto: true }),
+    ...(first.romanSpaced !== undefined && { romanSpaced: first.romanSpaced }),
+    ...((first.start ?? second.start) !== undefined && {
+      start: first.start ?? second.start,
+    }),
+    ...((second.end ?? first.end) !== undefined && {
+      end: second.end ?? first.end,
+    }),
+    ...(first.sungBy && { sungBy: first.sungBy }),
+  };
+  return lines.map((each, index) =>
+    index === at.line
+      ? {
+          ...each,
+          units: [
+            ...each.units.slice(0, at.unit),
+            merged,
+            ...each.units.slice(at.unit + 2),
+          ],
+        }
+      : each,
+  );
+}
 
 export function toggleJoin(lines: CreatorLine[], at: Cursor): CreatorLine[] {
   if (at.unit === 0) return lines;

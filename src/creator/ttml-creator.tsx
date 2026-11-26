@@ -47,7 +47,7 @@ import { creatorSpotifyTrack, readCreatorTrackMetadata } from "./track-metadata"
 import { lyricsChanged, parseLocalTtml } from "../local-lyrics";
 import { revalidateLyssnaSong } from "../lyssna-provider";
 import type { SubmissionFeedback } from "../lyssna-submission";
-import { ReviewPanel, type ReviewOpen, type ReviewSelection } from "./review-panel";
+import { ReviewPanel, type ReviewOpen } from "./review-panel";
 import {
   dismissSubmittedDraft,
   forgetWorking,
@@ -65,7 +65,9 @@ import {
   AUTHOR_KEYS,
   defaultMetadata,
   withTrackMetadata,
+  applyGeniusLyrics,
   applySections,
+  type GeniusKind,
   addMissing,
   bracketsToBackground,
   fixFromGenius,
@@ -92,6 +94,7 @@ import {
   markEnd,
   markNext,
   markStart,
+  mergeNext,
   moveLine,
   moveWord,
   moveWords,
@@ -113,6 +116,9 @@ import {
   progress,
   removeLine,
   setLineText,
+  hasJapanese,
+  splitAllWords,
+  splitJapanese,
   splitMatching,
   replaceMatching,
   splitUnit,
@@ -217,6 +223,8 @@ const CLASSIC_KEY = "lyssna.ttml-classic-tabs";
 const WORD_ROMAN_KEY = "lyssna.ttml-word-roman";
 type Tab = "write" | "sync" | "preview";
 const HISTORY_LIMIT = 200;
+const WINDOWED_DRAFT_LINES = 150;
+const ESTIMATED_ROW_HEIGHT = 72;
 const VOICE_CLASS = ["", " sung-second", " sung-third"];
 const WORD_VOICE_CLASS = [" sung-first", " sung-second", " sung-third"];
 const SECTION_NAMES = ["Intro", "Verse", "Pre-Chorus", "Chorus", "Post-Chorus", "Hook", "Bridge",
@@ -330,7 +338,6 @@ export function TtmlCreator({
   barSlot,
   playbar,
   onClose,
-  reviewSelection,
   onCloseReview,
   instrumentalAction,
   localIsrc,
@@ -356,7 +363,6 @@ export function TtmlCreator({
   playbar?: CreatorPlaybarSlots;
   onClose?: () => void;
   instrumentalAction?: ReactNode;
-  reviewSelection?: ReviewSelection;
   onCloseReview?: () => void;
   localIsrc?: string;
   draftPreview?: boolean;
@@ -365,13 +371,14 @@ export function TtmlCreator({
   const document = window.document;
   const focused = () => (root.getRootNode() as Document | ShadowRoot).activeElement;
   const playing = state.playback.item;
+  const reviewing = !!onCloseReview && !draftPreview;
   const [track, setTrack] = useState<Track | undefined>(playing);
   useEffect(() => {
     if (!track && playing) setTrack(playing);
   }, [track, playing]);
   const [catalogueMetadata, setCatalogueMetadata] = useState<{ uri: string; fields: Partial<SongMeta> }>();
   useEffect(() => {
-    if (!track || draftPreview || reviewSelection) return;
+    if (!track || draftPreview || reviewing) return;
     let active = true;
     const uri = track.uri;
     const save = (fields: Partial<SongMeta>) => {
@@ -383,7 +390,7 @@ export function TtmlCreator({
       if (songwriters?.length) save({ songwriters });
     }).catch(() => {});
     return () => { active = false; };
-  }, [host, track, draftPreview, reviewSelection]);
+  }, [host, track, draftPreview, reviewing]);
 
   const [lines, setLinesRaw] = useState<CreatorLine[]>([]);
   const linesRef = useRef(lines);
@@ -615,7 +622,13 @@ export function TtmlCreator({
   const [textMode, setTextMode] = useState(false);
   const [geniusOpen, setGeniusOpen] = useState(false);
   const [fetchingGenius, setFetchingGenius] = useState(false);
-  const [geniusReview, setGeniusReview] = useState<{ uri: string; before: CreatorLine[]; applied: CreatorLine[]; text: string }>();
+  const [geniusReview, setGeniusReview] = useState<{
+    uri: string;
+    before: CreatorLine[];
+    applied: CreatorLine[];
+    text: string;
+    kind: GeniusKind;
+  }>();
   const reviewingGenius = geniusReview?.uri === track?.uri ? geniusReview : undefined;
   const [ignoredGenius, setIgnoredGenius] = useState<string[]>(() => {
     try {
@@ -623,7 +636,9 @@ export function TtmlCreator({
       return Array.isArray(stored) ? stored.filter((item): item is string => typeof item === "string") : [];
     } catch { return []; }
   });
-  const reviewedChanges = useMemo(() => reviewingGenius && geniusChanges(reviewingGenius.before, lines, reviewingGenius.text), [lines, reviewingGenius]);
+  const reviewedChanges = useMemo(() => reviewingGenius &&
+    geniusChanges(reviewingGenius.before, lines, reviewingGenius.text, reviewingGenius.kind),
+  [lines, reviewingGenius]);
   const ignoreKey = (difference: GeniusChanges["differs"][number]) => JSON.stringify([track?.uri, difference.text, difference.genius]);
   const openGenius = () => {
     if (!track) return;
@@ -632,7 +647,7 @@ export function TtmlCreator({
     setTextMode(true);
     notify("Copy the plain lyrics from Genius and paste them into the editor.");
   };
-  const fromGenius = async (sectionsOnly = false) => {
+  const fromGenius = async (kind?: GeniusKind) => {
     if (!track || fetchingGenius) return;
     const uri = track.uri;
     const previousText = current.current.text;
@@ -641,16 +656,17 @@ export function TtmlCreator({
     try {
       const found = await getGeniusText(track.name, track.artists[0]?.name ?? "");
       if (current.current.uri !== uri) return;
-      if (sectionsOnly) {
+      if (kind) {
         const before = current.current.lines;
-        const tagged = applySections(before, found);
-        if (!tagged) {
+        if (!before.length) return;
+        const changed = kind === "sections" ? applySections(before, found) : applyGeniusLyrics(before, found);
+        if (kind === "sections" && !changed) {
           notify("Genius has no sections that match these lines.", true);
           return;
         }
-        const applied = joinHyphenated(tagged);
-        setLines(applied);
-        setGeniusReview({ uri, before, applied, text: found });
+        const applied = changed ? joinHyphenated(changed) : before;
+        if (changed) setLines(applied);
+        setGeniusReview({ uri, before, applied, text: found, kind });
       } else {
         if (current.current.text !== previousText) {
           notify("Your lyrics changed while Genius was loading. Fetch again to replace the text.", true);
@@ -672,13 +688,14 @@ export function TtmlCreator({
   const geniusButton = (
     <span className="ttml-export ttml-genius">
       <button disabled={!track || fetchingGenius} onClick={() => setGeniusOpen(!geniusOpen)}
-        title="Lyrics or sections from Genius" aria-label="Genius" aria-expanded={geniusOpen} aria-busy={fetchingGenius}>
+        title="Lyrics, lyric fixes, or sections from Genius" aria-label="Genius" aria-expanded={geniusOpen} aria-busy={fetchingGenius}>
         <Globe size={15} />
         <span className="ttml-label">{fetchingGenius ? "Asking Genius…" : "Genius"}</span>
       </button>
       {geniusOpen && <div className="ttml-meta-menu" role="menu">
         <button role="menuitem" onClick={() => void fromGenius()}>Lyrics from Genius</button>
-        <button role="menuitem" disabled={!lines.length} onClick={() => void fromGenius(true)}>Sections from Genius</button>
+        <button role="menuitem" disabled={!lines.length} onClick={() => void fromGenius("lyrics")}>Fix lyrics from Genius</button>
+        <button role="menuitem" disabled={!lines.length} onClick={() => void fromGenius("sections")}>Sections from Genius</button>
         <button role="menuitem" onClick={() => { setGeniusOpen(false); openGenius(); }}>Open Genius in browser</button>
       </div>}
     </span>
@@ -1017,6 +1034,26 @@ export function TtmlCreator({
     setLines(next);
     setCursor((cursor) => clampCursor(next, cursor));
   };
+  const splitDraft = (japanese = false) => {
+    const next = japanese ? splitJapanese(lines) : splitAllWords(lines, (text) =>
+      cutAt(text, suggestSplit(text, learned)),
+    );
+    if (next === lines) {
+      notify(japanese ? "No Japanese words to split per symbol." : "No words to split into syllables.");
+      return;
+    }
+    restructure(next);
+    notify(japanese ? "Split Japanese words per symbol." : "Split words into syllables.");
+  };
+  const japanese = useMemo(() => hasJapanese(lines), [lines]);
+  const splitButtons = <>
+    <button onClick={() => splitDraft()} title="Split whole words using the syllable dictionary and your saved splits">
+      <Wand2 size={15} /> Split all syllables
+    </button>
+    {japanese && <button onClick={() => splitDraft(true)} title="Split Japanese by symbol while preserving small kana, long vowels, and word readings">
+      <Languages size={15} /> Split Japanese per symbol
+    </button>}
+  </>;
   const [romanNote, setRomanNote] = useState("");
   const [syncRoman, setSyncRoman] = useState(
     () => readStorage(SYNC_ROMAN_KEY) === "1",
@@ -1257,6 +1294,10 @@ export function TtmlCreator({
               },
             ]
           : []),
+        ...(line.units[at.unit + 1] ? [{
+          label: line.units[at.unit + 1].joined ? "Merge with next syllable" : "Merge with next word",
+          run: () => restructure(mergeNext(lines, at)),
+        }] : []),
         { label: "Delete word", run: () => commitWord(at, "") },
       ],
       [
@@ -1774,6 +1815,35 @@ export function TtmlCreator({
   ]);
 
   const list = useRef<HTMLDivElement>(null);
+  const windowRows = editable && lines.length >= WINDOWED_DRAFT_LINES && typeof IntersectionObserver !== "undefined";
+  const [nearRows, setNearRows] = useState<ReadonlySet<number>>(new Set());
+  const rowHeights = useRef(new Map<number, number>());
+  useEffect(() => {
+    rowHeights.current.clear();
+    setNearRows(new Set());
+  }, [track?.uri, windowRows]);
+  useEffect(() => {
+    const container = list.current;
+    if (!windowRows || !container) return;
+    const near = new Set<number>();
+    const observer = new IntersectionObserver((entries) => {
+      let changed = false;
+      for (const { target, boundingClientRect, isIntersecting } of entries) {
+        const row = target as HTMLElement;
+        const index = Number(row.dataset.line);
+        if (row.classList.contains("ttml-card") && boundingClientRect.height > 0) {
+          rowHeights.current.set(index, boundingClientRect.height);
+        }
+        if (isIntersecting === near.has(index)) continue;
+        changed = true;
+        if (isIntersecting) near.add(index);
+        else near.delete(index);
+      }
+      if (changed) setNearRows(new Set(near));
+    }, { root: container, rootMargin: "800px 0px" });
+    container.querySelectorAll("[data-line]").forEach((row) => observer.observe(row));
+    return () => observer.disconnect();
+  }, [windowRows, lines.length, track?.uri]);
   const glide = useRef(0);
   const reduceMotion = !!state.settings.reduce_motion;
   const centre = useCallback(
@@ -1950,8 +2020,8 @@ export function TtmlCreator({
   const issues = useMemo(() => problems(lines), [lines]);
   const { done, total } = useMemo(() => progress(lines), [lines]);
   const songMetadata = useMemo(() => track ? {
-    ...meta(track), ...(!reviewSelection && catalogueMetadata?.uri === track.uri ? catalogueMetadata.fields : {}),
-  } : undefined, [track, catalogueMetadata, reviewSelection]);
+    ...meta(track), ...(!reviewing && catalogueMetadata?.uri === track.uri ? catalogueMetadata.fields : {}),
+  } : undefined, [track, catalogueMetadata, reviewing]);
   const entries = useMemo(
     () =>
       songMetadata
@@ -1962,8 +2032,7 @@ export function TtmlCreator({
     [metadata, songMetadata],
   );
   const ttml = () => (songMetadata ? toTtml(lines, songMetadata, entries) : "");
-  const reviewing = !!reviewSelection && !!onCloseReview && !draftPreview;
-  const [pendingReview, setPendingReview] = useState<ReviewOpen>();
+  const [pendingReview, setPendingReview] = useState<ReviewOpen | { uri: string; ttml?: never; submission?: never }>();
   const [reviewEdit, setReviewEdit] = useState<{ id: string; uri: string; baseline: string }>();
   useEffect(() => {
     if (!pendingReview) return;
@@ -1979,10 +2048,15 @@ export function TtmlCreator({
       setTrack(playing);
       return;
     }
+    const { ttml: submittedTtml, submission } = pendingReview;
+    if (!submittedTtml || !submission) {
+      setPendingReview(undefined);
+      return;
+    }
     const { uri } = track;
     let live = true;
     void (async () => {
-      const lyrics = parseLocalTtml(pendingReview.ttml);
+      const lyrics = parseLocalTtml(submittedTtml);
       const loaded = joinHyphenated(fromLyrics(lyrics));
       if (!loaded.length) throw new Error("No lyric lines found.");
       const song = meta(track);
@@ -2007,7 +2081,7 @@ export function TtmlCreator({
       setTextMode(false);
       setTab("write");
       setReviewEdit({
-        id: pendingReview.submission.id, uri, baseline: toTtml(loaded, song, reviewMetadata),
+        id: submission.id, uri, baseline: toTtml(loaded, song, reviewMetadata),
       });
       setPendingReview(undefined);
       notify(previous ? "Submission opened. Your earlier draft is in Saves." : "Submission opened for review.");
@@ -2018,17 +2092,20 @@ export function TtmlCreator({
     });
     return () => { live = false; };
   }, [pendingReview, playing, track, reviewing, setLines, notify, window, flushDraft]);
-  const reviewPanel = reviewing && reviewSelection && onCloseReview && (
+  const reviewPanel = reviewing && onCloseReview && (
     <ReviewPanel
-      selection={reviewSelection}
       playing={playing}
+      isPlaying={isPlaying}
       editing={done && reviewEdit?.uri === track?.uri ? reviewEdit : undefined}
-      opening={pendingReview?.submission.id}
+      opening={pendingReview?.submission?.id}
       editorTtml={ttml}
-      onPlay={(uri) => onPlayer({ command: "play", uri })}
-      onOpen={(open) => {
+      onPlay={(uri) => {
+        setPendingReview({ uri });
+        onPlayer({ command: "play", uri });
+      }}
+      onOpen={(open, play) => {
         setPendingReview(open);
-        if (playing?.uri !== open.uri) onPlayer({ command: "play", uri: open.uri });
+        if (play || playing?.uri !== open.uri) onPlayer({ command: "play", uri: open.uri });
       }}
       onCancelOpen={() => setPendingReview(undefined)}
       onParse={async (text) => parseLocalTtml(text)}
@@ -2711,6 +2788,7 @@ export function TtmlCreator({
                   <Languages size={15} />
                   Auto romanize
                 </button>
+                {splitButtons}
               </div>
               <button className="primary" onClick={() => setTab("sync")}>
                 Continue to Sync
@@ -2816,6 +2894,7 @@ export function TtmlCreator({
                   <Languages size={15} />
                   Auto romanize
                 </button>
+                {splitButtons}
               </span>
             </div>
           )}
@@ -2850,6 +2929,26 @@ export function TtmlCreator({
             }}
           >
             {lines.map((line, lineIndex) => {
+              const sectionHeader = line.part && <button type="button" className="ttml-part"
+                title="Edit section. Right-click for section actions."
+                onClick={() => editSection(lineIndex)} onContextMenu={(event) => {
+                  event.preventDefault();
+                  setMenu({ x: event.clientX, y: event.clientY, at: { line: lineIndex, unit: 0 }, kind: "section" });
+                }}>
+                {line.singer ? `${line.part} - ${line.singer}` : line.part}
+              </button>;
+              const dragLine = drag?.kind === "line" ? drag.line : drag?.at.line;
+              if (windowRows && !nearRows.has(lineIndex) && cursor.line !== lineIndex &&
+                focusLine !== lineIndex && sectionEdit?.line !== lineIndex && inline?.line !== lineIndex &&
+                menu?.at.line !== lineIndex && dragLine !== lineIndex) {
+                return (
+                  <Fragment key={lineIndex}>
+                    {sectionHeader}
+                    <div data-line={lineIndex} className="ttml-line-slot"
+                      style={{ height: rowHeights.current.get(lineIndex) ?? ESTIMATED_ROW_HEIGHT }} />
+                  </Fragment>
+                );
+              }
               const span = rowTiming.spans[lineIndex];
               const readings = rowTiming.readings[lineIndex];
               const voices = sectionSingers[lineIndex];
@@ -2901,14 +3000,7 @@ export function TtmlCreator({
               );
               return (
                 <Fragment key={lineIndex}>
-                {line.part && <button type="button" className="ttml-part"
-                  title="Edit section. Right-click for section actions."
-                  onClick={() => editSection(lineIndex)} onContextMenu={(event) => {
-                    event.preventDefault();
-                    setMenu({ x: event.clientX, y: event.clientY, at: { line: lineIndex, unit: 0 }, kind: "section" });
-                  }}>
-                  {line.singer ? `${line.part} - ${line.singer}` : line.part}
-                </button>}
+                {sectionHeader}
                 <div
                   data-line={lineIndex}
                   tabIndex={-1}
@@ -3438,7 +3530,7 @@ export function TtmlCreator({
         }}
         onGo={(line) => { setCursor({ line, unit: 0 }); centre(line); }}
         onKeep={() => { setGeniusReview(undefined); scrolledAt.current = Date.now(); }}
-        canUndo={lines === reviewingGenius.applied}
+        canUndo={reviewingGenius.before !== reviewingGenius.applied && lines === reviewingGenius.applied}
         onUndo={() => { undo(); setGeniusReview(undefined); scrolledAt.current = Date.now(); }}
         onMakeLeads={(chosen, background) => setLines(lines.map((line, index) => chosen.includes(index) ? { ...line, background } : line))}
         onFix={(at, genius) => {

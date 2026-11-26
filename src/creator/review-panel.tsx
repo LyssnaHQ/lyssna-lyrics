@@ -39,11 +39,6 @@ export interface ReviewOpen {
   ttml: string;
 }
 
-export interface ReviewSelection {
-  lane: ReviewLane;
-  submission: ReviewSubmission;
-}
-
 const ago = (iso: string) => {
   const minutes = Math.max(0, (Date.now() - Date.parse(iso)) / 60000);
   if (minutes < 60) return `${Math.round(minutes)}m ago`;
@@ -62,8 +57,8 @@ function ReviewQueue({
 }: {
   lane: ReviewLane;
   onLane: (lane: ReviewLane) => void;
-  onPick: (submission: ReviewSubmission) => void | Promise<void>;
-  onClose?: () => void;
+  onPick: (submission: ReviewSubmission) => void;
+  onClose: () => void;
 }) {
   const [items, setItems] = useState<ReviewSubmission[] | null>(null);
   const [failed, setFailed] = useState<string>();
@@ -88,7 +83,7 @@ function ReviewQueue({
     setOpenError(undefined);
     try {
       const latest = await reviewSubmission(item.id);
-      if (request.current === id) await onPick(latest);
+      if (request.current === id) onPick(latest);
     } catch (error) {
       if (request.current === id) setOpenError(String(error));
     } finally {
@@ -105,11 +100,9 @@ function ReviewQueue({
         }} title="Refresh" aria-label="Refresh queue">
           <RefreshCw size={15} />
         </button>
-        {onClose && (
-          <button onClick={onClose} aria-label="Close review">
-            <X size={16} />
-          </button>
-        )}
+        <button onClick={onClose} aria-label="Close review">
+          <X size={16} />
+        </button>
       </header>
       <div className="review-lanes" role="tablist">
         {(
@@ -152,31 +145,13 @@ function ReviewQueue({
   );
 }
 
-export function ReviewQueuePanel({ onPick, onClose }: {
-  onPick: (selection: ReviewSelection) => Promise<void>;
-  onClose: () => void;
-}) {
-  const [lane, setLane] = useState<ReviewLane>("priority");
-  const panel = useRef<HTMLElement>(null);
-  useLayoutEffect(() => panel.current?.focus({ preventScroll: true }), []);
-  return <aside className="review-panel review-queue-standalone" aria-label="Review submissions" ref={panel} tabIndex={-1}
-    onKeyDown={(event) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      event.stopPropagation();
-      onClose();
-    }}>
-    <ReviewQueue lane={lane} onLane={setLane} onPick={(submission) => onPick({ lane, submission })} onClose={onClose} />
-  </aside>;
-}
-
 function ReviewSongRow({ submission }: { submission: ReviewSubmission }) {
   return (
     <>
       <span className="review-song">
         <strong>{submission.song_title}</strong>
         <small>
-          {submission.kind === "edit" ? "Edit" : "New"} · {who(submission)} ·
+          {submission.instrumental ? "Instrumental" : submission.kind === "edit" ? "Edit" : "New"} · {who(submission)} ·
           Tier {submission.submitter_tier} · {ago(submission.submitted_at)}
           {submission.major_rewrite
             ? " · Major rewrite"
@@ -192,8 +167,8 @@ function ReviewSongRow({ submission }: { submission: ReviewSubmission }) {
 /** The TTML Creator's review side panel: a submission's changes, comments
  *  and decision, or the queue to pick another. */
 export function ReviewPanel({
-  selection,
   playing,
+  isPlaying,
   editing,
   opening,
   editorTtml,
@@ -206,14 +181,14 @@ export function ReviewPanel({
   notify,
   onClose,
 }: {
-  selection: ReviewSelection;
   playing?: Track;
+  isPlaying: boolean;
   /** The submission loaded in the editor and the TTML it opened with. */
   editing?: { id: string; baseline: string };
   opening?: string;
   editorTtml: () => string;
   onPlay: (uri: string) => void;
-  onOpen: (open: ReviewOpen) => void;
+  onOpen: (open: ReviewOpen, play?: boolean) => void;
   onCancelOpen: () => void;
   onParse: (ttml: string) => Promise<Lyrics>;
   onSubmitFix: (ttml: string) => Promise<void>;
@@ -221,13 +196,23 @@ export function ReviewPanel({
   notify: (message: string, error?: boolean) => void;
   onClose: () => void;
 }) {
-  const [picked, setPicked] = useState<ReviewSubmission | undefined>(selection.submission);
-  const [lane, setLane] = useState<ReviewLane>(selection.lane);
+  const [picked, setPicked] = useState<ReviewSubmission>();
+  const [lane, setLane] = useState<ReviewLane>("priority");
   const [minimised, setMinimised] = useState(false);
+  const panel = useRef<HTMLElement>(null);
+  useLayoutEffect(() => panel.current?.focus({ preventScroll: true }), []);
   return (
     <aside
       className={`review-panel${minimised ? " minimised" : ""}`}
       aria-label="Review"
+      ref={panel}
+      tabIndex={-1}
+      onKeyDown={(event) => {
+        if (event.key !== "Escape") return;
+        event.preventDefault();
+        event.stopPropagation();
+        onClose();
+      }}
     >
       {minimised && picked && (
         <button
@@ -248,6 +233,7 @@ export function ReviewPanel({
           key={picked.id}
           submission={picked}
           playing={playing}
+          isPlaying={isPlaying}
           editing={editing?.id === picked.id ? editing : undefined}
           opening={opening === picked.id}
           editorTtml={editorTtml}
@@ -278,6 +264,7 @@ export function ReviewPanel({
 function ReviewDetail({
   submission,
   playing,
+  isPlaying,
   editing,
   opening,
   editorTtml,
@@ -294,11 +281,12 @@ function ReviewDetail({
 }: {
   submission: ReviewSubmission;
   playing?: Track;
+  isPlaying: boolean;
   editing?: { id: string; baseline: string };
   opening: boolean;
   editorTtml: () => string;
   onPlay: (uri: string) => void;
-  onOpen: (open: ReviewOpen) => void;
+  onOpen: (open: ReviewOpen, play?: boolean) => void;
   onParse: (ttml: string) => Promise<Lyrics>;
   onSubmitFix: (ttml: string) => Promise<void>;
   notify: (message: string, error?: boolean) => void;
@@ -309,7 +297,7 @@ function ReviewDetail({
   onDecided: (submission: ReviewSubmission, action: ReviewAction, uri: string | null | undefined) => void;
 }) {
   const [uri, setUri] = useState<string | null>();
-  const [ttml, setTtml] = useState<string>();
+  const [ttml, setTtml] = useState<string | null>();
   const [preview, setPreview] = useState<Lyrics>();
   const [showPreview, setShowPreview] = useState(false);
   const [diff, setDiff] = useState<DiffRow[] | null>();
@@ -334,7 +322,7 @@ function ReviewDetail({
     void reviewTrackUri(submission).then(
       (found) => live && setUri(found ?? null),
     );
-    if (submission.head_revision_id)
+    if (submission.head_revision_id && !submission.instrumental)
       revisionTtml(submission.head_revision_id).then(
         (text) => {
           if (!live) return;
@@ -344,7 +332,11 @@ function ReviewDetail({
             (error) => { if (live) tell.current(String(error), true); },
           );
         },
-        (error) => live && tell.current(String(error), true),
+        (error) => {
+          if (!live) return;
+          setTtml(null);
+          tell.current(String(error), true);
+        },
       );
     reviewComments(id).then(
       (list) => live && setComments(list),
@@ -376,23 +368,26 @@ function ReviewDetail({
       live = false;
     };
   }, [ttml, submission]);
-  const playingIt = !!uri && playing?.uri === uri;
-  const fixed = !!editing && editorTtml() !== editing.baseline;
+  const playingIt = isPlaying && !!uri && playing?.uri === uri;
+  const instrumental = !!submission.instrumental;
+  const canDecide = instrumental || !!ttml;
+  const fixed = !instrumental && !!editing && editorTtml() !== editing.baseline;
   const decide = async (
     action: "approve" | "reject" | "request-changes",
     then?: () => Promise<void>,
   ) => {
-    if (busy || submission.status !== "pending" || !ttml) return;
+    if (busy || submission.status !== "pending" || !canDecide) return;
     setBusy(true);
     try {
       const latest = await reviewSubmission(id);
-      if (latest.status !== "pending" || latest.head_revision_id !== submission.head_revision_id) {
+      if (latest.status !== "pending" || latest.head_revision_id !== submission.head_revision_id ||
+        !!latest.instrumental !== instrumental) {
         notify("This submission changed. Open it again from the queue.", true);
         onBack();
         return;
       }
       const decided = await decideReview(id, action, {
-        grade: action === "approve" ? grade : undefined,
+        grade: action === "approve" && !instrumental ? grade : undefined,
         reason: action === "reject" ? reason : undefined,
         note: note.trim() || undefined,
       });
@@ -453,26 +448,33 @@ function ReviewDetail({
         </button>
       </header>
       <p className="review-meta">
-        {submission.kind === "edit" ? "Edit" : "New lyrics"} by{" "}
+        {instrumental ? "Marked instrumental" : submission.kind === "edit" ? "Edit" : "New lyrics"} by{" "}
         {who(submission)} · Tier {submission.submitter_tier} ·{" "}
         {ago(submission.submitted_at)}
       </p>
       <div className="review-buttons">
         <button
-          disabled={!uri}
+          disabled={!uri || opening || (!instrumental && !!submission.head_revision_id && ttml === undefined)}
           title={uri === null ? "No Spotify link for this song" : undefined}
-          onClick={() => uri && onPlay(uri)}
+          onClick={() => {
+            if (!uri) return;
+            if (ttml && !editing && !instrumental) onOpen({ submission, uri, ttml }, true);
+            else onPlay(uri);
+          }}
         >
           <Play size={14} /> {playingIt ? "Playing" : "Play song"}
         </button>
-        <button
+        {!instrumental && <button
           disabled={!uri || !ttml || !!editing || opening}
           onClick={() => uri && ttml && onOpen({ submission, uri, ttml })}
         >
           <SquarePen size={14} />{" "}
           {opening ? "Opening…" : editing ? "Opened in editor" : "Open in editor"}
-        </button>
+        </button>}
       </div>
+      {instrumental && <p className="review-instrumental">
+        This submission marks the song as instrumental. Listen to confirm before approving.
+      </p>}
       {preview && (
         <section className="review-section">
           <div className="review-buttons">
@@ -485,7 +487,7 @@ function ReviewDetail({
           </ol>}
         </section>
       )}
-      {submission.kind === "edit" && (
+      {submission.kind === "edit" && !instrumental && (
         <section className="review-section">
           <h4>Changes</h4>
           {!!kinds.length && (
@@ -591,7 +593,7 @@ function ReviewDetail({
             </button>
           ))}
         </div>
-        {outcome === "approve" && (
+        {outcome === "approve" && !instrumental && (
           <>
             <small className="review-label">Quality</small>
             <div
@@ -651,12 +653,12 @@ function ReviewDetail({
             <>
               <button
                 className="review-confirm"
-                disabled={busy || !ttml}
+                disabled={busy || !canDecide}
                 onClick={() => void decide("approve")}
               >
-                <CircleCheck size={14} /> Approve
+                <CircleCheck size={14} /> {instrumental ? "Approve as instrumental" : "Approve"}
               </button>
-              <button
+              {!instrumental && <button
                 disabled={busy || !ttml || !fixed}
                 title={
                   fixed
@@ -668,12 +670,12 @@ function ReviewDetail({
                 }
               >
                 <SquarePen size={14} /> Fix and approve
-              </button>
+              </button>}
             </>
           ) : outcome === "request-changes" ? (
             <button
               className="review-confirm"
-              disabled={busy || !ttml || !note.trim()}
+              disabled={busy || !canDecide || !note.trim()}
               title={
                 note.trim() ? undefined : "Write a note saying what to change"
               }
@@ -684,7 +686,7 @@ function ReviewDetail({
           ) : (
             <button
               className="review-confirm"
-              disabled={busy || !ttml}
+              disabled={busy || !canDecide}
               onClick={() => void decide("reject")}
             >
               <CircleX size={14} /> Reject
