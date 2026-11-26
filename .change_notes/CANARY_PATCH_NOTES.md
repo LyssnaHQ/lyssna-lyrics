@@ -1,5 +1,9 @@
 # Lyssna Lyrics patch notes
 
+## v1.2.0-feda33d
+
+- Bring back the original Discord and Ko-fi outline shapes, fit them to the filled logos, and make the footer buttons shorter with 24 px icons.
+
 ## v1.2.0-247b4e9
 
 - Give the Settings footer about 50% more height and match the visible size of the outline and filled Discord and Ko-fi logos.
