@@ -1,5 +1,10 @@
 # Lyssna Lyrics patch notes
 
+## v1.2.0-84b88ad
+
+- End the lyrics scrollbar above pinned credits. Credits that scroll with the lyrics stay within its range.
+- Align the Settings scrollbar with the bottom of the tabs and center its thumb in the side gap. Keyboard focus highlights the thumb instead of outlining the track.
+
 ## v1.2.0-e0dbec3
 
 - Move the overlay scrollbar thumb farther from the edge, reveal it from a wider area, and keep the regular pointer over it.
