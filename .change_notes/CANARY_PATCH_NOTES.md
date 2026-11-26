@@ -1,5 +1,9 @@
 # Lyssna Lyrics patch notes
 
+## v1.2.0-dcfa5ba
+
+- Reduce stalls during TTML Creator playback by keeping word controls near the viewport and suspending layout for the Spotify page covered by the editor.
+
 ## v1.2.0-806bb4c
 
 - Open the review queue in TTML Creator. Play a lyric submission to open its draft while listening. Instrumental submissions are labeled in the queue and can be approved, rejected, or sent back for changes without a lyric file.
