@@ -80,15 +80,17 @@ function visualRowKey(row: ReactNode) {
   return isValidElement(row) && row.key !== null ? String(row.key) : "";
 }
 
-function SettingsScrollArea({ scroll, label, onScroll, children }: {
+function SettingsScrollArea({ scroll, label, contentKey, onScroll, children }: {
   scroll: RefObject<HTMLDivElement | null>;
   label: string;
+  contentKey?: string;
   onScroll?: UIEventHandler<HTMLDivElement>;
   children: ReactNode;
 }) {
   return <div className="settings-scroll-frame">
     <div className="lyrics-settings-scroll overlay-scroll-content" ref={scroll} onScroll={onScroll}>{children}</div>
-    <OverlayScrollbar scroll={scroll} label={label} observeContent />
+    <OverlayScrollbar scroll={scroll} label={label} contentKey={contentKey}
+      alignTo=".lyrics-settings-group, .settings-source-card" observeContent />
   </div>;
 }
 
@@ -541,7 +543,7 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
             tabButtons.current[next]?.focus();
           }}><Icon size={16} />{label}</button>)}
       </div>}
-      <SettingsScrollArea scroll={scroll} label="Scroll settings" onScroll={(event) => {
+      <SettingsScrollArea scroll={scroll} label="Scroll settings" contentKey={`${submenu ?? tab}:${query}`} onScroll={(event) => {
         const top = event.currentTarget.scrollTop;
         if (submenu) submenuScroll.current = top;
         else if (!searching) mainScroll.current = top;
