@@ -1,5 +1,7 @@
 import { cloneElement, isValidElement, useEffect, useLayoutEffect, useRef, useState, type ComponentProps, type CSSProperties, type ReactElement, type ReactNode, type RefObject, type UIEventHandler } from "react";
-import { AlignLeft, AppWindow, ChevronLeft, ChevronUp, Coffee, FileText, FlaskConical, MessagesSquare, Palette, Pin, Search, Settings2, SlidersHorizontal, WandSparkles, Wrench, X } from "lucide-react";
+import { AlignLeft, AppWindow, ChevronLeft, ChevronUp, FileText, FlaskConical, Palette, Pin, Search, Settings2, SlidersHorizontal, WandSparkles, Wrench, X } from "lucide-react";
+import discordSymbol from "../assets/discord-symbol.svg";
+import kofiCup from "../assets/kofi-cup.png";
 import EnhancementsSection from "./enhancements/section";
 import { AnimatorPanel } from "./lyssna/animator-settings";
 import { appFontStyles, FontControl } from "./font-settings";
@@ -572,10 +574,10 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
       {!submenu && <footer className="lyrics-settings-footer">
         <nav className="settings-footer-links" aria-label="Lyssna links">
           <a className="settings-footer-action" href={discordInvite} target="_blank" rel="noopener noreferrer">
-            <MessagesSquare size={15} aria-hidden="true" />Discord
+            <img src={discordSymbol} alt="" width={16} height={16} />Discord
           </a>
           <a className="settings-footer-action" href="https://ko-fi.com/lyssna" target="_blank" rel="noopener noreferrer">
-            <Coffee size={15} aria-hidden="true" />Ko-fi
+            <img src={kofiCup} alt="" width={16} height={16} />Ko-fi
           </a>
         </nav>
         <button type="button" id="lyssna-open-builds" className="settings-footer-action settings-build-trigger"
