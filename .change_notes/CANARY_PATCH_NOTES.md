@@ -1,5 +1,9 @@
 # Lyssna Lyrics patch notes
 
+## v1.2.0-39fd655
+
+- Reduce the delay in Apple Music Style so the gentle rise and fall follows the timing of each word more closely.
+
 ## v1.2.0-46c20b1
 
 - Smooth the Apple Music Style lift on quick words and let the motion settle naturally between words and at the end of a line.
