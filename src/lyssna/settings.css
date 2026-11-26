@@ -377,7 +377,7 @@
   padding: 3px;
   border-radius: 10px;
   background: light-dark(#ffffff17, #00000017);
-  box-shadow: 0 1px 0 #ffffff17 inset;
+  box-shadow: inset 0 0 0 1px light-dark(#0003, #fff4);
 }
 .lyrics-settings-tabs button {
   display: inline-flex;
