@@ -1,5 +1,10 @@
 # Lyssna Lyrics patch notes
 
+## v1.2.0-5594e42
+
+- Lowercase only the first character of each continuation joined into a backing vocal.
+- Give the lyrics scrollbar a small edge inset, a wider hover area, and a softer fade. Settings uses the same overlay thumb, with no arrows or scrollbar gutter.
+
 ## v1.2.0-763e2b9
 
 - Group parentheses that span several lines into one backing vocal in experimental word sync. Insert missing commas at the original line breaks while keeping each part timed to its source line.
