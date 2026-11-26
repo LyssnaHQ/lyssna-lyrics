@@ -1,5 +1,10 @@
 # Lyssna Lyrics patch notes
 
+## v1.2.0-63d18f0
+
+- Omit cover artwork URLs from Creator’s TTML metadata.
+- Keep Creator’s header buttons right-aligned when the toolbar wraps.
+
 ## v1.2.0-1c6f259
 
 - Fill available Spotify track and release details in Creator’s TTML metadata, including ISRC, release date, track and disc numbers, and label.
