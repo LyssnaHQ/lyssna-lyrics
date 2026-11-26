@@ -32,9 +32,10 @@ type ImageSource = { url?: string; width?: number; maxWidth?: number };
 type SpotifyHttp = { get(url: string): Promise<unknown> };
 type PlaybackToggle = { getValue(): Promise<boolean>; setValue(value: boolean): Promise<unknown> };
 type HeaderImages = { sources?: ImageSource[] };
+type TrackCredit = { name?: string; role?: string };
 type CatalogueResult = {
   data?: { trackUnion?: { canvas?: CanvasInfo | null; creditsTrait?: {
-    contributors?: { items?: { name?: string; role?: string }[] };
+    contributors?: { items?: TrackCredit[] };
   } }; albumUnion?: {
     date?: { isoString?: string; year?: number };
     tracksV2?: { totalCount?: number; items?: { track?: {
@@ -186,7 +187,7 @@ export type TtmlTrack = {
   uri: string;
   name: string;
   duration_ms?: number;
-  artists: { name: string }[];
+  artists: { name: string; uri?: string; id?: string }[];
   album?: CatalogueAlbum;
   disc_number?: number;
   track_number?: number;
@@ -306,7 +307,7 @@ export function getHost() {
   const artistHeaders = new Map<string, Promise<string | undefined>>();
   const artistGalleryPhotos = new Map<string, Promise<string | undefined>>();
   const releaseYears = new Map<string, Promise<string | undefined>>();
-  const trackWriters = new Map<string, Promise<string[]>>();
+  const trackCredits = new Map<string, Promise<TrackCredit[]>>();
   const canvases = new Map<string, Promise<CanvasInfo | null | undefined>>();
   const analyses = new Map<string, Promise<AudioAnalysis | null>>();
   const currentTrack = () => kit?.Player.state?.item ?? kit?.Player.track ?? spice?.Player.data?.item;
@@ -525,25 +526,27 @@ export function getHost() {
       throw new Error("This album has too many tracks to match at once. Enter a track link instead.");
     },
     lookupTrack,
-    lookupSongwriters(id: string) {
+    async lookupSongwriters(id: string, role?: "lyricist") {
       if (!/^[A-Za-z0-9]{22}$/.test(id)) return;
-      const cached = trackWriters.get(id);
-      if (cached) return cached;
-      const { definitions, request } = graph();
-      const definition = definitions?.queryTrackCreditsGroupedModal;
-      if (!definition || !request) return;
-      const pending = request(definition, { trackUri: `spotify:track:${id}`, contributorsLimit: 100, contributorsOffset: 0 }).then(result => {
-        const credits = result.data?.trackUnion?.creditsTrait?.contributors?.items ?? [];
-        const writers = credits.flatMap(({ name, role }) =>
-          name?.trim() && /writer|composer|lyricist/i.test(role ?? "") ? [name.trim()] : []);
-        return [...new Set(writers)];
-      }).catch(() => {
-        if (trackWriters.get(id) === pending) trackWriters.delete(id);
-        return [];
-      });
-      trackWriters.set(id, pending);
-      if (trackWriters.size > 96) trackWriters.delete(trackWriters.keys().next().value!);
-      return pending;
+      let cached = trackCredits.get(id);
+      if (!cached) {
+        const { definitions, request } = graph();
+        const definition = definitions?.queryTrackCreditsGroupedModal;
+        if (!definition || !request) return;
+        const pending = request(definition, { trackUri: `spotify:track:${id}`, contributorsLimit: 100, contributorsOffset: 0 })
+          .then(result => result.data?.trackUnion?.creditsTrait?.contributors?.items ?? [])
+          .catch(() => {
+            if (trackCredits.get(id) === pending) trackCredits.delete(id);
+            return [];
+          });
+        trackCredits.set(id, pending);
+        if (trackCredits.size > 96) trackCredits.delete(trackCredits.keys().next().value!);
+        cached = pending;
+      }
+      const roles = role === "lyricist" ? /\blyricists?\b/i : /writer|composer|lyricist/i;
+      const writers = (await cached).flatMap(({ name, role: creditRole }) =>
+        name?.trim() && roles.test(creditRole ?? "") ? [name.trim()] : []);
+      return [...new Set(writers)];
     },
     async lookupIsrc(id: string, known?: string) {
       return normalizeIsrc(known) ?? (await spotifyTrackMetadata(id))?.external_ids?.isrc

@@ -55,10 +55,12 @@ export interface SongMeta {
   spotifyId?: string;
   durationMs?: number;
   songwriters?: string[];
+  spotifyFields?: MetaEntry[];
 }
 export interface MetaEntry {
   key: string;
   values: string[];
+  cleared?: boolean;
 }
 
 // Key names as the AMLL TTML DB stores them. Songwriters go to
@@ -87,10 +89,22 @@ export function defaultMetadata(
   };
   for (const entry of author)
     if (AUTHOR_KEYS.includes(entry.key)) known[entry.key] = entry.values;
-  return withSongwriters(
+  return withTrackMetadata(
     META_KEYS.map((key) => ({ key, values: [...(known[key] ?? [])] })),
     meta,
   );
+}
+
+export function withTrackMetadata(entries: MetaEntry[], meta: SongMeta): MetaEntry[] {
+  const defaults = new Map(meta.spotifyFields?.map((entry) => [entry.key, entry]));
+  if (meta.name) defaults.set("musicName", { key: "musicName", values: [meta.name] });
+  if (meta.artists.length) defaults.set("artists", { key: "artists", values: meta.artists });
+  const populated = entries.map((entry) => {
+    const fallback = defaults.get(entry.key);
+    defaults.delete(entry.key);
+    return fallback && !entry.values.length && !entry.cleared ? fallback : entry;
+  });
+  return withSongwriters([...populated, ...defaults.values()], meta);
 }
 
 /** Fills Songwriter from the song's credits unless the entries already

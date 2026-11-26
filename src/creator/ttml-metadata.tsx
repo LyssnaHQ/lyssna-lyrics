@@ -18,8 +18,24 @@ const LABELS: Record<
   artists: { label: "Artist" },
   songwriters: {
     label: "Songwriter",
-    hint: "Filled from the song's credits when Spotify names any.",
+    hint: "Filled from the song’s available writer credits.",
   },
+  albumArtists: { label: "Album artist" },
+  releaseDate: { label: "Release date" },
+  trackNumber: { label: "Track number" },
+  discNumber: { label: "Disc number" },
+  trackTotal: { label: "Tracks on release" },
+  albumType: { label: "Release type" },
+  genres: { label: "Genre" },
+  label: { label: "Record label" },
+  copyright: { label: "Copyright" },
+  phonographicCopyright: { label: "Recording copyright" },
+  explicit: { label: "Explicit" },
+  coverUrl: { label: "Artwork URL" },
+  upc: { label: "UPC" },
+  ean: { label: "EAN" },
+  spotifyAlbumId: { label: "Spotify album ID" },
+  spotifyArtistId: { label: "Spotify artist ID" },
   isrc: {
     label: "ISRC",
     hint: "One per region if the song has several.",
@@ -46,7 +62,8 @@ const LABELS: Record<
 
 const GROUPS: [string, string[]][] = [
   ["Song", ["musicName", "artists", "songwriters"]],
-  ["Identifiers", ["isrc", "appleMusicId", "ncmMusicId", "qqMusicId"]],
+  ["Release", ["albumArtists", "releaseDate", "trackNumber", "discNumber", "trackTotal", "albumType", "genres", "label", "copyright", "phonographicCopyright", "explicit", "coverUrl"]],
+  ["Identifiers", ["isrc", "spotifyAlbumId", "spotifyArtistId", "upc", "ean", "appleMusicId", "ncmMusicId", "qqMusicId"]],
   ["You", ["ttmlAuthorGithub", "ttmlAuthorGithubLogin"]],
 ];
 
@@ -67,7 +84,7 @@ export function MetadataDialog({
   const setValues = (index: number, values: string[]) =>
     onChange(
       entries
-        .map((entry, at) => (at === index ? { ...entry, values } : entry))
+        .map((entry, at) => (at === index ? { ...entry, values, cleared: !values.length || undefined } : entry))
         .filter((entry) => entry.values.length || isPreset(entry.key)),
     );
   const addField = (key: string) => {

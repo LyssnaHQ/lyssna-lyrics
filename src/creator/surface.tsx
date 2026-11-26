@@ -563,7 +563,7 @@ export function CreatorSurface({ host, view: owner, settings, close, reviewSelec
         replayAvailable: !deletingRecording && !!saved && saved.frames >= saved.sampleRate / 2, replayCaptured,
         spectrumKey: audio?.buffer ? audio.url : "spotify", spectrumAudioUri: audio?.buffer ? audio.uri : undefined,
         openAudio, playClip, manageStoredData }}>
-        <TtmlCreator state={state} onPlayer={player} onToggle={toggle} draftPreview={previewing}
+        <TtmlCreator host={host} state={state} onPlayer={player} onToggle={toggle} draftPreview={previewing}
           onSpeed={setSpeed} notify={notify} barSlot={previewing ? undefined : playbar?.wave ?? bar} playbar={playbar}
           onClose={close}
           onSubmitted={onSubmitted}

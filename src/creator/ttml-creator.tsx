@@ -39,8 +39,11 @@ import {
 } from "lucide-react";
 import { IS_MAC, MODIFIER, useCreatorClock, useCreatorEnvironment, useCreatorTick } from "./environment";
 import { useEnhancedPerformance } from "../enhancements/config";
+import type { Host } from "../host";
 import type { CreatorState } from "./types";
 import type { Lyrics, PlayerRequest, Track } from "./types";
+import { readCreatorSongwriters } from "./current-lyrics";
+import { creatorSpotifyTrack, readCreatorTrackMetadata } from "./track-metadata";
 import { lyricsChanged, parseLocalTtml } from "../local-lyrics";
 import { revalidateLyssnaSong } from "../lyssna-provider";
 import type { SubmissionFeedback } from "../lyssna-submission";
@@ -61,7 +64,7 @@ import {
   type SongMeta,
   AUTHOR_KEYS,
   defaultMetadata,
-  withSongwriters,
+  withTrackMetadata,
   applySections,
   addMissing,
   bracketsToBackground,
@@ -273,6 +276,7 @@ const meta = (track: Track): SongMeta => ({
   spotifyId: track.is_local ? undefined : track.id,
   durationMs: track.duration_ms,
   songwriters: track.songwriters,
+  spotifyFields: track.spotify?.isrc ? [{ key: "isrc", values: [track.spotify.isrc] }] : undefined,
 });
 
 function TimePill({ ms, end }: { ms?: number; end?: boolean }) {
@@ -311,6 +315,7 @@ function CreatorPreview({ lyrics, playing, offset, track, render }: {
 }
 
 export function TtmlCreator({
+  host,
   state,
   onPlayer,
   onToggle,
@@ -331,6 +336,7 @@ export function TtmlCreator({
   localIsrc,
   draftPreview = false,
 }: {
+  host: Host;
   state: CreatorState;
   onPlayer: (request: PlayerRequest) => void;
   onToggle: () => void;
@@ -363,6 +369,21 @@ export function TtmlCreator({
   useEffect(() => {
     if (!track && playing) setTrack(playing);
   }, [track, playing]);
+  const [catalogueMetadata, setCatalogueMetadata] = useState<{ uri: string; fields: Partial<SongMeta> }>();
+  useEffect(() => {
+    if (!track || draftPreview || reviewSelection) return;
+    let active = true;
+    const uri = track.uri;
+    const save = (fields: Partial<SongMeta>) => {
+      if (!active) return;
+      setCatalogueMetadata(previous => ({ uri, fields: { ...(previous?.uri === uri ? previous.fields : {}), ...fields } }));
+    };
+    void readCreatorTrackMetadata(host, track).then(save).catch(() => {});
+    void readCreatorSongwriters(host, creatorSpotifyTrack(track), track.duration_ms).then(songwriters => {
+      if (songwriters?.length) save({ songwriters });
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [host, track, draftPreview, reviewSelection]);
 
   const [lines, setLinesRaw] = useState<CreatorLine[]>([]);
   const linesRef = useRef(lines);
@@ -1936,16 +1957,19 @@ export function TtmlCreator({
 
   const issues = useMemo(() => problems(lines), [lines]);
   const { done, total } = progress(lines);
+  const songMetadata = useMemo(() => track ? {
+    ...meta(track), ...(!reviewSelection && catalogueMetadata?.uri === track.uri ? catalogueMetadata.fields : {}),
+  } : undefined, [track, catalogueMetadata, reviewSelection]);
   const entries = useMemo(
     () =>
-      track
+      songMetadata
         ? metadata
-          ? withSongwriters(metadata, meta(track))
-          : defaultMetadata(meta(track), loadAuthor())
+          ? withTrackMetadata(metadata, songMetadata)
+          : defaultMetadata(songMetadata, loadAuthor())
         : (metadata ?? []),
-    [metadata, track],
+    [metadata, songMetadata],
   );
-  const ttml = () => (track ? toTtml(lines, meta(track), entries) : "");
+  const ttml = () => (songMetadata ? toTtml(lines, songMetadata, entries) : "");
   const reviewing = !!reviewSelection && !!onCloseReview && !draftPreview;
   const [pendingReview, setPendingReview] = useState<ReviewOpen>();
   const [reviewEdit, setReviewEdit] = useState<{ id: string; uri: string; baseline: string }>();
