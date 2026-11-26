@@ -749,7 +749,13 @@ const LyricWords = memo(function LyricWords({ line, appleStyle }: { line: Line; 
         const appleTiming = appleStyle ? {
           start: Math.min(...group.map((word) => word.start_ms)),
           end: Math.max(...group.map((word) => word.end_ms)),
+          ripple: false,
         } : undefined;
+        if (appleTiming && appleTiming.end - appleTiming.start >= 1000 && group.every((word) => !word.estimated)) {
+          const text = group.map((word) => word.text).join("").trim();
+          // Keep scripts with contextual shaping in a single text run.
+          appleTiming.ripple = /^[\p{Script=Latin}\p{Script=Cyrillic}\p{Script=Greek}\p{M}\p{N}\p{P}]{3,32}$/u.test(text);
+        }
         // A long hyphenated run like "no-oh-oh-oh" wraps at its hyphens
         // instead of moving to a line of its own.
         const runs: (typeof group)[] = [[]];

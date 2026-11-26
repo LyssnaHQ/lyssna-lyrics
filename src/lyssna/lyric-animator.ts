@@ -40,14 +40,7 @@ interface Syllable extends Piece {
   letters: Piece[];
   letterOffset: number;
   letterCount: number;
-  wordMotion?: WordMotion;
-}
-type StyleTarget = Pick<Piece, "element" | "written">;
-interface WordMotion extends StyleTarget {
-  start: number;
-  riseMs: number;
-  settleMs: number;
-  heightEm: number;
+  ripple?: { start: number; end: number };
 }
 const LAYERED_LINES = 4;
 const STYLES = [
@@ -65,7 +58,7 @@ const piece = (element: HTMLElement, letter = false): Piece => ({
     : new SyllableSprings(),
   written: new Map(),
 });
-function write(target: StyleTarget, property: string, value: string) {
+function write(target: Piece, property: string, value: string) {
   if (target.written.get(property) === value) return;
   target.written.set(property, value);
   target.element.style.setProperty(property, value);
@@ -80,30 +73,33 @@ function smoothRamp(value: number) {
   return progress * progress * (3 - 2 * progress);
 }
 
+function paintAppleHighlight(target: Piece, progress: number, glow: number) {
+  write(target, "--gradient-ratio", progress <= 0 ? "-0.36" : progress >= 1 ? "1" : (1.36 * progress - 0.36).toFixed(4));
+  const halo = glow && progress > 0 && progress < 1
+    ? glow * target.calm * smoothRamp(progress * 3) * smoothRamp((1 - progress) * 3)
+    : 0;
+  write(target, "--glow", halo > 0 ? `0 0 .14em rgb(255 255 255 / ${halo.toFixed(3)})` : "");
+}
+
 function animateAppleStyle(syllable: Syllable, time: number, reduceMotion: boolean) {
-  const word = syllable.wordMotion;
-  if (word) {
-    const age = time - word.start;
-    const travel = age < word.riseMs
-      ? smoothRamp(age / word.riseMs)
-      : 1 - smoothRamp((age - word.riseMs) / word.settleMs);
-    const lift = word.heightEm * travel;
-    write(word, "translate", lift > 0 ? `0 ${(-lift).toFixed(4)}em` : "");
-  }
   const elapsed = time - syllable.start;
-  const remaining = syllable.end - time;
   const duration = Math.max(1, syllable.end - syllable.start);
-  const progress = elapsed / duration;
-  write(syllable, "--gradient-ratio", progress <= 0 ? "-0.36" : progress >= 1 ? "1" : (1.36 * progress - 0.36).toFixed(4));
-  if (reduceMotion || duration <= 450 || progress <= 0 || progress >= 1) {
-    write(syllable, "--glow", "");
+  const { ripple, letters } = syllable;
+  if (!ripple || !letters.length) {
+    paintAppleHighlight(syllable, elapsed / duration, reduceMotion ? 0 : 0.18);
     return;
   }
-  const sustain = smoothRamp((duration - 450) / 900) * syllable.calm;
-  const attack = smoothRamp(elapsed / Math.min(170, duration / 3));
-  const release = smoothRamp(remaining / Math.min(240, duration / 3));
-  const glow = 0.35 * attack * release * sustain;
-  write(syllable, "--glow", glow > 0 ? `0 0 .15em rgb(255 255 255 / ${glow.toFixed(3)})` : "");
+  const letterMs = duration / letters.length;
+  const wordEnvelope = smoothRamp((time - ripple.start) / 120) * smoothRamp((ripple.end - time) / 120);
+  for (const [index, letter] of letters.entries()) {
+    const progress = (elapsed - index * letterMs) / letterMs;
+    paintAppleHighlight(letter, progress, reduceMotion ? 0 : 0.24);
+    if (reduceMotion) continue;
+    const distance = Math.abs(elapsed - (index + 0.5) * letterMs);
+    const wave = 1 - smoothRamp(distance / Math.max(110, letterMs * 0.8));
+    const lift = wave * wordEnvelope * letter.calm * 0.016;
+    write(letter, "translate", lift > 0 ? `0 ${(-lift).toFixed(4)}em` : "");
+  }
 }
 
 /** Drives syllable springs on rendered lyric lines. Lines being sung, and
@@ -183,7 +179,6 @@ export class LyricAnimator {
     for (const syllable of syllables) {
       clear(syllable);
       syllable.letters.forEach(clear);
-      syllable.wordMotion?.element.style.removeProperty("translate");
     }
     this.live.delete(index);
   }
@@ -221,22 +216,10 @@ export class LyricAnimator {
           )
         : [];
       const base = piece(node);
-      // Each visual fragment uses the timing of the whole word, even across a wrap.
-      const word = node.parentElement;
-      let wordMotion: WordMotion | undefined;
-      if (this.appleStyle && !this.reduceMotion && word?.firstElementChild === node && word.dataset.wordStart !== undefined) {
-        const start = Number(word.dataset.wordStart);
-        const duration = Math.max(1, Number(word.dataset.wordEnd) - start);
-        const riseMs = Math.max(110, Math.min(280, duration * 0.45));
-        wordMotion = {
-          element: word,
-          written: new Map(),
-          start,
-          riseMs,
-          settleMs: Math.max(120, duration - riseMs),
-          heightEm: (0.014 + 0.018 * smoothRamp(duration / 900)) * base.calm,
-        };
-      }
+      const word = node.parentElement?.dataset;
+      const ripple = this.appleStyle && word?.wordStart !== undefined
+        ? { start: Number(word.wordStart), end: Number(word.wordEnd) }
+        : undefined;
       if (this.simple)
         base.springs.lift.position = base.springs.lift.goal = simpleGoal(
           1,
@@ -246,9 +229,9 @@ export class LyricAnimator {
       return {
         ...base,
         start,
-        end: end - (emphasis ? MOTION.emphasisTailMs : 0),
+        end: end - (emphasis && !this.appleStyle ? MOTION.emphasisTailMs : 0),
         letters,
-        wordMotion,
+        ripple,
         letterOffset: Number(node.dataset.letterOffset ?? 0),
         letterCount: Number(node.dataset.letterCount ?? letters.length),
       };
@@ -359,14 +342,9 @@ export class LyricAnimator {
         if (!this.appleStyle) this.line(index)?.setAttribute("data-settling", "");
       }
       if (this.appleStyle) {
-        // A short word can still be settling after the line finishes.
-        let settling = false;
-        for (const syllable of syllables) {
-          animateAppleStyle(syllable, time, this.reduceMotion);
-          const word = syllable.wordMotion;
-          settling ||= !!word && time < word.start + word.riseMs + word.settleMs;
-        }
-        if (!active && !settling) this.release(index, syllables);
+        if (active) {
+          for (const syllable of syllables) animateAppleStyle(syllable, time, this.reduceMotion);
+        } else this.release(index, syllables);
         return;
       }
       let awake = false;
