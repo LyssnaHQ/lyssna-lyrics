@@ -195,6 +195,10 @@ function withPhraseComma(text: string) {
   return /[,.;:!?…，。！？、；：]["'”’»]*$/u.test(text) ? text : `${text},`;
 }
 
+function lowercaseInitial(text: string) {
+  return text.replace(/^./u, initial => initial.toLowerCase());
+}
+
 function splitTokenIntoWordUnits(token: string): WordUnit[] {
   const normalized = token.trim();
   if (!normalized) return [];
@@ -1288,6 +1292,10 @@ export function ConvertLineLyricsToExperimentalWordSync(
             if (previous.TransliteratedText) previous.TransliteratedText = withPhraseComma(previous.TransliteratedText);
             if (previous.GibberishText) previous.GibberishText = withPhraseComma(previous.GibberishText);
             previous.IsPartOfWord = false;
+            const first = generatedWords[0];
+            first.Text = lowercaseInitial(first.Text);
+            if (first.TransliteratedText) first.TransliteratedText = lowercaseInitial(first.TransliteratedText);
+            if (first.GibberishText) first.GibberishText = lowercaseInitial(first.GibberishText);
           } else {
             capitalizeFirstGeneratedWord(generatedWords);
             phrase.StartTime = range.start;
@@ -1297,7 +1305,7 @@ export function ConvertLineLyricsToExperimentalWordSync(
           phrase.Syllables.push(...generatedWords);
           const translation = wholeLineIsBacking && stripBracketCharacters(line.TranslatedText);
           if (translation) phrase.TranslatedText = phrase.TranslatedText
-            ? `${withPhraseComma(phrase.TranslatedText)} ${translation}` : translation;
+            ? `${withPhraseComma(phrase.TranslatedText)} ${lowercaseInitial(translation)}` : translation;
           return;
         }
         capitalizeFirstGeneratedWord(generatedWords);
