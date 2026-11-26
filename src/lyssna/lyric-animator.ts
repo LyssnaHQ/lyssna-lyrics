@@ -78,16 +78,17 @@ function animateAppleStyle(syllable: Syllable, time: number, reduceMotion: boole
   const duration = Math.max(1, syllable.end - syllable.start);
   const progress = Math.max(0, Math.min(1, elapsed / duration));
   write(syllable, "--gradient-ratio", (1.36 * progress - 0.36).toFixed(4));
-  if (reduceMotion || progress === 0 || progress === 1) {
+  if (reduceMotion || duration <= 450 || progress === 0 || progress === 1) {
     write(syllable, "translate", "none");
     write(syllable, "--glow", "");
     return;
   }
+  const sustain = smoothRamp((duration - 450) / 900) * syllable.calm;
+  const glide = Math.sin(Math.PI * progress) ** 2;
+  write(syllable, "translate", `0 ${(-0.018 * glide * sustain).toFixed(4)}em`);
   const attack = smoothRamp(elapsed / Math.min(170, duration / 3));
   const release = smoothRamp(remaining / Math.min(240, duration / 3));
-  const envelope = attack * release * syllable.calm;
-  write(syllable, "translate", `0 ${(-0.045 * envelope).toFixed(4)}em`);
-  const glow = 0.35 * envelope * smoothRamp((duration - 450) / 900);
+  const glow = 0.35 * attack * release * sustain;
   write(syllable, "--glow", glow > 0 ? `0 0 .15em rgb(255 255 255 / ${glow.toFixed(3)})` : "");
 }
 
