@@ -1,5 +1,10 @@
 # Lyssna Lyrics patch notes
 
+## v1.2.0-262eb70
+
+- Move the lyrics scrollbar to the right edge and reveal its thumb when you hover nearby. Lyssna’s other scrollbars show only the thumb.
+- While uploading as another Lyssna account, show its avatar in Spotify’s profile button. Choose **Stop uploading as** from the profile menu to switch back.
+
 ## v1.2.0-3b92380
 
 - Show play and pause feedback immediately in Creator. Rapid presses keep the final playback choice, and the playhead updates as soon as a seek takes effect.
