@@ -6,25 +6,25 @@ export const LyricWord = memo(function LyricWord({
   words,
   offset = 0,
   total = words.length,
-  animateLetters = true,
+  appleTiming,
 }: {
   words: AnimatedWord[];
   /** Where these syllables sit in a word split over several boxes. */
   offset?: number;
   total?: number;
-  animateLetters?: boolean;
+  appleTiming?: { start: number; end: number };
 }) {
   const whitespace = words[0]?.text.match(/^\s+/u)?.[0] ?? "";
   const trailing = /\s$/u.test(words.at(-1)?.text ?? "");
   return (
     <span className="lyric-word-group">
       {whitespace}
-      <span className="lyric-word">
+      <span className="lyric-word" data-word-start={appleTiming?.start} data-word-end={appleTiming?.end}>
         {words.map((word, part) => {
           const content =
             part === 0 ? word.text.slice(whitespace.length) : word.text;
           const text = part === words.length - 1 ? content.trimEnd() : content;
-          const emphasis = animateLetters && isEmphasis(word, text);
+          const emphasis = !appleTiming && isEmphasis(word, text);
           // Split syllables scale away from their joints so no seam opens.
           const at = offset + part;
           const joined =

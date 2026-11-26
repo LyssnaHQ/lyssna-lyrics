@@ -40,6 +40,13 @@ interface Syllable extends Piece {
   letters: Piece[];
   letterOffset: number;
   letterCount: number;
+  wordMotion?: WordMotion;
+}
+type StyleTarget = Pick<Piece, "element" | "written">;
+interface WordMotion extends StyleTarget {
+  start: number;
+  duration: number;
+  height: number;
 }
 const LAYERED_LINES = 4;
 const STYLES = [
@@ -57,7 +64,7 @@ const piece = (element: HTMLElement, letter = false): Piece => ({
     : new SyllableSprings(),
   written: new Map(),
 });
-function write(target: Piece, property: string, value: string) {
+function write(target: StyleTarget, property: string, value: string) {
   if (target.written.get(property) === value) return;
   target.written.set(property, value);
   target.element.style.setProperty(property, value);
@@ -73,19 +80,22 @@ function smoothRamp(value: number) {
 }
 
 function animateAppleStyle(syllable: Syllable, time: number, reduceMotion: boolean) {
+  const word = syllable.wordMotion;
+  if (word) {
+    const progress = (time - word.start) / word.duration;
+    const lift = progress > 0 && progress < 1 ? word.height * Math.sin(Math.PI * progress) ** 2 : 0;
+    write(word, "translate", lift > 0 ? `0 ${(-lift).toFixed(4)}em` : "");
+  }
   const elapsed = time - syllable.start;
   const remaining = syllable.end - time;
   const duration = Math.max(1, syllable.end - syllable.start);
   const progress = Math.max(0, Math.min(1, elapsed / duration));
   write(syllable, "--gradient-ratio", (1.36 * progress - 0.36).toFixed(4));
   if (reduceMotion || duration <= 450 || progress === 0 || progress === 1) {
-    write(syllable, "translate", "none");
     write(syllable, "--glow", "");
     return;
   }
   const sustain = smoothRamp((duration - 450) / 900) * syllable.calm;
-  const glide = Math.sin(Math.PI * progress) ** 2;
-  write(syllable, "translate", `0 ${(-0.018 * glide * sustain).toFixed(4)}em`);
   const attack = smoothRamp(elapsed / Math.min(170, duration / 3));
   const release = smoothRamp(remaining / Math.min(240, duration / 3));
   const glow = 0.35 * attack * release * sustain;
@@ -169,6 +179,7 @@ export class LyricAnimator {
     for (const syllable of syllables) {
       clear(syllable);
       syllable.letters.forEach(clear);
+      syllable.wordMotion?.element.style.removeProperty("translate");
     }
     this.live.delete(index);
   }
@@ -206,6 +217,20 @@ export class LyricAnimator {
           )
         : [];
       const base = piece(node);
+      // Each visual fragment uses the timing of the whole word, even across a wrap.
+      const word = node.parentElement;
+      let wordMotion: WordMotion | undefined;
+      if (this.appleStyle && !this.reduceMotion && word?.firstElementChild === node && word.dataset.wordStart !== undefined) {
+        const start = Number(word.dataset.wordStart);
+        const duration = Math.max(1, Number(word.dataset.wordEnd) - start);
+        wordMotion = {
+          element: word,
+          written: new Map(),
+          start,
+          duration,
+          height: (0.017 + 0.009 * smoothRamp(duration / 850)) * base.calm,
+        };
+      }
       if (this.simple)
         base.springs.lift.position = base.springs.lift.goal = simpleGoal(
           1,
@@ -217,6 +242,7 @@ export class LyricAnimator {
         start,
         end: end - (emphasis ? MOTION.emphasisTailMs : 0),
         letters,
+        wordMotion,
         letterOffset: Number(node.dataset.letterOffset ?? 0),
         letterCount: Number(node.dataset.letterCount ?? letters.length),
       };

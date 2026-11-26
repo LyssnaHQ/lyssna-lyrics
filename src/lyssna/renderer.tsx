@@ -591,7 +591,7 @@ export function LyricsDisplay({
                 blur={compact || playing ? 0 : lineBlur(distance)}
                 synced={lyrics.synced}
                 highlighter={highlighter}
-                animateLetters={!appleStyle}
+                appleStyle={appleStyle}
                 followingStart={highlighter ? markerStarts[index] : undefined}
                 // A line keeps following the song until its last word ends,
                 // even after the next line takes over, so the pen finishes
@@ -686,7 +686,7 @@ const LyricRow = memo(function LyricRow({
   blur,
   synced,
   highlighter,
-  animateLetters,
+  appleStyle,
   followingStart,
   time,
   translation,
@@ -701,7 +701,7 @@ const LyricRow = memo(function LyricRow({
   blur: number;
   synced: boolean;
   highlighter: boolean;
-  animateLetters: boolean;
+  appleStyle: boolean;
   followingStart?: number;
   time: number;
   translation?: boolean;
@@ -721,7 +721,7 @@ const LyricRow = memo(function LyricRow({
         {highlighter ? (
           <HighlighterWords line={line} time={time} followingStart={followingStart} />
         ) : (
-          <LyricWords line={line} animateLetters={animateLetters} />
+          <LyricWords line={line} appleStyle={appleStyle} />
         )}
       </span>
       {/* Lyrics can carry translations, such as Chinese under English; like
@@ -729,7 +729,7 @@ const LyricRow = memo(function LyricRow({
       {line.reading && (
         // Sung like the line above it, with calmer motion.
         <span className="lyric-romanization sung">
-          <LyricWords line={line.reading} animateLetters={animateLetters} />
+          <LyricWords line={line.reading} appleStyle={appleStyle} />
         </span>
       )}
       {translation && line.translation && (
@@ -739,13 +739,17 @@ const LyricRow = memo(function LyricRow({
   );
 });
 
-const LyricWords = memo(function LyricWords({ line, animateLetters }: { line: Line; animateLetters: boolean }) {
+const LyricWords = memo(function LyricWords({ line, appleStyle }: { line: Line; appleStyle: boolean }) {
   const groups = useMemo(() => wordGroups(line.words), [line]);
   if (!line.words.length)
     return <span className="lyric-plain">{line.text}</span>;
   return (
     <>
       {groups.flatMap((group, index) => {
+        const appleTiming = appleStyle ? {
+          start: Math.min(...group.map((word) => word.start_ms)),
+          end: Math.max(...group.map((word) => word.end_ms)),
+        } : undefined;
         // A long hyphenated run like "no-oh-oh-oh" wraps at its hyphens
         // instead of moving to a line of its own.
         const runs: (typeof group)[] = [[]];
@@ -764,7 +768,7 @@ const LyricWords = memo(function LyricWords({ line, animateLetters }: { line: Li
               words={run}
               offset={at}
               total={group.length}
-              animateLetters={animateLetters}
+              appleTiming={appleTiming}
             />
           );
         });
