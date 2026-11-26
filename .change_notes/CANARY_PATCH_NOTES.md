@@ -1,5 +1,9 @@
 # Lyssna Lyrics patch notes
 
+## v1.2.0-763e2b9
+
+- Group parentheses that span several lines into one backing vocal in experimental word sync. Insert missing commas at the original line breaks while keeping each part timed to its source line.
+
 ## v1.2.0-262eb70
 
 - Move the lyrics scrollbar to the right edge and reveal its thumb when you hover nearby. Lyssna’s other scrollbars show only the thumb.
