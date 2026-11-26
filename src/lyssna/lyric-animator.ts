@@ -84,17 +84,18 @@ function animateAppleStyle(syllable: Syllable, time: number, reduceMotion: boole
   const word = syllable.wordMotion;
   if (word) {
     const age = time - word.start;
-    const rise = smoothRamp(age / word.riseMs);
-    const settle = smoothRamp((age - word.riseMs) / word.settleMs);
-    const lift = word.heightEm * rise * (1 - settle);
+    const travel = age < word.riseMs
+      ? smoothRamp(age / word.riseMs)
+      : 1 - smoothRamp((age - word.riseMs) / word.settleMs);
+    const lift = word.heightEm * travel;
     write(word, "translate", lift > 0 ? `0 ${(-lift).toFixed(4)}em` : "");
   }
   const elapsed = time - syllable.start;
   const remaining = syllable.end - time;
   const duration = Math.max(1, syllable.end - syllable.start);
-  const progress = Math.max(0, Math.min(1, elapsed / duration));
-  write(syllable, "--gradient-ratio", (1.36 * progress - 0.36).toFixed(4));
-  if (reduceMotion || duration <= 450 || progress === 0 || progress === 1) {
+  const progress = elapsed / duration;
+  write(syllable, "--gradient-ratio", progress <= 0 ? "-0.36" : progress >= 1 ? "1" : (1.36 * progress - 0.36).toFixed(4));
+  if (reduceMotion || duration <= 450 || progress <= 0 || progress >= 1) {
     write(syllable, "--glow", "");
     return;
   }
@@ -226,14 +227,14 @@ export class LyricAnimator {
       if (this.appleStyle && !this.reduceMotion && word?.firstElementChild === node && word.dataset.wordStart !== undefined) {
         const start = Number(word.dataset.wordStart);
         const duration = Math.max(1, Number(word.dataset.wordEnd) - start);
-        const riseMs = Math.max(350, Math.min(800, duration * 0.55));
+        const riseMs = Math.max(110, Math.min(280, duration * 0.45));
         wordMotion = {
           element: word,
           written: new Map(),
           start,
           riseMs,
-          settleMs: Math.max(420, duration - riseMs),
-          heightEm: (0.022 + 0.014 * smoothRamp(duration / 1000)) * base.calm,
+          settleMs: Math.max(120, duration - riseMs),
+          heightEm: (0.014 + 0.018 * smoothRamp(duration / 900)) * base.calm,
         };
       }
       if (this.simple)
