@@ -1,5 +1,9 @@
 # Lyssna Lyrics patch notes
 
+## v1.2.0-f745ea3
+
+- Keep quick words still in Apple Music Style while the glow sweeps across. Sustained words get a subtle ripple through the letters.
+
 ## v1.2.0-39fd655
 
 - Reduce the delay in Apple Music Style so the gentle rise and fall follows the timing of each word more closely.
