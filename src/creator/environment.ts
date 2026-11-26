@@ -21,6 +21,7 @@ export type CreatorEnvironmentValue = {
   portal: HTMLElement;
   view: Window & typeof globalThis;
   read: (at?: number) => number;
+  watchPosition(listener: () => void): () => void;
   capture: SpotifyCapture;
   recording?: RecordingStatus;
   playingFullRecording: boolean;
@@ -42,16 +43,17 @@ export const IS_MAC = /Mac/i.test(navigator.platform);
 export const MODIFIER = IS_MAC ? "Cmd" : "Ctrl";
 
 export function useCreatorTick(playing: boolean, enabled: boolean, onPosition: (position: number) => void) {
-  const { view, read } = useCreatorEnvironment();
+  const { view, read, watchPosition } = useCreatorEnvironment();
   const callback = useRef(onPosition);
   useLayoutEffect(() => { callback.current = onPosition; });
   useEffect(() => {
     if (!enabled) return;
     const update = () => callback.current(read());
+    const unwatch = watchPosition(update);
     update();
     if (!playing) {
       const timer = view.setInterval(update, 100);
-      return () => view.clearInterval(timer);
+      return () => { view.clearInterval(timer); unwatch(); };
     }
     let frame = 0;
     let last = view.performance.now();
@@ -63,8 +65,8 @@ export function useCreatorTick(playing: boolean, enabled: boolean, onPosition: (
       frame = view.requestAnimationFrame(tick);
     };
     frame = view.requestAnimationFrame(tick);
-    return () => view.cancelAnimationFrame(frame);
-  }, [playing, enabled, view, read]);
+    return () => { view.cancelAnimationFrame(frame); unwatch(); };
+  }, [playing, enabled, view, read, watchPosition]);
 }
 
 export function useCreatorClock(playing: boolean, offset: number, enabled = true, boundaries?: number[]) {

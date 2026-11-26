@@ -201,7 +201,7 @@ interface Drag {
   x: number;
 }
 
-export function TtmlSpectrogram({
+export const TtmlSpectrogram = memo(function TtmlSpectrogram({
   id,
   uri,
   duration,
@@ -957,4 +957,4 @@ export function TtmlSpectrogram({
       </div>
     </section>
   );
-}
+});

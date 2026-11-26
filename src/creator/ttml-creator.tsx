@@ -3,6 +3,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   Fragment,
+  memo,
   type ReactNode,
   useCallback,
   useEffect,
@@ -38,7 +39,6 @@ import {
   X,
 } from "lucide-react";
 import { IS_MAC, MODIFIER, useCreatorClock, useCreatorEnvironment, useCreatorTick } from "./environment";
-import { useEnhancedPerformance } from "../enhancements/config";
 import type { Host } from "../host";
 import type { CreatorState } from "./types";
 import type { Lyrics, PlayerRequest, Track } from "./types";
@@ -279,7 +279,7 @@ const meta = (track: Track): SongMeta => ({
   spotifyFields: track.spotify?.isrc ? [{ key: "isrc", values: [track.spotify.isrc] }] : undefined,
 });
 
-function TimePill({ ms, end }: { ms?: number; end?: boolean }) {
+const TimePill = memo(function TimePill({ ms, end }: { ms?: number; end?: boolean }) {
   const pill = useRef<HTMLSpanElement>(null);
   const shown = useRef(ms);
   useEffect(() => {
@@ -299,7 +299,7 @@ function TimePill({ ms, end }: { ms?: number; end?: boolean }) {
       {ms === undefined ? "--:--.---" : formatTime(ms)}
     </span>
   );
-}
+});
 
 function CreatorTime({ playing, offset }: { playing: boolean; offset: number }) {
   const position = useCreatorClock(playing, offset);
@@ -403,21 +403,32 @@ export function TtmlCreator({
   const isPlaying = state.playback.is_playing;
   const here = !!track && playing?.uri === track.uri;
   const heard = state.settings.lyric_offset_ms;
-  const enhancePerformance = useEnhancedPerformance();
   // Only timing boundaries change editor rows. The playhead, elapsed time,
   // and inline preview use the full clock.
-  const boundaries = useMemo(() => {
-    if (!enhancePerformance) return;
+  const rowTiming = useMemo(() => {
     const times = new Set<number>();
-    for (const line of lines) {
-      for (const unit of line.units) {
-        if (unit.start !== undefined) times.add(unit.start);
-        if (unit.end !== undefined) times.add(unit.end);
+    const spans = lines.map(line => lineSpan(line));
+    const readings = lines.map(line => line.units.map(unit => {
+      if (unit.start !== undefined) times.add(unit.start);
+      if (unit.end !== undefined) times.add(unit.end);
+      const parts = unit.roman ? romanParts(unit) : [];
+      const timings = parts.length > 1 ? romanPieces(unit) : [];
+      for (const { start, end } of timings) {
+        times.add(start);
+        times.add(end);
       }
-    }
-    return [...times].sort((left, right) => left - right);
-  }, [lines, enhancePerformance]);
-  const position = useCreatorClock(isPlaying, heard, !draftPreview, boundaries);
+      return { parts, timings };
+    }));
+    return { spans, readings, boundaries: [...times].sort((left, right) => left - right) };
+  }, [lines]);
+  const sectionSingers = useMemo(() => {
+    let voices: string[] = [];
+    return lines.map((line, index) => {
+      if (line.part) voices = sectionVoices(lines, index);
+      return voices;
+    });
+  }, [lines]);
+  const position = useCreatorClock(isPlaying, heard, !draftPreview, rowTiming.boundaries);
   const read = useCallback((at?: number) => readTime(at) + heard, [readTime, heard]);
   const rate = state.playback_rate;
 
@@ -445,6 +456,31 @@ export function TtmlCreator({
       () => {},
     );
   }, []);
+  const pendingSave = useRef<{ song: Track; timer: number }>(undefined);
+  const flushDraft = useCallback((updateStatus = true) => {
+    const pending = pendingSave.current;
+    if (!pending) return;
+    pendingSave.current = undefined;
+    window.clearTimeout(pending.timer);
+    const { uri, lines, text, metadata, appleOriginal } = current.current;
+    if (uri !== pending.song.uri || saved.current.uri !== uri) return;
+    const content = contentOf(lines, text, metadata);
+    if (saved.current.content === content && saved.current.appleOriginal === appleOriginal) return;
+    saved.current.content = content;
+    saved.current.appleOriginal = appleOriginal;
+    versions.current.changed = true;
+    if (!lines.length && !text.trim()) {
+      writeDraft(uri, null);
+      forgetWorking(uri);
+      if (updateStatus) setSavedAt(undefined);
+      return;
+    }
+    const now = Date.now();
+    writeDraft(uri, { lines, text, metadata, appleOriginal, savedAt: now, song: pending.song });
+    markWorking(uri);
+    if (updateStatus) setSavedAt(now);
+    return now;
+  }, [window]);
 
   useEffect(() => {
     if (!track) return;
@@ -471,14 +507,14 @@ export function TtmlCreator({
     setCursor(cursorAt(loaded, read()));
     history.current = { past: [], future: [] };
     setTextMode(false);
-    return () => snapshot(true);
-  }, [track, snapshot, replaceLines]);
+    return () => { flushDraft(false); snapshot(true); };
+  }, [track, flushDraft, snapshot, replaceLines]);
 
   useEffect(() => {
-    const leave = () => snapshot(true);
+    const leave = () => { flushDraft(false); snapshot(true); };
     window.addEventListener("pagehide", leave);
     return () => window.removeEventListener("pagehide", leave);
-  }, [snapshot]);
+  }, [window, flushDraft, snapshot]);
 
   const editedFor = useRef<string | undefined>(undefined);
   useEffect(() => {
@@ -521,32 +557,12 @@ export function TtmlCreator({
       saved.current.loading = false;
       return;
     }
-    const content = contentOf(lines, text, metadata);
-    if (saved.current.uri !== track.uri ||
-      (saved.current.content === content && saved.current.appleOriginal === appleOriginal))
-      return;
-    saved.current.content = content;
-    saved.current.appleOriginal = appleOriginal;
-    versions.current.changed = true;
-    if (!lines.length && !text.trim()) {
-      writeDraft(track.uri, null);
-      forgetWorking(track.uri);
-      setSavedAt(undefined);
-      return;
-    }
-    const now = Date.now();
-    writeDraft(track.uri, {
-      lines,
-      text,
-      metadata,
-      appleOriginal,
-      savedAt: now,
-      song: track,
-    });
-    setSavedAt(now);
-    markWorking(track.uri);
-    snapshot(false);
-  }, [track, lines, text, metadata, appleOriginal, snapshot]);
+    if (pendingSave.current) window.clearTimeout(pendingSave.current.timer);
+    // Batch quick timing taps before serializing the draft to local storage.
+    pendingSave.current = { song: track, timer: window.setTimeout(() => {
+      if (flushDraft()) snapshot(false);
+    }, 180) };
+  }, [track, lines, text, metadata, appleOriginal, window, flushDraft, snapshot]);
 
   const lastPosition = useRef<{ track: Track | undefined; position: number }>(undefined);
   useEffect(() => {
@@ -1494,11 +1510,10 @@ export function TtmlCreator({
     setKeys(next);
     saveKeys(next);
   }, []);
-  // Drafts already save on every edit; Ctrl+S keeps a version now and
-  // confirms it.
+  // Ctrl+S commits the pending draft and keeps a version now.
   const saveNow = useRef(() => {});
   saveNow.current = () => {
-    if (!current.current.uri || !savedAt) return;
+    if (!current.current.uri || (!flushDraft() && !savedAt)) return;
     snapshot(true);
     setSavedAt(Date.now());
   };
@@ -1822,21 +1837,12 @@ export function TtmlCreator({
   }, [lines, cursor]);
 
   const shownWord = useRef<(Cursor & { start: number }) | null>(null);
+  // Overlapping lines sing together, including backing vocals.
+  const liveWords = useMemo(() => singingAt(lines, rowTiming.spans, position), [lines, rowTiming, position]);
+  const { playingLine } = liveWords;
   const liveWord = useMemo(() => {
-    let next: (Cursor & { start: number }) | null = null;
-    lines.forEach((line, lineIndex) =>
-      line.units.forEach((unit, unitIndex) => {
-        if (
-          unit.start !== undefined &&
-          unit.end !== undefined &&
-          position >= unit.start &&
-          position < unit.end
-        )
-          next = { line: lineIndex, unit: unitIndex, start: unit.start };
-      }),
-    );
     const shown = shownWord.current;
-    const found = next as (Cursor & { start: number }) | null;
+    const found = liveWords.latest;
     // The clock can step back a few ms; only a real seek lights an earlier word.
     if (
       shown &&
@@ -1847,13 +1853,7 @@ export function TtmlCreator({
       return shown;
     shownWord.current = found;
     return found;
-  }, [lines, position]);
-  // Overlapping lines, like a second singer or background vocals, sing
-  // together, so every word under the playhead lights up.
-  const liveWords = useMemo(
-    () => singingAt(lines, position),
-    [lines, position],
-  );
+  }, [liveWords, position]);
   const [peaks, setPeaks] = useState<{
     uri: string;
     values: Uint8Array;
@@ -1879,21 +1879,13 @@ export function TtmlCreator({
   }, [barSlot, trackUri, waveform]);
   const barSpans = useMemo(
     () =>
-      lines.flatMap((line, index) => {
+      lines.flatMap((_line, index) => {
         if (index !== cursor.line && !picked.has(index)) return [];
-        const span = lineSpan(line);
+        const span = rowTiming.spans[index];
         return span ? [{ ...span, current: true }] : [];
       }),
-    [lines, cursor.line, picked],
+    [lines, rowTiming, cursor.line, picked],
   );
-  const playingLine = useMemo(() => {
-    let found = -1;
-    lines.forEach((line, index) => {
-      const span = lineSpan(line);
-      if (span && span.start <= position) found = index;
-    });
-    return found;
-  }, [lines, position]);
   // Clicking a line in the preview seeks there, so coming back from it
   // picks up at the line and word the song is on.
   const selectPlaying = () => {
@@ -1956,7 +1948,7 @@ export function TtmlCreator({
   }, [touring]);
 
   const issues = useMemo(() => problems(lines), [lines]);
-  const { done, total } = progress(lines);
+  const { done, total } = useMemo(() => progress(lines), [lines]);
   const songMetadata = useMemo(() => track ? {
     ...meta(track), ...(!reviewSelection && catalogueMetadata?.uri === track.uri ? catalogueMetadata.fields : {}),
   } : undefined, [track, catalogueMetadata, reviewSelection]);
@@ -1998,6 +1990,7 @@ export function TtmlCreator({
       if (lyrics.songwriters?.length && !reviewMetadata.some((entry) => entry.key === "songwriters")) {
         reviewMetadata.push({ key: "songwriters", values: lyrics.songwriters });
       }
+      flushDraft();
       const previous = loadDraft(uri);
       if (previous) {
         await addVersion({
@@ -2024,7 +2017,7 @@ export function TtmlCreator({
       notify(`Couldn’t open the submission: ${String(error)}`, true);
     });
     return () => { live = false; };
-  }, [pendingReview, playing, track, reviewing, setLines, notify, window]);
+  }, [pendingReview, playing, track, reviewing, setLines, notify, window, flushDraft]);
   const reviewPanel = reviewing && reviewSelection && onCloseReview && (
     <ReviewPanel
       selection={reviewSelection}
@@ -2041,6 +2034,7 @@ export function TtmlCreator({
       onParse={async (text) => parseLocalTtml(text)}
       onSubmitFix={async (text) => {
         if (!track || track.uri !== reviewEdit?.uri) throw new Error("Open the submission in the editor first.");
+        flushDraft();
         const feedback = await onSubmit(track, text);
         if (feedback) onSubmitted(feedback);
       }}
@@ -2153,12 +2147,14 @@ export function TtmlCreator({
     );
   const apply = () => {
     if (!track || !here) return;
+    flushDraft();
     void onApply(track, fileName(meta(track)), ttml());
   };
   const [submitting, setSubmitting] = useState(false);
   const submittable = !!track?.id && (!track.is_local || !!(here ? localIsrc : track.spotify?.isrc));
   const submit = async () => {
     if (!track || submitting) return;
+    flushDraft();
     const submitted = current.current;
     setSubmitting(true);
     try {
@@ -2183,6 +2179,7 @@ export function TtmlCreator({
   } | null>(null);
   const [olderSaves, setOlderSaves] = useState(false);
   const openSaves = () => {
+    if (flushDraft()) snapshot(false);
     setOlderSaves(false);
     setSaves({ songs: listDrafts(), versions: [] });
     if (track)
@@ -2201,6 +2198,11 @@ export function TtmlCreator({
     notify(`Restored the save from ${savedLabel(version.savedAt)}.`);
   };
   const forget = (song: SavedSong) => {
+    if (song.uri === track?.uri) {
+      flushDraft(false);
+      versions.current = { changed: false };
+      setSavedAt(undefined);
+    }
     void deleteSaves(song.uri).finally(() =>
       setSaves(
         (open) =>
@@ -2210,7 +2212,6 @@ export function TtmlCreator({
           },
       ),
     );
-    if (song.uri === track?.uri) setSavedAt(undefined);
   };
   const savesDialog = saves && (
     <div className="ttml-dialog-backdrop" onClick={() => setSaves(null)}>
@@ -2227,7 +2228,7 @@ export function TtmlCreator({
           </button>
         </header>
         <p className="ttml-hint">
-          Drafts save on every change. A dated version is kept every 10 minutes,
+          Drafts save automatically. A dated version is kept every 10 minutes,
           whenever you leave a song and when you press {IS_MAC ? "Cmd" : "Ctrl"}
           +S, up to 10 per song.
         </p>
@@ -2849,7 +2850,11 @@ export function TtmlCreator({
             }}
           >
             {lines.map((line, lineIndex) => {
-              const hasSplitReadings = !syncRoman && line.units.some(unit => romanParts(unit).length > 1);
+              const span = rowTiming.spans[lineIndex];
+              const readings = rowTiming.readings[lineIndex];
+              const voices = sectionSingers[lineIndex];
+              const voice = voices.length ? Math.max(0, voices.indexOf(line.sungBy ?? "")) : -1;
+              const hasSplitReadings = !syncRoman && readings.some(({ parts }) => parts.length > 1);
               const adder = (
                 <input
                   className="ttml-chip-add"
@@ -2909,7 +2914,7 @@ export function TtmlCreator({
                   tabIndex={-1}
                   {...pickProps(lineIndex)}
                   onContextMenu={(event) => openLineMenu(event, lineIndex)}
-                  className={`ttml-card ttml-line${VOICE_CLASS[lineVoice(lines, lineIndex)] ?? ""}${line.background ? " background" : ""}${line.opposite ? " opposite" : ""}${cursor.line === lineIndex ? " current" : ""}${line.units.length ? "" : " empty"}${playingLine === lineIndex || liveWords.singing.has(lineIndex) ? " playing" : ""}${picked.has(lineIndex) ? " picked" : ""}${drag?.kind === "line" && drag.line === lineIndex ? " dragging" : ""}${dropClass(`line:${lineIndex}`)}`}
+                  className={`ttml-card ttml-line${VOICE_CLASS[voice] ?? ""}${line.background ? " background" : ""}${line.opposite ? " opposite" : ""}${cursor.line === lineIndex ? " current" : ""}${line.units.length ? "" : " empty"}${playingLine === lineIndex || liveWords.singing.has(lineIndex) ? " playing" : ""}${picked.has(lineIndex) ? " picked" : ""}${drag?.kind === "line" && drag.line === lineIndex ? " dragging" : ""}${dropClass(`line:${lineIndex}`)}`}
                   onClick={(event) => {
                     const target = event.target as Element;
                     if (target.closest("button, input, textarea")) return;
@@ -3216,8 +3221,7 @@ export function TtmlCreator({
                           cursor.unit === unitIndex;
                         const editingReading = syncRoman && !!unit.roman;
                         const inputText = editingReading ? unit.roman! : unit.text;
-                        const parts = romanParts(unit);
-                        const timings = parts.length > 1 ? romanPieces(unit) : [];
+                        const { parts, timings } = readings[unitIndex];
                         const reading = parts.length > 1 ? <span className={`ttml-reading-pieces${syncRoman ? " large" : ""}`}>
                           {parts.map((part, index) => {
                             const span = timings[index];
@@ -3339,7 +3343,7 @@ export function TtmlCreator({
                           >
                             <TimePill ms={unit.start} />
                             <span
-                              className={`ttml-word${WORD_VOICE_CLASS[unitVoice(lines, at)] ?? ""}`}
+                              className={`ttml-word${WORD_VOICE_CLASS[unit.sungBy ? voices.indexOf(unit.sungBy) : -1] ?? ""}`}
                               title={
                                 syncRoman && unit.roman ? unit.text : undefined
                               }
@@ -3356,11 +3360,11 @@ export function TtmlCreator({
                   )}
                   {!writing && (
                     <div className="ttml-line-side">
-                      <TimePill ms={lineSpan(line)?.start} />
+                      <TimePill ms={span?.start} />
                       <TimePill
                         ms={
                           line.units.some((unit) => unit.end !== undefined)
-                            ? lineSpan(line)?.end
+                            ? span?.end
                             : undefined
                         }
                         end

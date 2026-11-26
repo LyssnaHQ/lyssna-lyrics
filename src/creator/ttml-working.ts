@@ -10,7 +10,7 @@ const dismissed = new Map<string, "main" | "all">();
 
 export function markWorking(uri: string) {
   working.add(uri);
-  dismissed.delete(uri);
+  if (dismissed.delete(uri)) window.dispatchEvent(new CustomEvent(liveDraftChanged, { detail: uri }));
 }
 
 export function forgetWorking(uri: string) {

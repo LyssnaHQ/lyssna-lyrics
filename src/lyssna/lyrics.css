@@ -409,12 +409,13 @@
   padding-inline: calc(var(--lyric-size) * 0.35);
   /* The bottom edge fades in and out instead of switching at the end. */
   --lyric-end-alpha: 0;
-  mask-image: linear-gradient(
+  --lyric-edge-mask: linear-gradient(
     transparent,
     #000 10%,
     #000 88%,
     rgb(0 0 0 / var(--lyric-end-alpha))
   );
+  mask-image: var(--lyric-edge-mask);
   transition: --lyric-end-alpha 0.45s ease;
 }
 @property --lyric-end-alpha {
@@ -432,6 +433,29 @@
 }
 .lyric-scroll::-webkit-scrollbar {
   display: none;
+}
+.lyrics-display:not(.compact) > .lyric-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #ffffff38 transparent;
+  mask-image: var(--lyric-edge-mask), linear-gradient(#000, #000);
+  mask-position: center, right;
+  mask-size: 100% 100%, 10px 100%;
+  mask-repeat: no-repeat;
+}
+.lyrics-display:not(.compact) > .lyric-scroll:is(:hover, :focus-visible) {
+  scrollbar-color: #ffffff66 transparent;
+}
+.lyrics-display:not(.compact) > .lyric-scroll::-webkit-scrollbar {
+  display: block;
+  width: 8px;
+  height: 0;
+}
+.lyrics-display:not(.compact) > .lyric-scroll::-webkit-scrollbar-thumb {
+  background: #ffffff38;
+  border-radius: 8px;
+}
+.lyrics-display:not(.compact) > .lyric-scroll::-webkit-scrollbar-thumb:hover {
+  background: #ffffff66;
 }
 .lyric-scroll:has(> .lyric-writers-end > .writer-credits) {
   display: flex;

@@ -2671,24 +2671,30 @@ export function lineSpan(line: CreatorLine, onlyTimed = false) {
 }
 
 /** Lines and words sung at `position`; overlapping lines sing together. */
-export function singingAt(lines: CreatorLine[], position: number) {
+export function singingAt(lines: CreatorLine[], spans: ReturnType<typeof lineSpan>[], position: number) {
   const live = new Set<string>();
   const singing = new Set<number>();
-  lines.forEach((line, lineIndex) => {
-    const span = lineSpan(line);
-    if (span && position >= span.start && position < span.end)
-      singing.add(lineIndex);
-    line.units.forEach((unit, unitIndex) => {
+  let latest: (Cursor & { start: number }) | null = null;
+  let playingLine = -1;
+  for (const [lineIndex, line] of lines.entries()) {
+    const span = spans[lineIndex];
+    if (!span || position < span.start) continue;
+    playingLine = lineIndex;
+    if (position >= span.end) continue;
+    singing.add(lineIndex);
+    for (const [unitIndex, unit] of line.units.entries()) {
       if (
         unit.start !== undefined &&
         unit.end !== undefined &&
         position >= unit.start &&
         position < unit.end
-      )
+      ) {
         live.add(`${lineIndex}:${unitIndex}`);
-    });
-  });
-  return { live, singing };
+        latest = { line: lineIndex, unit: unitIndex, start: unit.start };
+      }
+    }
+  }
+  return { live, singing, latest, playingLine };
 }
 
 export function problems(lines: CreatorLine[]): string[] {
