@@ -1,5 +1,9 @@
 # Lyssna Lyrics patch notes
 
+## v1.2.0-854172e
+
+- Enlarge the Discord and Support us on Ko-fi buttons. Their outlined logos fill with brand colors on hover or keyboard focus.
+
 ## v1.2.0-76f2750
 
 - Soften the outline around the Settings tabs.
