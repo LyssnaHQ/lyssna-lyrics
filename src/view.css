@@ -417,6 +417,11 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   position: relative;
 }
 
+/* The editor covers Spotify's central route while its sidebar and transport stay visible. */
+:is(.Root__main-view, .main-view-panel, #main-view):has(> .lyssna-lyrics-host[data-lyssna-creator-open]) > .main-view-container {
+  content-visibility: hidden;
+}
+
 .lyssna-lyrics-view:is(.immersive, .lyssna-full-window) {
   position: fixed;
 }

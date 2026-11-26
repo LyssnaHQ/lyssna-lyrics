@@ -223,7 +223,7 @@ const CLASSIC_KEY = "lyssna.ttml-classic-tabs";
 const WORD_ROMAN_KEY = "lyssna.ttml-word-roman";
 type Tab = "write" | "sync" | "preview";
 const HISTORY_LIMIT = 200;
-const WINDOWED_DRAFT_LINES = 150;
+const WINDOWED_DRAFT_LINES = 24;
 const ESTIMATED_ROW_HEIGHT = 72;
 const VOICE_CLASS = ["", " sung-second", " sung-third"];
 const WORD_VOICE_CLASS = [" sung-first", " sung-second", " sung-third"];
@@ -1840,7 +1840,7 @@ export function TtmlCreator({
         else near.delete(index);
       }
       if (changed) setNearRows(new Set(near));
-    }, { root: container, rootMargin: "800px 0px" });
+    }, { root: container, rootMargin: "240px 0px" });
     container.querySelectorAll("[data-line]").forEach((row) => observer.observe(row));
     return () => observer.disconnect();
   }, [windowRows, lines.length, track?.uri]);

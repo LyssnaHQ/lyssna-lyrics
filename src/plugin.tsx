@@ -1119,6 +1119,7 @@ export default function start(options: BuildOptions) {
   let syncSpotifyMotion: ((panel?: HTMLElement | null) => void) | undefined;
   let creatorEnabled = false;
   let creatorOpen = false;
+  let mainContainer: HTMLElement | undefined;
   let reviewOpen = false;
   let reviewReusesCreator = false;
   let disposed = false;
@@ -1163,6 +1164,7 @@ export default function start(options: BuildOptions) {
     if (creatorOpen === open && reviewOpen === review) return;
     creatorOpen = open;
     reviewOpen = review;
+    mainContainer?.toggleAttribute("data-lyssna-creator-open", open);
     renderMainView?.();
     syncPlaybar();
     syncRecorder();
@@ -1208,7 +1210,6 @@ export default function start(options: BuildOptions) {
   let enterFullscreen: ((mode: FullscreenMode) => void) | undefined;
   let showMainSettings: ((request: SettingsRequest) => void) | undefined;
   let closeProfileSettings: (() => void) | undefined;
-  let mainContainer: HTMLElement | undefined;
   let removeCard: (() => void) | undefined;
   let card: HTMLElement | undefined;
   let cardPanel: HTMLElement | undefined;
