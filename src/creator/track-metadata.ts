@@ -24,7 +24,6 @@ export async function readCreatorTrackMetadata(host: Host, track: Track): Promis
     normalizeIsrc(spotify.isrc) ?? normalizeIsrc(song?.external_ids?.isrc) ?? within(host.lookupIsrc(track.id), 4500),
   ]);
   const release = { ...song?.album, ...album };
-  const cover = release.images?.[0]?.url ?? spotify.cover;
   const fields = new Map<string, (string | number | undefined)[]>([
     ["isrc", [isrc]],
     ["spotifyAlbumId", [/^spotify:album:([A-Za-z0-9]{22})$/.exec(albumUri ?? "")?.[1]]],
@@ -43,7 +42,6 @@ export async function readCreatorTrackMetadata(host: Host, track: Track): Promis
     ["copyright", release.copyrights?.filter(({ type }) => type === "C").map(({ text }) => text) ?? []],
     ["phonographicCopyright", release.copyrights?.filter(({ type }) => type === "P").map(({ text }) => text) ?? []],
     ["explicit", [song?.explicit === undefined ? undefined : String(song.explicit)]],
-    ["coverUrl", [cover.startsWith("https://") ? cover : undefined]],
   ]);
   const spotifyFields: MetaEntry[] = [];
   for (const [key, raw] of fields) {

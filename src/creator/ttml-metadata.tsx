@@ -3,7 +3,7 @@ import { ChevronDown, Plus, RotateCcw, Tags, Trash2, X } from "lucide-react";
 import {
   type MetaEntry,
   META_KEYS,
-  SONG_KEYS,
+  RESERVED_META_KEYS,
   metaProblem,
 } from "./ttml-creator-model";
 
@@ -31,7 +31,6 @@ const LABELS: Record<
   copyright: { label: "Copyright" },
   phonographicCopyright: { label: "Recording copyright" },
   explicit: { label: "Explicit" },
-  coverUrl: { label: "Artwork URL" },
   upc: { label: "UPC" },
   ean: { label: "EAN" },
   spotifyAlbumId: { label: "Spotify album ID" },
@@ -62,7 +61,7 @@ const LABELS: Record<
 
 const GROUPS: [string, string[]][] = [
   ["Song", ["musicName", "artists", "songwriters"]],
-  ["Release", ["albumArtists", "releaseDate", "trackNumber", "discNumber", "trackTotal", "albumType", "genres", "label", "copyright", "phonographicCopyright", "explicit", "coverUrl"]],
+  ["Release", ["albumArtists", "releaseDate", "trackNumber", "discNumber", "trackTotal", "albumType", "genres", "label", "copyright", "phonographicCopyright", "explicit"]],
   ["Identifiers", ["isrc", "spotifyAlbumId", "spotifyArtistId", "upc", "ean", "appleMusicId", "ncmMusicId", "qqMusicId"]],
   ["You", ["ttmlAuthorGithub", "ttmlAuthorGithubLogin"]],
 ];
@@ -110,7 +109,7 @@ export function MetadataDialog({
       ).map((key) => ({ key, values: [""] })),
     ]);
   const rows = entries.flatMap((entry, index) =>
-    SONG_KEYS.includes(entry.key)
+    RESERVED_META_KEYS.includes(entry.key.trim())
       ? []
       : entry.values.map((value, at) => ({ entry, index, value, at })),
   );

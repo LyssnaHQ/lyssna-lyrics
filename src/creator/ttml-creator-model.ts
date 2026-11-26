@@ -76,8 +76,8 @@ export const META_KEYS = [
   "ttmlAuthorGithubLogin",
 ] as const;
 export const AUTHOR_KEYS = ["ttmlAuthorGithub", "ttmlAuthorGithubLogin"];
-/** Always the song's own; not editable. */
-export const SONG_KEYS = ["album", "spotifyId"];
+/** Album and track ID are written separately. Artwork uses the catalogue. */
+export const RESERVED_META_KEYS = ["album", "spotifyId", "coverUrl"];
 
 export function defaultMetadata(
   meta: SongMeta,
@@ -2980,7 +2980,7 @@ export function toTtml(
           `<ttm:agent type="${agent === "v1" ? "person" : "other"}" xml:id="${agent}"></ttm:agent>`,
       ),
     ...[
-      ...entries.filter((entry) => !SONG_KEYS.includes(entry.key.trim())),
+      ...entries.filter((entry) => !RESERVED_META_KEYS.includes(entry.key.trim())),
       { key: "album", values: meta.album ? [meta.album] : [] },
       { key: "spotifyId", values: meta.spotifyId ? [meta.spotifyId] : [] },
     ]
