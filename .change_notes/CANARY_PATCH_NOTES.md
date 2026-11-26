@@ -1,5 +1,10 @@
 # Lyssna Lyrics patch notes
 
+## v1.2.0-1c6f259
+
+- Fill available Spotify track and release details in Creator’s TTML metadata, including ISRC, release date, track and disc numbers, and label.
+- Fill Creator’s songwriter field from Apple Music, with Spotify’s Lyricists as the fallback. Existing metadata edits are preserved.
+
 ## v1.2.0-54789d0
 
 - Show songwriter credits from Lyssna’s song record when its lyrics file leaves them out. Use Apple Music or Spotify credits when the selected source has no writers.
