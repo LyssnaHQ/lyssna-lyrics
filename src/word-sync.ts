@@ -3,7 +3,7 @@ import type { Line, Lyrics, Word } from "./lyssna/types";
 
 type Syllable = { Text: string; StartTime: number; EndTime: number; IsPartOfWord: boolean; TransliteratedText?: string; estimated?: boolean };
 type Vocal = { StartTime: number; EndTime: number; Syllables: Syllable[]; TranslatedText?: string; original?: Line };
-type Group = { Type: "Vocal"; OppositeAligned: boolean; Lead: Vocal; Background?: Vocal[] };
+type Group = { Type: "Vocal"; OppositeAligned: boolean; Lead: Vocal; Background?: Vocal[]; BackgroundOnly?: boolean };
 type TimingResult = { Type: string; Content?: Group[]; experimentalWordSync?: boolean; lineTimingOnly?: boolean };
 
 export function needsWordSync(lyrics: Lyrics, duration: number) {
@@ -54,7 +54,7 @@ function normalizedOutput(result: TimingResult, lyrics: Lyrics) {
       romanization: hasWordReading ? words.map((word) => word.romanization ?? word.text).join("") : text === original?.text ? original.romanization : "" };
   }
   return result.Content?.flatMap((group) => [
-    lineFrom(group.Lead, !!group.OppositeAligned, group.Lead.original?.background === true),
+    lineFrom(group.Lead, !!group.OppositeAligned, group.BackgroundOnly || group.Lead.original?.background === true),
     ...(group.Background?.map((vocal) => lineFrom(vocal, !!group.OppositeAligned, true)) ?? []),
   ]).filter((line) => line.text) ?? [];
 }

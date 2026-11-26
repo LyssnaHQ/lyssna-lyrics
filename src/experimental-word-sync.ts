@@ -51,6 +51,7 @@ type GeneratedBackground = {
 type GeneratedLine = {
   Type: "Vocal";
   OppositeAligned?: boolean;
+  BackgroundOnly?: boolean;
   Lead: GeneratedBackground;
   Background?: GeneratedBackground[];
 };
@@ -65,6 +66,7 @@ type SyllableLyricsEntry = {
 type Segment = {
   kind: "lead" | "background";
   text: string;
+  phrase?: GeneratedBackground;
 };
 
 type WordUnit = {
@@ -145,6 +147,52 @@ function parseSegments(text: string | undefined): Segment[] {
           text: normalized,
         },
       ];
+}
+
+/** Identify one backing phrase across timed rows without collapsing their timestamps. */
+function multilineBackgroundSegments(lines: LineLyricsEntry[]) {
+  const texts = lines.map(line => line.Text ?? "");
+  const lyrics = texts.join("\n");
+  const segments = new Map<number, Segment[]>();
+  if (!/[（(]/.test(lyrics)) return segments;
+
+  let offset = 0;
+  const starts = texts.map(text => {
+    const start = offset;
+    offset += text.length + 1;
+    return start;
+  });
+  const ends = new Map<number, number>();
+  let first = 0;
+  for (const range of bracketRanges(lyrics)) {
+    if (lyrics[range.start] !== "(" && lyrics[range.start] !== "（") continue;
+    while (first + 1 < starts.length && starts[first + 1] <= range.start) first++;
+    let last = first;
+    while (last + 1 < starts.length && starts[last + 1] < range.end) last++;
+    if (last === first || lines.slice(first, last + 1).some(line =>
+      (line.Type !== undefined && line.Type !== "Vocal") || !!line.OppositeAligned !== !!lines[first].OppositeAligned)) continue;
+
+    const phrase: GeneratedBackground = { StartTime: 0, EndTime: 0, Syllables: [] };
+    for (let index = first; index <= last; index++) {
+      const text = texts[index];
+      const from = Math.max(0, range.start - starts[index]);
+      const to = Math.min(text.length, range.end - starts[index]);
+      const suffix = text.slice(to).trim();
+      const punctuation = index === last && /^[,.;:!?…，。！？、；：]+$/u.test(suffix) ? suffix : "";
+      const parts = segments.get(index) ?? [];
+      parts.push(...parseSegments(text.slice(ends.get(index) ?? 0, from)));
+      const backing = stripBracketCharacters(text.slice(from, to));
+      if (backing) parts.push({ kind: "background", text: backing + punctuation, phrase });
+      segments.set(index, parts);
+      ends.set(index, punctuation ? text.length : to);
+    }
+  }
+  for (const [index, end] of ends) segments.get(index)!.push(...parseSegments(texts[index].slice(end)));
+  return segments;
+}
+
+function withPhraseComma(text: string) {
+  return /[,.;:!?…，。！？、；：]["'”’»]*$/u.test(text) ? text : `${text},`;
 }
 
 function splitTokenIntoWordUnits(token: string): WordUnit[] {
@@ -1159,6 +1207,7 @@ export function ConvertLineLyricsToExperimentalWordSync(
   }
 
   const sourceLines = lyrics.Content as LineLyricsEntry[];
+  const multiline = multilineBackgroundSegments(sourceLines);
   const convertedContent: GeneratedLine[] = [];
 
   for (let lineIndex = 0; lineIndex < sourceLines.length; lineIndex += 1) {
@@ -1172,7 +1221,11 @@ export function ConvertLineLyricsToExperimentalWordSync(
     }
 
     const lineStart = Number.isFinite(line.StartTime) ? (line.StartTime as number) : 0;
-    const baseSegments = parseSegments(line.Text);
+    const multilineSegments = multiline.get(lineIndex);
+    if (multilineSegments?.length === 0) continue;
+    const baseSegments = multilineSegments ?? parseSegments(line.Text);
+    const hasMultilinePhrase = baseSegments.some(segment => segment.phrase);
+    const wholeLineIsBacking = baseSegments.length === 1 && hasMultilinePhrase;
     const hasBackgroundSegments = baseSegments.some(
       (segment) => segment.kind === "background"
     );
@@ -1205,8 +1258,10 @@ export function ConvertLineLyricsToExperimentalWordSync(
       baseSegments.map((segment) => getTextWeight(segment.text))
     );
 
-    const romanizedSegments = getAlignedSegmentTexts(baseSegments, line.TransliteratedText);
-    const gibberishSegments = getAlignedSegmentTexts(baseSegments, line.GibberishText);
+    const romanizedSegments = wholeLineIsBacking ? [stripBracketCharacters(line.TransliteratedText)]
+      : getAlignedSegmentTexts(baseSegments, line.TransliteratedText);
+    const gibberishSegments = wholeLineIsBacking ? [stripBracketCharacters(line.GibberishText)]
+      : getAlignedSegmentTexts(baseSegments, line.GibberishText);
 
     const leadWords: GeneratedWord[] = [];
     const background: GeneratedBackground[] = [];
@@ -1225,6 +1280,26 @@ export function ConvertLineLyricsToExperimentalWordSync(
       }
 
       if (segment.kind === "background") {
+        if (segment.phrase) {
+          const phrase = segment.phrase;
+          const previous = phrase.Syllables.at(-1);
+          if (previous) {
+            previous.Text = withPhraseComma(previous.Text);
+            if (previous.TransliteratedText) previous.TransliteratedText = withPhraseComma(previous.TransliteratedText);
+            if (previous.GibberishText) previous.GibberishText = withPhraseComma(previous.GibberishText);
+            previous.IsPartOfWord = false;
+          } else {
+            capitalizeFirstGeneratedWord(generatedWords);
+            phrase.StartTime = range.start;
+            background.push(phrase);
+          }
+          phrase.EndTime = Math.max(phrase.EndTime, range.end);
+          phrase.Syllables.push(...generatedWords);
+          const translation = wholeLineIsBacking && stripBracketCharacters(line.TranslatedText);
+          if (translation) phrase.TranslatedText = phrase.TranslatedText
+            ? `${withPhraseComma(phrase.TranslatedText)} ${translation}` : translation;
+          return;
+        }
         capitalizeFirstGeneratedWord(generatedWords);
         background.push({
           StartTime: range.start,
@@ -1260,7 +1335,7 @@ export function ConvertLineLyricsToExperimentalWordSync(
       continue;
     }
 
-    if (shouldKeepBackgroundOnlyLineAsLead(sourceLines, lineIndex, baseSegments)) {
+    if (!hasMultilinePhrase && shouldKeepBackgroundOnlyLineAsLead(sourceLines, lineIndex, baseSegments)) {
       const fallbackLead = createFallbackLead(
         {
           ...line,
@@ -1283,8 +1358,15 @@ export function ConvertLineLyricsToExperimentalWordSync(
       (previousLine.OppositeAligned ?? false) === (line.OppositeAligned ?? false) &&
       background.length > 0
     ) {
-      background[0].TranslatedText = line.TranslatedText;
+      if (!hasMultilinePhrase) background[0].TranslatedText = line.TranslatedText;
       previousLine.Background = [...(previousLine.Background ?? []), ...background];
+      continue;
+    }
+
+    if (hasMultilinePhrase) {
+      for (const vocal of background) convertedContent.push({
+        Type: "Vocal", OppositeAligned: line.OppositeAligned, BackgroundOnly: true, Lead: vocal,
+      });
       continue;
     }
 
