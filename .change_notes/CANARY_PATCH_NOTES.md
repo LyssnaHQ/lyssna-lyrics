@@ -1,5 +1,9 @@
 # Lyssna Lyrics patch notes
 
+## v1.2.0-fe3dcf8
+
+- Give the Settings tab strip a clearer border on all sides.
+
 ## v1.2.0-e6026bc
 
 - Align the Settings scrollbar track with the first visible card and mirror the top clearance at the bottom.
