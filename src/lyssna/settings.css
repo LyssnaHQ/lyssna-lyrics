@@ -377,8 +377,8 @@
 .settings-footer-logo {
   display: grid;
   flex: none;
-  width: 19px;
-  height: 19px;
+  width: 20px;
+  height: 20px;
 }
 .settings-footer-logo::before,
 .settings-footer-logo img {
