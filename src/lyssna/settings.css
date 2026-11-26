@@ -324,15 +324,49 @@
 .lyrics-settings-head h2 svg {
   color: light-dark(#000, #fff);
 }
-.lyrics-settings-header-controls {
+.lyrics-settings-footer {
   display: flex;
+  flex: none;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
-  min-width: 0;
+  margin: 0 20px;
+  padding: 5px 0 7px;
+  border-top: 1px solid light-dark(#00000019, #ffffff19);
+}
+.settings-footer-links {
+  display: flex;
+  flex: none;
+  gap: 2px;
+}
+.settings-footer-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: light-dark(#424242, #c8c8c8);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.settings-footer-action:is(:hover, :focus-visible) {
+  background: light-dark(#0000000f, #ffffff14);
+  color: light-dark(#080808, #ffffff);
+}
+.settings-footer-action svg {
+  flex: none;
 }
 .settings-build-trigger {
-  flex: none;
+  min-width: 0;
   max-width: 15rem;
+  font-variant-numeric: tabular-nums;
 }
 .settings-build-trigger > span {
   overflow: hidden;

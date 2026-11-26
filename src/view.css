@@ -2571,18 +2571,11 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
     flex-wrap: wrap;
   }
 
-  .lyssna-lyrics-view .plugin-settings .lyrics-settings-header-controls {
+  .lyssna-lyrics-view .plugin-settings .lyrics-settings-search {
+    box-sizing: border-box;
     flex: 1 0 100%;
     order: 1;
-  }
-
-  .lyssna-lyrics-view .plugin-settings .lyrics-settings-search {
-    flex: 1;
     width: auto;
-  }
-
-  .lyssna-lyrics-view .plugin-settings .settings-build-trigger {
-    max-width: min(50%, 15rem);
   }
 
   .lyssna-lyrics-view .plugin-settings .setting-row {

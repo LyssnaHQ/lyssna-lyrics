@@ -1,5 +1,5 @@
 import { cloneElement, isValidElement, useEffect, useLayoutEffect, useRef, useState, type ComponentProps, type CSSProperties, type ReactElement, type ReactNode, type RefObject, type UIEventHandler } from "react";
-import { AlignLeft, AppWindow, ChevronLeft, FileText, FlaskConical, Palette, Pin, Search, Settings2, SlidersHorizontal, WandSparkles, Wrench, X } from "lucide-react";
+import { AlignLeft, AppWindow, ChevronLeft, ChevronUp, Coffee, FileText, FlaskConical, MessagesSquare, Palette, Pin, Search, Settings2, SlidersHorizontal, WandSparkles, Wrench, X } from "lucide-react";
 import EnhancementsSection from "./enhancements/section";
 import { AnimatorPanel } from "./lyssna/animator-settings";
 import { appFontStyles, FontControl } from "./font-settings";
@@ -15,6 +15,7 @@ import { AccountSettings, useSettingsAccount } from "./account-settings";
 import { StoredDataSettings } from "./creator/stored-data-settings";
 import { activeHiddenBuildKey, forgetHiddenBuild, readSavedHiddenBuilds, rememberHiddenBuild } from "./hidden-builds";
 import { OverlayScrollbar } from "./overlay-scrollbar";
+import { discordInvite } from "./release-notices";
 import type { Host, Track } from "./host";
 
 export type Channel = "stable" | "beta" | "canary";
@@ -513,15 +514,8 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
           <ChevronLeft size={16} />Back
         </button>}
         <h2 id="lyssna-settings-title">{submenu ? submenus[submenu] : <><Settings2 size={20} />Lyssna Lyrics settings</>}</h2>
-        {!submenu && <div className="lyrics-settings-header-controls">
-          <button type="button" id="lyssna-open-builds" className="pill outline settings-build-trigger" aria-haspopup="dialog"
-            aria-label={`Build Channels, ${activeBuild}${version ? ` v${version}` : ""}`}
-            title={`Build Channels · ${activeBuild}${version ? ` · v${version}` : ""}`} onClick={openChannels}>
-            <span>{activeBuild}{version ? ` · v${version}` : ""}</span>
-          </button>
-          <label className="lyrics-settings-search"><Search size={15} /><input aria-label="Search settings" placeholder="Search settings…" value={query}
-            onChange={(event) => { setQuery(event.target.value); scroll.current?.scrollTo({ top: 0 }); }} /></label>
-        </div>}
+        {!submenu && <label className="lyrics-settings-search"><Search size={15} /><input aria-label="Search settings" placeholder="Search settings…" value={query}
+          onChange={(event) => { setQuery(event.target.value); scroll.current?.scrollTo({ top: 0 }); }} /></label>}
         <button type="button" className="icon-button" aria-label="Close settings" onClick={close}><X size={18} /></button>
       </header>
       {!submenu && <div className="lyrics-settings-tabs" role="tablist" aria-label="Settings categories">
@@ -575,6 +569,22 @@ export function SettingsPanel({ host, settings, change, close, options, track, n
         </SettingsQuery.Provider></HiddenSettings.Provider>}
         {notice && <p className="settings-alert" role="status">{notice}</p>}
       </SettingsScrollArea>
+      {!submenu && <footer className="lyrics-settings-footer">
+        <nav className="settings-footer-links" aria-label="Lyssna links">
+          <a className="settings-footer-action" href={discordInvite} target="_blank" rel="noopener noreferrer">
+            <MessagesSquare size={15} aria-hidden="true" />Discord
+          </a>
+          <a className="settings-footer-action" href="https://ko-fi.com/lyssna" target="_blank" rel="noopener noreferrer">
+            <Coffee size={15} aria-hidden="true" />Ko-fi
+          </a>
+        </nav>
+        <button type="button" id="lyssna-open-builds" className="settings-footer-action settings-build-trigger"
+          aria-haspopup="dialog" aria-expanded={showChannels}
+          aria-label={`Build Channels, ${activeBuild}${version ? ` v${version}` : ""}`}
+          title={`Build Channels · ${activeBuild}${version ? ` · v${version}` : ""}`} onClick={openChannels}>
+          <span>{activeBuild}{version ? ` · v${version}` : ""}</span><ChevronUp size={13} aria-hidden="true" />
+        </button>
+      </footer>}
     </section>}
   </div>;
   return tuning ? content : <>
