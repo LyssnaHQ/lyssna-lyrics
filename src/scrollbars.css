@@ -56,10 +56,10 @@
   writing-mode: vertical-lr;
   direction: ltr;
   background: transparent;
-  cursor: ns-resize;
+  cursor: default;
   opacity: 0;
 }
-.overlay-scrollbar:is(:hover, :active, :focus-visible) {
+.overlay-scrollbar:is([data-near-edge], :hover, :active, :focus-visible) {
   opacity: 1;
 }
 @media (prefers-reduced-motion: no-preference) {
@@ -74,8 +74,8 @@
   appearance: none;
   width: 6px;
   height: var(--overlay-scroll-thumb-height, 24px);
-  /* Keep the thumb 4px inside the edge of its hover area. */
-  transform: translateX(7px);
+  /* The grab area is 28px wide, with the thumb 12px from the edge. */
+  transform: translateX(-1px);
   border-radius: 999px;
   background: light-dark(#0006, #fff6);
 }

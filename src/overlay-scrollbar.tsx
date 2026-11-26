@@ -1,6 +1,8 @@
 import { memo, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { createPortal } from "./host-dom";
 
+const REVEAL_DISTANCE = 280;
+
 export const OverlayScrollbar = memo(function OverlayScrollbar({ scroll, label, browse, edgeSelector, contentKey, observeContent = false }: {
   scroll: RefObject<HTMLDivElement | null>;
   label: string;
@@ -17,6 +19,40 @@ export const OverlayScrollbar = memo(function OverlayScrollbar({ scroll, label, 
     const node = scroll.current;
     setEdge(node?.closest<HTMLElement>(edgeSelector) ?? node?.parentElement ?? null);
   }, [scroll, edgeSelector]);
+
+  useLayoutEffect(() => {
+    const rail = thumb.current;
+    const area = rail?.parentElement;
+    const view = rail?.ownerDocument.defaultView;
+    if (!rail || !area || !view) return;
+
+    let frame = 0;
+    let clientX = 0;
+    const move = (event: PointerEvent) => {
+      if (event.pointerType === "touch" || rail.hidden) return;
+      clientX = event.clientX;
+      if (frame) return;
+      frame = view.requestAnimationFrame(() => {
+        frame = 0;
+        const distance = area.getBoundingClientRect().right - clientX;
+        rail.toggleAttribute("data-near-edge", distance >= 0 && distance <= REVEAL_DISTANCE);
+      });
+    };
+    const leave = () => {
+      view.cancelAnimationFrame(frame);
+      frame = 0;
+      rail.removeAttribute("data-near-edge");
+    };
+    area.addEventListener("pointerenter", move);
+    area.addEventListener("pointermove", move, { passive: true });
+    area.addEventListener("pointerleave", leave);
+    return () => {
+      area.removeEventListener("pointerenter", move);
+      area.removeEventListener("pointermove", move);
+      area.removeEventListener("pointerleave", leave);
+      leave();
+    };
+  }, [edge]);
 
   useLayoutEffect(() => {
     const node = scroll.current;
