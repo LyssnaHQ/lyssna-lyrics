@@ -51,8 +51,7 @@ import type { SubmissionFeedback } from "../lyssna-submission";
 import type { ReviewEditor } from "./review-editor";
 import {
   dismissSubmittedDraft,
-  forgetWorking,
-  markWorking,
+  publishDraftPreview,
   setShowsPreview,
   showLive,
   showsPreview,
@@ -398,6 +397,7 @@ export function TtmlCreator({
   }, [host, track, draftPreview, reviewing]);
 
   const [lines, setLinesRaw] = useState<CreatorLine[]>([]);
+  const initialDraft = useRef<{ uri: string; content: string } | undefined>(undefined);
   const linesRef = useRef(lines);
   const replaceLines = useCallback((next: CreatorLine[]) => {
     linesRef.current = next;
@@ -483,13 +483,11 @@ export function TtmlCreator({
     versions.current.changed = true;
     if (!lines.length && !text.trim()) {
       writeDraft(uri, null);
-      forgetWorking(uri);
       if (updateStatus) setSavedAt(undefined);
       return;
     }
     const now = Date.now();
     writeDraft(uri, { lines, text, metadata, appleOriginal, savedAt: now, song: pending.song });
-    markWorking(uri);
     if (updateStatus) setSavedAt(now);
     return now;
   }, [window]);
@@ -498,6 +496,7 @@ export function TtmlCreator({
     if (!track) return;
     const draft = loadDraft(track.uri);
     const loaded = joinHyphenated(draft?.lines ?? []);
+    initialDraft.current = { uri: track.uri, content: contentOf(loaded, "", undefined) };
     replaceLines(loaded);
     setText(draft?.text ?? "");
     setMetadata(draft?.metadata);
@@ -544,6 +543,7 @@ export function TtmlCreator({
     if (lines.length || text.trim() || loadDraft(track.uri)) return;
     const seeded = joinHyphenated(fromLyrics(lyrics));
     if (!seeded.length) return;
+    initialDraft.current = { uri: track.uri, content: contentOf(seeded, "", undefined) };
     replaceLines(seeded);
     setAppleOriginal(lyrics.appleOriginal);
     setCursor(cursorAt(seeded, read()));
@@ -706,15 +706,13 @@ export function TtmlCreator({
     </span>
   );
   const [previewOn, setPreviewOn] = useState(showsPreview);
-  useEffect(() => {
-    if (track) showLive(track.uri, lines);
-  }, [track, lines]);
   const previewToggle = (
     <button
       aria-pressed={previewOn}
       className={previewOn ? "active" : ""}
       title="Show this draft on the Lyrics page, even before anything is saved"
       onClick={() => {
+        if (!previewOn && track) publishDraftPreview(track.uri, true);
         setShowsPreview(!previewOn);
         setPreviewOn(!previewOn);
       }}
@@ -1423,6 +1421,10 @@ export function TtmlCreator({
   const availableSourceContent = useMemo(() => availableSource &&
     contentOf(joinHyphenated(fromLyrics(availableSource)), "", undefined), [availableSource]);
   const draftLinesContent = useMemo(() => contentOf(lines, "", undefined), [lines]);
+  useLayoutEffect(() => {
+    if (!track || initialDraft.current?.uri !== track.uri || lines !== linesRef.current) return;
+    showLive(track.uri, lines, initialDraft.current.content !== draftLinesContent);
+  }, [draftLinesContent, lines, track]);
   const sourceContent = checkedSource && checkedSource.uri === track?.uri && checkedSource.basedOn === state.lyrics
     ? checkedSource.content : availableSourceContent;
   const resetLabel = resettingSource ? "Finding source…" : sourceContent === draftLinesContent ? "Already showing source" : "Reset to source";

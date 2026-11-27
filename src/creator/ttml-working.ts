@@ -1,24 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
-import { loadDraft } from "./ttml-saves";
 import { type CreatorLine, toLyrics } from "./ttml-creator-model";
 import type { Lyrics } from "./types";
 
-// Songs whose draft was edited in the TTML Creator this session. Their
-// timed draft shows on the Lyrics page until the user picks the original.
-const working = new Set<string>();
-const dismissed = new Map<string, "main" | "all">();
-
-export function markWorking(uri: string) {
-  working.add(uri);
-  if (dismissed.delete(uri)) window.dispatchEvent(new CustomEvent(liveDraftChanged, { detail: uri }));
-}
-
-export function forgetWorking(uri: string) {
-  working.delete(uri);
-}
+const working = new Map<string, CreatorLine[]>();
+const live = new Map<string, { lines: CreatorLine[]; edited: boolean }>();
+const dismissed = new Map<string, { scope: "main" | "all"; lines?: CreatorLine[] }>();
+export const liveDraftChanged = "lyssna-lyrics:live-draft-changed";
 
 export function dismissDraft(uri: string, everywhere = false) {
-  if (everywhere || !dismissed.has(uri)) dismissed.set(uri, everywhere ? "all" : "main");
+  const scope = everywhere || dismissed.get(uri)?.scope === "all" ? "all" : "main";
+  dismissed.set(uri, { scope, lines: live.get(uri)?.lines });
   window.dispatchEvent(new CustomEvent(liveDraftChanged, { detail: uri }));
 }
 
@@ -44,28 +35,36 @@ export function setShowsPreview(on: boolean) {
 
 let shown = showsPreview();
 
-// The lines open in the TTML Creator, saved or not, so a song with nothing
-// drafted yet still previews as a draft.
-const live = new Map<string, CreatorLine[]>();
-export const liveDraftChanged = "lyssna-lyrics:live-draft-changed";
+// Detached previews follow the open editor, including its initial lyrics.
+export function showLive(uri: string, lines: CreatorLine[], edited: boolean) {
+  const previous = live.get(uri);
+  if (previous?.lines === lines && previous.edited === edited) return;
+  live.set(uri, { lines, edited });
+  window.dispatchEvent(new CustomEvent(liveDraftChanged, { detail: uri }));
+}
 
-export function showLive(uri: string, lines: CreatorLine[]) {
-  if (live.get(uri) === (lines.length ? lines : undefined)) return;
-  if (lines.length) live.set(uri, lines);
-  else live.delete(uri);
+export function publishDraftPreview(uri: string, requested = false) {
+  const draft = live.get(uri);
+  if (!draft || (!requested && (!draft.edited || dismissed.get(uri)?.lines === draft.lines))) return;
+  dismissed.delete(uri);
+  if (draft.lines.length) working.set(uri, draft.lines);
+  else working.delete(uri);
   window.dispatchEvent(new CustomEvent(liveDraftChanged, { detail: uri }));
 }
 
 export function dismissSubmittedDraft(uri: string, lines: CreatorLine[]) {
-  if (live.get(uri) !== lines) return false;
+  if (live.get(uri)?.lines !== lines) return false;
   dismissDraft(uri, true);
   return true;
 }
 
 function draftPreview(uri: string | undefined, detached: boolean): Lyrics | null {
-  if (!uri || dismissed.get(uri) === "all" || (!detached && (!shown || dismissed.has(uri)))) return null;
-  const lines =
-    live.get(uri) ?? (working.has(uri) ? loadDraft(uri)?.lines : undefined);
+  if (!uri) return null;
+  const dismissal = dismissed.get(uri);
+  const draft = live.get(uri);
+  if (!detached && (!shown || dismissal)) return null;
+  if (detached && dismissal?.scope === "all" && (!draft?.edited || draft.lines === dismissal.lines)) return null;
+  const lines = detached ? draft?.lines ?? working.get(uri) : working.get(uri);
   if (!lines?.length) return null;
   const lyrics = toLyrics(lines);
   return lyrics.lines.length ? lyrics : null;

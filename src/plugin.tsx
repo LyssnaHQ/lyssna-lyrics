@@ -62,7 +62,8 @@ import { startCreatorRepeatRecovery } from "./creator/repeat";
 import { restoreCreatorPlaybackTransitions } from "./creator/playback-transitions";
 import { createSpotifyCapture, type SpotifyCapture } from "./creator/spotify-capture";
 import { PlaybarRecorder } from "./creator/auto-record";
-import { dismissDraft, useDraftPreview } from "./creator/ttml-working";
+import { fromLyrics, joinHyphenated, toLyrics } from "./creator/ttml-creator-model";
+import { dismissDraft, publishDraftPreview, useDraftPreview } from "./creator/ttml-working";
 import { trackLyssnaListens, useLyssnaPlay } from "./lyssna-plays";
 import { MotionArtwork, useAlbumMotionArtwork } from "./motion-artwork";
 import { discordInvite, startReleaseNotices } from "./release-notices";
@@ -592,13 +593,25 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
   const [creatorPlayback, setCreatorPlayback] = useState<CreatorPlayback>();
   const [originalDraftUri, setOriginalDraftUri] = useState<string>();
   const draftUri = trackId && !showCreator ? spotifySongUri(trackId) : undefined;
-  const savedPreview = useDraftPreview(detachedPreview && originalDraftUri === draftUri ? undefined : draftUri, !!detachedPreview);
+  const savedDraft = useDraftPreview(detachedPreview && originalDraftUri === draftUri ? undefined : draftUri, !!detachedPreview);
+  const duration = host.duration();
+  const foundLyrics = useTrackLyrics(track, duration, view, preferences, host);
+  const pendingDraft = !!savedDraft && !detachedPreview && foundLyrics.waiting && !foundLyrics.lyrics;
+  const draftMatchesSource = useMemo(() => {
+    if (!savedDraft || detachedPreview || !foundLyrics.lyrics?.lines.length) return false;
+    const source = toLyrics(joinHyphenated(fromLyrics(foundLyrics.lyrics)));
+    return JSON.stringify(source.lines) === JSON.stringify(savedDraft.lines);
+  }, [savedDraft, detachedPreview, foundLyrics.lyrics]);
+  useEffect(() => {
+    if (draftUri && draftMatchesSource) dismissDraft(draftUri);
+  }, [draftUri, draftMatchesSource]);
+  const savedPreview = pendingDraft || draftMatchesSource ? undefined : savedDraft;
   const reviewLyrics = reviewPreview && reviewPreview.uri === draftUri ? reviewPreview.lyrics : undefined;
   const draft = reviewLyrics ?? savedPreview;
   const [reviewerOverride, setReviewerOverride] = useState<boolean>();
   const draftReviewer = draft ? reviewerOverride ?? (preferences.ttml_reviewer !== "off") : undefined;
   const settings = useReviewerSettings(preferences, trackId, draftReviewer);
-  const keepCreator = !!draft && (preferences.ttml_creator || !!reviewLyrics) && !!trackId && creatorTrackId === trackId;
+  const keepCreator = (!!draft || pendingDraft) && (preferences.ttml_creator || !!reviewLyrics) && !!trackId && creatorTrackId === trackId;
   const attachedPlayback = (showCreator || keepCreator) && creatorPlayback?.trackId === trackId ? creatorPlayback : undefined;
   const detachedPlayback = detachedPreview?.playback?.trackId === trackId ? detachedPreview?.playback : undefined;
   const localPlayback = attachedPlayback ?? detachedPlayback;
@@ -617,8 +630,6 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
   }, [keepCreator, showCreator, trackId]);
   const [fullscreen, setFullscreen] = useState(fullscreenRequest > 0);
   const immersive = fullscreen || externalCinema;
-  const duration = host.duration();
-  const foundLyrics = useTrackLyrics(showCreator ? null : track, duration, view, settings, host);
   const lyrics = draft ?? foundLyrics.lyrics;
   const waiting = !draft && foundLyrics.waiting;
   const missing = !lyrics && !waiting;
@@ -1180,9 +1191,13 @@ export default function start(options: BuildOptions) {
     button?.sync?.(controls);
     playbarButtons.sync(controls, showPlaybarPopout, showPlaybarCinema && host.developerMode !== false, creatorEnabled || creatorOpen, creatorOpen);
   }
-  function setCreator(open: boolean) {
+  function setCreator(open: boolean, previewDraft = true) {
     if (creatorOpen === open) return;
-    if (!open) reviewEditor.cancel();
+    if (!open) {
+      reviewEditor.cancel();
+      const track = host.track();
+      if (previewDraft && track) publishDraftPreview(spotifySongUri(track.id));
+    }
     creatorOpen = open;
     mainContainer?.toggleAttribute("data-lyssna-creator-open", open);
     renderMainView?.();
@@ -1467,7 +1482,7 @@ export default function start(options: BuildOptions) {
     if (close) {
       if (mode === "review-edit") setCreator(true);
       else if (mode === "review-preview") {
-        if (creatorOpen) setCreator(false);
+        if (creatorOpen) setCreator(false, false);
         else renderMainView?.();
       }
       else if (mode === "creator") setCreator(!creatorOpen);
