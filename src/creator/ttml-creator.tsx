@@ -397,7 +397,7 @@ export function TtmlCreator({
   }, [host, track, draftPreview, reviewing]);
 
   const [lines, setLinesRaw] = useState<CreatorLine[]>([]);
-  const initialDraft = useRef<{ uri: string; content: string } | undefined>(undefined);
+  const initialDraft = useRef<{ uri: string; content: string; stored: boolean } | undefined>(undefined);
   const linesRef = useRef(lines);
   const replaceLines = useCallback((next: CreatorLine[]) => {
     linesRef.current = next;
@@ -496,7 +496,7 @@ export function TtmlCreator({
     if (!track) return;
     const draft = loadDraft(track.uri);
     const loaded = joinHyphenated(draft?.lines ?? []);
-    initialDraft.current = { uri: track.uri, content: contentOf(loaded, "", undefined) };
+    initialDraft.current = { uri: track.uri, content: contentOf(loaded, "", undefined), stored: !!draft };
     replaceLines(loaded);
     setText(draft?.text ?? "");
     setMetadata(draft?.metadata);
@@ -543,7 +543,7 @@ export function TtmlCreator({
     if (lines.length || text.trim() || loadDraft(track.uri)) return;
     const seeded = joinHyphenated(fromLyrics(lyrics));
     if (!seeded.length) return;
-    initialDraft.current = { uri: track.uri, content: contentOf(seeded, "", undefined) };
+    initialDraft.current = { uri: track.uri, content: contentOf(seeded, "", undefined), stored: false };
     replaceLines(seeded);
     setAppleOriginal(lyrics.appleOriginal);
     setCursor(cursorAt(seeded, read()));
@@ -2132,6 +2132,16 @@ export function TtmlCreator({
       if (lyrics.songwriters?.length && !reviewMetadata.some((entry) => entry.key === "songwriters")) {
         reviewMetadata.push({ key: "songwriters", values: lyrics.songwriters });
       }
+      const binding = {
+        id: submission.id, uri, revision: submission.head_revision_id,
+        baseline: toTtml(loaded, song, withTrackMetadata(reviewMetadata, song)),
+      };
+      if (pendingReview.resumeDraft && linesRef.current.length) {
+        editedFor.current = uri;
+        setReviewEdit(binding);
+        reviewEditor.cancel(pendingReview);
+        return;
+      }
       flushDraft();
       const previous = loadDraft(uri);
       if (previous) {
@@ -2148,10 +2158,7 @@ export function TtmlCreator({
       setCursor({ line: 0, unit: 0 });
       setTextMode(false);
       setTab("write");
-      setReviewEdit({
-        id: submission.id, uri, revision: submission.head_revision_id,
-        baseline: toTtml(loaded, song, withTrackMetadata(reviewMetadata, song)),
-      });
+      setReviewEdit(binding);
       reviewEditor.cancel(pendingReview);
       notify(previous ? "Submission opened. Your earlier draft is in Saves." : "Submission opened for review.");
     })().catch((error) => {
@@ -2166,18 +2173,26 @@ export function TtmlCreator({
     [activeReview, done, songMetadata, lines, entries],
   );
   useLayoutEffect(() => {
-    reviewEditor.publish(activeReview && {
-      id: activeReview.id,
-      revision: activeReview.revision,
-      changed: !!reviewTtml && reviewTtml !== activeReview.baseline && !textMode,
-      preview: () => toLyrics(linesRef.current),
+    const initial = initialDraft.current;
+    if (!track || initial?.uri !== track.uri || lines !== linesRef.current) return;
+    reviewEditor.publish({
+      uri: track.uri,
+      lines,
+      open: !draftPreview,
+      ready: !!done && !!songMetadata && !textMode &&
+        (!!activeReview || initial.stored || initial.content !== draftLinesContent),
+      submission: activeReview && {
+        id: activeReview.id,
+        revision: activeReview.revision,
+        changed: !!reviewTtml && reviewTtml !== activeReview.baseline && !textMode,
+      },
       save() {
-        flushDraft();
-        return songMetadata ? toTtml(linesRef.current, songMetadata, entries) : "";
+        if (root.isConnected && lines === linesRef.current) flushDraft();
+        return songMetadata ? toTtml(lines, songMetadata, entries) : "";
       },
     });
-  }, [reviewEditor, activeReview, reviewTtml, songMetadata, entries, textMode, flushDraft]);
-  useLayoutEffect(() => () => reviewEditor.publish(), [reviewEditor]);
+  }, [reviewEditor, activeReview, reviewTtml, songMetadata, entries, textMode, flushDraft, lines, track, done, draftPreview, root, draftLinesContent]);
+  useLayoutEffect(() => () => reviewEditor.closeDraft(), [reviewEditor]);
   const [editingMeta, setEditingMeta] = useState(false);
   const changeMetadata = (next: MetaEntry[]) => {
     setMetadata(next);

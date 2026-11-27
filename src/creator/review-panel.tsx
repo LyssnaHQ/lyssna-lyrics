@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type DragEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type DragEvent } from "react";
 import {
   ArrowLeft,
   CircleCheck,
@@ -16,7 +16,8 @@ import { revalidateLyssnaSong } from "../lyssna-provider";
 import { usePlayback } from "../playback";
 import { spotifySongUri } from "../spotify-song";
 import { TrackArtwork } from "../spotify-artwork";
-import { formatTime, fromLyrics, joinHyphenated, toLyrics } from "./ttml-creator-model";
+import { formatTime, fromLyrics, joinHyphenated, progress, toLyrics } from "./ttml-creator-model";
+import { loadDraft } from "./ttml-saves";
 import type { Lyrics } from "./types";
 import type { ReviewDraft, ReviewEditor, ReviewOpen } from "./review-editor";
 import type { ReviewQuote } from "./review-quote-menu";
@@ -208,7 +209,7 @@ export function ReviewPanel({ host, editor, onPlay, onOpen, onRefresh, onClose, 
   const [lane, setLane] = useState<ReviewLane>("priority");
   const [notice, setNotice] = useState("");
   const { track, playing } = usePlayback(host);
-  const editing = useSyncExternalStore(editor.subscribe, editor.draft);
+  const draft = useSyncExternalStore(editor.subscribe, editor.draft);
   const opening = useSyncExternalStore(editor.subscribe, editor.request);
   const panel = useRef<HTMLElement>(null);
   useLayoutEffect(() => panel.current?.focus({ preventScroll: true }), []);
@@ -223,7 +224,7 @@ export function ReviewPanel({ host, editor, onPlay, onOpen, onRefresh, onClose, 
       {picked ? (
         <ReviewDetail key={picked.id} host={host} submission={picked}
           playingUri={playing && track ? spotifySongUri(track.id) : undefined}
-          editing={editing?.id === picked.id && editing.revision === picked.head_revision_id ? editing : undefined}
+          draft={draft}
           opening={opening?.submission.id === picked.id}
           onPlay={onPlay} onOpen={onOpen} onClose={onClose} onBack={back}
           onDecided={(message) => { setNotice(message); onRefresh(); back(); }} onRefresh={onRefresh} />
@@ -238,11 +239,11 @@ export function ReviewPanel({ host, editor, onPlay, onOpen, onRefresh, onClose, 
   );
 }
 
-function ReviewDetail({ host, submission, playingUri, editing, opening, onPlay, onOpen, onDecided, onRefresh, onBack, onClose }: {
+function ReviewDetail({ host, submission, playingUri, draft, opening, onPlay, onOpen, onDecided, onRefresh, onBack, onClose }: {
   host: Host;
   submission: ReviewSubmission;
   playingUri?: string;
-  editing?: ReviewDraft;
+  draft?: ReviewDraft;
   opening: boolean;
   onPlay(uri: string, lyrics?: Lyrics, onQuote?: (quote: ReviewQuote) => void): void;
   onOpen(open: ReviewOpen): void;
@@ -255,6 +256,24 @@ function ReviewDetail({ host, submission, playingUri, editing, opening, onPlay, 
   const uri = track?.uri;
   const [ttml, setTtml] = useState<string | null>();
   const [preview, setPreview] = useState<Lyrics>();
+  const editorDraft = draft && draft.uri === uri && (!draft.submission ||
+    (draft.submission.id === submission.id && draft.submission.revision === submission.head_revision_id)) ? draft : undefined;
+  const sourceLines = useMemo(() => preview && joinHyphenated(fromLyrics(preview)), [preview]);
+  const sourceLyrics = useMemo(() => sourceLines && toLyrics(sourceLines), [sourceLines]);
+  const sourceContent = useMemo(() => sourceLyrics && JSON.stringify(sourceLyrics.lines), [sourceLyrics]);
+  const editorLines = editorDraft?.lines;
+  const editorPreview = useMemo(() => editorLines && toLyrics(editorLines), [editorLines]);
+  const editorContent = useMemo(() => editorPreview?.lines.length
+    ? JSON.stringify(editorPreview.lines) : undefined, [editorPreview]);
+  const hasEdits = !!editorDraft?.ready && (editorDraft.submission?.changed ??
+    (!!sourceContent && !!editorContent && editorContent !== sourceContent));
+  const editorOpen = !!editorDraft?.open && (!!editorDraft.submission || hasEdits);
+  const hasSavedEdits = useMemo(() => {
+    if (!uri || editorDraft || !sourceContent) return false;
+    const saved = loadDraft(uri);
+    if (!saved || !progress(saved.lines).done) return false;
+    return JSON.stringify(toLyrics(saved.lines).lines) !== sourceContent;
+  }, [uri, editorDraft, sourceContent]);
   const [showPreview, setShowPreview] = useState(false);
   const [diff, setDiff] = useState<DiffRow[] | null>();
   const [kinds, setKinds] = useState<{ kind: EditKind; lines: number }[]>([]);
@@ -354,11 +373,11 @@ function ReviewDetail({ host, submission, playingUri, editing, opening, onPlay, 
   };
   const decide = async (action: ReviewAction, withEdits = false) => {
     if (busy || submission.status !== "pending" || !canDecide) return;
-    if (withEdits && !editing?.changed) return;
+    if (withEdits && !hasEdits) return;
     setBusy(true);
     setDecisionError("");
     try {
-      const edit = withEdits && editing ? editing.save() : undefined;
+      const edit = withEdits ? editorDraft?.save() : undefined;
       if (withEdits && !edit) throw new Error("The editor draft is unavailable.");
       const account = edit ? cachedLyssnaProfile() ?? await readLyssnaProfile() : undefined;
       if (edit && !account) throw new Error("Sign in to Lyssna to submit your edit.");
@@ -473,21 +492,27 @@ function ReviewDetail({ host, submission, playingUri, editing, opening, onPlay, 
           title={track && !uri ? "No Spotify link for this song" : undefined}
           onClick={() => {
             if (!uri) return;
-            const draft = editing?.preview() ??
+            const playedDraft = (hasEdits ? editorPreview : undefined) ??
               (preview?.synced && preview.lines.every(line => line.words.length)
-                ? toLyrics(joinHyphenated(fromLyrics(preview)))
+                ? sourceLyrics
                 : preview);
-            onPlay(uri, draft?.lines.length ? draft : preview, canQuote ? commentOnQuote : undefined);
+            onPlay(uri, playedDraft?.lines.length ? playedDraft : preview, canQuote ? commentOnQuote : undefined);
           }}
         >
           <Play size={14} /> {playingIt ? "Playing" : "Play song"}
         </button>
         {!instrumental && !correction && <button
-          disabled={!uri || !ttml || !!editing || opening || busy}
-          onClick={() => uri && ttml && onOpen({ submission, uri, ttml })}
+          disabled={!uri || !ttml || editorOpen || opening || busy}
+          onClick={() => uri && ttml && onOpen({ submission, uri, ttml, resumeDraft: hasEdits })}
         >
           <SquarePen size={14} />{" "}
-          {opening ? "Opening…" : editing ? "Opened in editor" : "Open in editor"}
+          {opening ? "Opening…" : editorOpen ? "Opened in editor" : "Open in editor"}
+        </button>}
+        {hasSavedEdits && !instrumental && !correction && <button
+          disabled={!uri || !ttml || opening || busy}
+          onClick={() => uri && ttml && onOpen({ submission, uri, ttml, resumeDraft: true })}
+        >
+          <SquarePen size={14} /> Resume saved draft
         </button>}
       </div>
       {instrumental && <p className="review-instrumental">
@@ -699,11 +724,11 @@ function ReviewDetail({ host, submission, playingUri, editing, opening, onPlay, 
                 <CircleCheck size={14} /> {instrumental ? "Approve as instrumental" : "Approve"}
               </button>
               {!instrumental && <button
-                disabled={busy || !ttml || !editing?.changed}
+                disabled={busy || !ttml || !hasEdits}
                 title={
-                  editing?.changed
-                    ? "Approve, then submit your corrections as an edit credited to you"
-                    : "Open it in the editor and make corrections first"
+                  hasEdits
+                    ? "Approve the original, then submit your Creator draft as an edit credited to you"
+                    : hasSavedEdits ? "Resume your saved draft first" : "Make corrections in TTML Creator first"
                 }
                 onClick={() => void decide("approve", true)}
               >

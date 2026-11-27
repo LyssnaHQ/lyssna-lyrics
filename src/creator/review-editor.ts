@@ -1,17 +1,19 @@
 import type { ReviewSubmission } from "./review-api";
-import type { Lyrics } from "./types";
+import type { CreatorLine } from "./ttml-creator-model";
 
 export type ReviewOpen = {
   submission: ReviewSubmission;
   uri: string;
   ttml: string;
+  resumeDraft?: boolean;
 };
 
 export type ReviewDraft = {
-  id: string;
-  revision?: string;
-  changed: boolean;
-  preview(): Lyrics;
+  uri: string;
+  lines: CreatorLine[];
+  open: boolean;
+  ready: boolean;
+  submission?: { id: string; revision?: string; changed: boolean };
   save(): string;
 };
 
@@ -40,6 +42,11 @@ export function createReviewEditor() {
     publish(next?: ReviewDraft) {
       if (draft === next) return;
       draft = next;
+      update();
+    },
+    closeDraft() {
+      if (!draft?.open) return;
+      draft = { ...draft, open: false };
       update();
     },
   };
