@@ -124,6 +124,7 @@ import {
   replaceMatching,
   splitUnit,
   timed,
+  textOf,
   toText,
   toTtml,
   toggleJoin,
@@ -375,7 +376,7 @@ export function TtmlCreator({
   const pendingReview = useSyncExternalStore(reviewEditor.subscribe, reviewEditor.request);
   const [track, setTrack] = useState<Track | undefined>(playing);
   const [reviewEdit, setReviewEdit] = useState<{ id: string; uri: string; revision?: string; baseline: string }>();
-  const activeReview = !draftPreview && reviewEdit?.uri === track?.uri ? reviewEdit : undefined;
+  const activeReview = reviewEdit?.uri === track?.uri ? reviewEdit : undefined;
   const reviewing = !!activeReview || !!pendingReview;
   useEffect(() => {
     if (!track && playing) setTrack(playing);
@@ -939,6 +940,17 @@ export function TtmlCreator({
       else if (!next.delete(index)) next.add(index);
       return next;
     });
+  };
+  const selectSection = (index: number) => {
+    const section = new Set([index]);
+    for (let line = index + 1; line < lines.length && !lines[line].part; line++) {
+      section.add(line);
+    }
+    setGroup([]);
+    setSpaces([]);
+    pickedFrom.current = index;
+    setPicked(section);
+    root.querySelector<HTMLButtonElement>(`[data-section-start="${index}"]`)?.focus({ preventScroll: true });
   };
   // Ctrl-click adds or removes a line and Shift-click adds a range.
   const pickProps = (index: number) => ({
@@ -1650,7 +1662,7 @@ export function TtmlCreator({
       }
       // Shortcuts take Cmd on macOS, where Ctrl is no modifier of ours.
       if (
-        target?.closest("input, textarea, select, [contenteditable=true]") ||
+        target?.closest("input, textarea, select, [contenteditable]:not([contenteditable='false'])") ||
         event.altKey ||
         (IS_MAC ? event.ctrlKey : event.metaKey)
       )
@@ -1663,7 +1675,19 @@ export function TtmlCreator({
         gaps = spacesRef.current;
       const pickedLines = pickedRef.current;
       let handled = true;
-      if (!ctrl && erase && pickedLines.size) {
+      if (ctrl && key === "c") {
+        if (event.isComposing || event.shiftKey || !root.contains(target)) return;
+        const tree = root.getRootNode() as Node & { getSelection?(): Selection | null };
+        const selection = tree.getSelection?.() ?? window.getSelection();
+        if (selection && !selection.isCollapsed) return;
+        const selected = pickedLines.size ? lines.filter((_, index) => pickedLines.has(index)) : [lines[cursor.line]];
+        const text = selected.filter(Boolean).map(textOf).join("\n");
+        if (!text.trim()) return;
+        void window.navigator.clipboard.writeText(text).then(
+          () => notify("Lyrics copied."),
+          () => notify("Couldn’t copy lyrics.", true),
+        );
+      } else if (!ctrl && erase && pickedLines.size) {
         const next = removeLines(lines, pickedLines);
         setLines(next);
         setCursor(clampCursor(next, cursor));
@@ -1816,6 +1840,9 @@ export function TtmlCreator({
     setLines,
     changeSpeed,
     rate,
+    notify,
+    root,
+    window,
   ]);
 
   const list = useRef<HTMLDivElement>(null);
@@ -2058,6 +2085,10 @@ export function TtmlCreator({
     }
     const { ttml: submittedTtml, submission } = pendingReview;
     const { uri } = track;
+    if (activeReview?.id === submission.id && activeReview.revision === submission.head_revision_id) {
+      reviewEditor.cancel(pendingReview);
+      return;
+    }
     let live = true;
     void (async () => {
       const lyrics = parseLocalTtml(submittedTtml);
@@ -2096,7 +2127,7 @@ export function TtmlCreator({
       notify(`Couldn’t open the submission: ${String(error)}`, true);
     });
     return () => { live = false; };
-  }, [pendingReview, playing, track, draftPreview, reviewEditor, setLines, notify, flushDraft]);
+  }, [pendingReview, playing, track, draftPreview, activeReview, reviewEditor, setLines, notify, flushDraft]);
   const reviewTtml = useMemo(
     () => activeReview && done && songMetadata ? toTtml(lines, songMetadata, entries) : "",
     [activeReview, done, songMetadata, lines, entries],
@@ -2106,6 +2137,7 @@ export function TtmlCreator({
       id: activeReview.id,
       revision: activeReview.revision,
       changed: !!reviewTtml && reviewTtml !== activeReview.baseline && !textMode,
+      preview: () => toLyrics(linesRef.current),
       save() {
         flushDraft();
         return songMetadata ? toTtml(linesRef.current, songMetadata, entries) : "";
@@ -2914,9 +2946,12 @@ export function TtmlCreator({
             }}
           >
             {lines.map((line, lineIndex) => {
-              const sectionHeader = line.part && <button type="button" className="ttml-part"
-                title="Edit section. Right-click for section actions."
-                onClick={() => editSection(lineIndex)} onContextMenu={(event) => {
+              const sectionHeader = line.part && <button type="button" className="ttml-part" data-section-start={lineIndex}
+                title={`Edit section. ${MODIFIER}-click to select its lines.`}
+                onClick={(event) => {
+                  if (event.ctrlKey || event.metaKey || event.shiftKey) selectSection(lineIndex);
+                  else editSection(lineIndex);
+                }} onContextMenu={(event) => {
                   event.preventDefault();
                   setMenu({ x: event.clientX, y: event.clientY, at: { line: lineIndex, unit: 0 }, kind: "section" });
                 }}>
@@ -3499,6 +3534,7 @@ export function TtmlCreator({
           x={menu.x}
           y={menu.y}
           groups={menu.kind === "section" ? [[
+            { label: "Select section", run: () => selectSection(menu.at.line) },
             { label: "Edit section", run: () => editSection(menu.at.line) },
             { label: "Remove section", run: () => setLines(setSection(lines, menu.at.line)) },
           ]] : menu.kind === "line" ? lineMenuGroups(menu.at.line) : menuGroups(menu.at)}

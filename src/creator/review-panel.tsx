@@ -16,7 +16,7 @@ import { revalidateLyssnaSong } from "../lyssna-provider";
 import { usePlayback } from "../playback";
 import { spotifySongUri } from "../spotify-song";
 import { TrackArtwork } from "../spotify-artwork";
-import { formatTime } from "./ttml-creator-model";
+import { formatTime, fromLyrics, joinHyphenated, toLyrics } from "./ttml-creator-model";
 import type { Lyrics } from "./types";
 import type { ReviewDraft, ReviewEditor, ReviewOpen } from "./review-editor";
 import {
@@ -192,13 +192,14 @@ function ReviewSongRow({ host, submission }: { host: Host; submission: ReviewSub
   );
 }
 
-export function ReviewPanel({ host, editor, onPlay, onOpen, onRefresh, onClose }: {
+export function ReviewPanel({ host, editor, onPlay, onOpen, onRefresh, onClose, onDismissPreview }: {
   host: Host;
   editor: ReviewEditor;
-  onPlay(uri: string): void;
+  onPlay(uri: string, lyrics?: Lyrics): void;
   onOpen(open: ReviewOpen): void;
   onRefresh(): void;
   onClose(): void;
+  onDismissPreview(): void;
 }) {
   const [picked, setPicked] = useState<ReviewSubmission>();
   const [lane, setLane] = useState<ReviewLane>("priority");
@@ -211,6 +212,7 @@ export function ReviewPanel({ host, editor, onPlay, onOpen, onRefresh, onClose }
   const back = () => {
     const request = editor.request();
     if (request && request.submission.id === picked?.id) editor.cancel(request);
+    onDismissPreview();
     setPicked(undefined);
   };
   return (
@@ -221,7 +223,7 @@ export function ReviewPanel({ host, editor, onPlay, onOpen, onRefresh, onClose }
           editing={editing?.id === picked.id && editing.revision === picked.head_revision_id ? editing : undefined}
           opening={opening?.submission.id === picked.id}
           onPlay={onPlay} onOpen={onOpen} onClose={onClose} onBack={back}
-          onDecided={(message) => { setNotice(message); onRefresh(); setPicked(undefined); }} onRefresh={onRefresh} />
+          onDecided={(message) => { setNotice(message); onRefresh(); back(); }} onRefresh={onRefresh} />
       ) : (
         <ReviewQueue host={host} lane={lane} onLane={setLane} onPick={(submission) => {
           setNotice("");
@@ -239,7 +241,7 @@ function ReviewDetail({ host, submission, playingUri, editing, opening, onPlay, 
   playingUri?: string;
   editing?: ReviewDraft;
   opening: boolean;
-  onPlay(uri: string): void;
+  onPlay(uri: string, lyrics?: Lyrics): void;
   onOpen(open: ReviewOpen): void;
   onDecided(message: string): void;
   onRefresh(): void;
@@ -449,12 +451,15 @@ function ReviewDetail({ host, submission, playingUri, editing, opening, onPlay, 
       </p>
       <div className="review-buttons">
         <button
-          disabled={!uri || opening || busy}
+          disabled={!uri || opening || busy || (!instrumental && !!submission.head_revision_id && ttml === undefined)}
           title={track && !uri ? "No Spotify link for this song" : undefined}
           onClick={() => {
             if (!uri) return;
-            setShowPreview(true);
-            onPlay(uri);
+            const draft = editing?.preview() ??
+              (preview?.synced && preview.lines.every(line => line.words.length)
+                ? toLyrics(joinHyphenated(fromLyrics(preview)))
+                : preview);
+            onPlay(uri, draft?.lines.length ? draft : preview);
           }}
         >
           <Play size={14} /> {playingIt ? "Playing" : "Play song"}

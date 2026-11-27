@@ -1,4 +1,5 @@
 import type { ReviewSubmission } from "./review-api";
+import type { Lyrics } from "./types";
 
 export type ReviewOpen = {
   submission: ReviewSubmission;
@@ -10,6 +11,7 @@ export type ReviewDraft = {
   id: string;
   revision?: string;
   changed: boolean;
+  preview(): Lyrics;
   save(): string;
 };
 

@@ -1175,7 +1175,7 @@ export interface GeniusChanges {
   earlier: { line: number; label: string }[];
 }
 
-const textOf = (line: CreatorLine) =>
+export const textOf = (line: CreatorLine) =>
   line.units
     .map((unit, index) => (index && !unit.joined ? " " : "") + unit.text)
     .join("");

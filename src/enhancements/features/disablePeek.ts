@@ -18,8 +18,9 @@ const SHOW_BUTTON_SELECTOR =
 const PANEL_CLOSE_BUTTON_SELECTOR = '[data-testid="PanelHeader_CloseButton"] button';
 const HIDE_BUTTON_SELECTOR =
   `button.main-nowPlayingView-headerCloseButton, button[aria-label="Hide Now Playing view" i], ${PANEL_CLOSE_BUTTON_SELECTOR}`;
+const NATIVE_NPV_BUTTON_SELECTOR = `button[data-testid="control-button-npv"]:not(${PROXY_SELECTOR})`;
 const NATIVE_PLAYBAR_BUTTON_SELECTOR =
-  `button[data-testid="control-button-npv"]:not(${PROXY_SELECTOR}), button[data-testid="cover-art-button"]`;
+  `${NATIVE_NPV_BUTTON_SELECTOR}, button[data-testid="cover-art-button"]`;
 const STRUCTURAL_SELECTOR =
   `${PANEL_SELECTOR}, ${PLAYBAR_SELECTOR}, ${PLAYBAR_ANCHOR_SELECTOR}, ${EXTRA_CONTROLS_SELECTOR}, ${MAIN_VIEW_SELECTOR}, ${SHOW_BUTTON_SELECTOR}`;
 const LYRICS_VIEW_SELECTOR = ".lyssna-lyrics-view, #LyssnaLyricsPage, #SpicyLyricsPage";
@@ -103,8 +104,11 @@ function isQueueOpen() {
 
 function isNowPlayingOpen() {
   // Spotify retains the previous panel DOM while Queue is entering.
-  if (isQueueOpen()) return false;
-  return [...document.querySelectorAll<HTMLElement>(NOW_PLAYING_VIEW_SELECTOR)].some(
+  return !isQueueOpen() && !!findOpenNowPlayingView();
+}
+
+function findOpenNowPlayingView() {
+  return [...document.querySelectorAll<HTMLElement>(NOW_PLAYING_VIEW_SELECTOR)].find(
     (view) =>
       !view.closest('[aria-hidden="true"], [inert], [hidden], .Root__right-sidebar-collapsed')
   );
@@ -150,6 +154,12 @@ function findNativeNowPlayingToggle() {
   return candidates.find(isNativeButtonAvailable) ?? null;
 }
 
+function findNowPlayingCloseButton() {
+  const view = findOpenNowPlayingView();
+  return (view && [...view.querySelectorAll<HTMLButtonElement>(HIDE_BUTTON_SELECTOR)].find(isNativeButtonAvailable)) ??
+    findNativeNowPlayingToggle();
+}
+
 async function waitForNativeButton(targetOpen: boolean, epoch: number) {
   const deadline = performance.now() + BUTTON_WAIT_TIMEOUT;
 
@@ -160,10 +170,7 @@ async function waitForNativeButton(targetOpen: boolean, epoch: number) {
     desiredOpen === targetOpen &&
     performance.now() < deadline
   ) {
-    const view = document.querySelector<HTMLElement>(NOW_PLAYING_VIEW_SELECTOR);
-    const hideButton = targetOpen || !view ? null :
-      [...view.querySelectorAll<HTMLButtonElement>(HIDE_BUTTON_SELECTOR)].find(isNativeButtonAvailable);
-    const button = hideButton ?? findNativeNowPlayingToggle();
+    const button = targetOpen ? findNativeNowPlayingToggle() : findNowPlayingCloseButton();
     if (button) return button;
     await delay(50);
   }
@@ -244,6 +251,19 @@ function cancelTransition() {
   transitionEpoch += 1;
   desiredOpen = null;
   transitionRunner = null;
+}
+
+export function closeNowPlayingView() {
+  cancelTransition();
+  if (!isQueueOpen()) {
+    const activeToggle = [...document.querySelectorAll<HTMLButtonElement>(
+      `${NATIVE_NPV_BUTTON_SELECTOR}:is([aria-pressed="true"], [data-active="true"], .main-genericButton-buttonActive)`,
+    )].find(isNativeButtonAvailable);
+    if (activeToggle) activeToggle.click();
+    else if (findOpenNowPlayingView()) findNowPlayingCloseButton()?.click();
+  }
+  setProxyOpenState(false);
+  scheduleSync();
 }
 
 function onQueueClick(event: MouseEvent) {

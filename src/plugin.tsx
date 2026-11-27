@@ -36,6 +36,7 @@ import { clock, usePlayback, usePlaybackControls, usePosition } from "./playback
 import { LyricsPopout, pictureInPicture } from "./popout";
 import { startEnhancements } from "./enhancements";
 import { startLocalPlaylistPlayback } from "./enhancements/features/localPlaylistPlayback";
+import { closeNowPlayingView } from "./enhancements/features/disablePeek";
 import { getSetting, subscribeSettings } from "./enhancements/config";
 import { startVolumeDragController } from "./enhancements/features/volumeDrag";
 import { startPreferenceSync } from "./preference-sync";
@@ -554,6 +555,7 @@ function FullscreenControls({ host, playing, settings, view, trackId, narrating,
 }
 
 type FullscreenMode = "display" | "cinema";
+type ReviewPreview = { uri: string; lyrics: Lyrics };
 type SettingsRequest = { page: "settings" | "storage"; trigger?: HTMLElement | null };
 
 function requestDisplayFullscreen(parent: HTMLElement) {
@@ -564,7 +566,7 @@ function requestDisplayFullscreen(parent: HTMLElement) {
 }
 
 function LyricsView({ host, options, close, parent, view = window, fullscreenRequest = 0, settingsRequest,
-  openCreator, closeCreator, reviewEditor, onSidebarCover, onRecordingPlayback, capture, detachedPreview }: {
+  openCreator, closeCreator, reviewEditor, reviewPreview, onDismissReviewPreview, onSidebarCover, onRecordingPlayback, capture, detachedPreview }: {
   host: Host; options: BuildOptions; close: () => void; parent: HTMLElement; view?: Window;
   capture: SpotifyCapture;
   fullscreenRequest?: number;
@@ -572,6 +574,8 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
   openCreator?(): void;
   closeCreator?(): void;
   reviewEditor?: ReviewEditor;
+  reviewPreview?: ReviewPreview;
+  onDismissReviewPreview?(): void;
   onSidebarCover?(cover?: string): void;
   onRecordingPlayback?(playback?: CreatorPlayback): void;
   detachedPreview?: DetachedPreview;
@@ -588,11 +592,13 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
   const [creatorPlayback, setCreatorPlayback] = useState<CreatorPlayback>();
   const [originalDraftUri, setOriginalDraftUri] = useState<string>();
   const draftUri = trackId && !showCreator ? spotifySongUri(trackId) : undefined;
-  const draft = useDraftPreview(detachedPreview && originalDraftUri === draftUri ? undefined : draftUri, !!detachedPreview);
+  const savedPreview = useDraftPreview(detachedPreview && originalDraftUri === draftUri ? undefined : draftUri, !!detachedPreview);
+  const reviewLyrics = reviewPreview && reviewPreview.uri === draftUri ? reviewPreview.lyrics : undefined;
+  const draft = reviewLyrics ?? savedPreview;
   const [reviewerOverride, setReviewerOverride] = useState<boolean>();
   const draftReviewer = draft ? reviewerOverride ?? (preferences.ttml_reviewer !== "off") : undefined;
   const settings = useReviewerSettings(preferences, trackId, draftReviewer);
-  const keepCreator = !!draft && preferences.ttml_creator && !!trackId && creatorTrackId === trackId;
+  const keepCreator = !!draft && (preferences.ttml_creator || !!reviewLyrics) && !!trackId && creatorTrackId === trackId;
   const attachedPlayback = (showCreator || keepCreator) && creatorPlayback?.trackId === trackId ? creatorPlayback : undefined;
   const detachedPlayback = detachedPreview?.playback?.trackId === trackId ? detachedPreview?.playback : undefined;
   const localPlayback = attachedPlayback ?? detachedPlayback;
@@ -749,7 +755,10 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
   }
 
   function showOriginalLyrics() {
-    if (detachedPreview) setOriginalDraftUri(draftUri);
+    if (reviewLyrics) {
+      if (draftUri && savedPreview) dismissDraft(draftUri);
+      onDismissReviewPreview?.();
+    } else if (detachedPreview) setOriginalDraftUri(draftUri);
     else if (draftUri) dismissDraft(draftUri);
   }
 
@@ -1034,8 +1043,8 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
               visualiser={showVisualiser ? visualiser : undefined} />}
         </div>}
         {draft && <div className="ttml-draft-banner">
-          <span role="status">Showing your TTML draft</span>
-          {preferences.ttml_creator && openCreator && <button type="button" onClick={() => {
+          <span role="status">{reviewLyrics ? "Showing the review preview" : "Showing your TTML draft"}</span>
+          {(reviewLyrics ? keepCreator && !!reviewEditor?.draft() : preferences.ttml_creator) && openCreator && <button type="button" onClick={() => {
             if (fullscreen && !externalCinema) toggleFullscreen();
             openCreator();
           }}>Back to Creator</button>}
@@ -1126,6 +1135,7 @@ export default function start(options: BuildOptions) {
   let creatorOpen = false;
   let mainContainer: HTMLElement | undefined;
   const reviewEditor = createReviewEditor();
+  let reviewPreview: ReviewPreview | undefined;
   let reviewSidebar: {
     container: HTMLElement;
     root: Root;
@@ -1390,6 +1400,7 @@ export default function start(options: BuildOptions) {
     reviewSidebar.root.unmount();
     reviewSidebar.container.remove();
     reviewSidebar = undefined;
+    dismissReviewPreview();
     try { localStorage.removeItem(reviewSidebarKey); } catch { /* Storage may be unavailable. */ }
     if (!creatorEnabled) setCreator(false);
     reviewButton?.sync(false);
@@ -1398,6 +1409,7 @@ export default function start(options: BuildOptions) {
 
   function openReviewSidebar() {
     if (disposed || reviewSidebar) return;
+    closeNowPlayingView();
     const container = document.createElement("div");
     container.className = "lyssna-review-sidebar";
     container.setAttribute("data-scroll-size-contained", "");
@@ -1414,16 +1426,27 @@ export default function start(options: BuildOptions) {
     try { localStorage.setItem(reviewSidebarKey, "1"); } catch { /* Storage may be unavailable. */ }
     reviewButton?.sync(true);
     reviewSidebar.root.render(<ReviewPanel host={host} editor={reviewEditor} onClose={() => closeReview()}
-      onRefresh={() => reviewButton?.refresh()} onOpen={openReviewDraft} onPlay={(uri) => {
+      onRefresh={() => reviewButton?.refresh()} onOpen={openReviewDraft} onDismissPreview={dismissReviewPreview} onPlay={(uri, lyrics) => {
         const track = host.track();
         if (track && spotifySongUri(track.id) === uri) {
           const playback = creatorWindowPlayback?.trackId === track.id ? creatorWindowPlayback : undefined;
           if (playback ? !playback.playing : !host.playing()) (playback?.toggle ?? host.toggle)();
         } else void host.playTrack(uri).catch(error => host.notifyError(String(error)));
+        if (lyrics) {
+          reviewPreview = { uri, lyrics };
+          void open("review-preview");
+        }
       }} />);
   }
 
+  function dismissReviewPreview() {
+    if (!reviewPreview) return;
+    reviewPreview = undefined;
+    renderMainView?.();
+  }
+
   function openReviewDraft(request: ReviewOpen) {
+    dismissReviewPreview();
     reviewEditor.open(request);
     void open("review-edit").then(() => {
       if (creatorOpen || reviewEditor.request() !== request) return;
@@ -1432,16 +1455,21 @@ export default function start(options: BuildOptions) {
     });
   }
 
-  async function open(mode?: FullscreenMode | "creator" | "review-edit") {
+  async function open(mode?: FullscreenMode | "creator" | "review-edit" | "review-preview") {
     if (mode === "cinema" && creatorOpen) {
       openCinemaWindow();
       return;
     }
     if (mode === "creator" && !creatorEnabled && !creatorOpen) return;
     if (mode === "review-edit" && !reviewSidebar) return;
+    if (mode === "review-preview" && !reviewPreview) return;
     pendingView = undefined;
     if (close) {
       if (mode === "review-edit") setCreator(true);
+      else if (mode === "review-preview") {
+        if (creatorOpen) setCreator(false);
+        else renderMainView?.();
+      }
       else if (mode === "creator") setCreator(!creatorOpen);
       else if (mode) {
         setCreator(false);
@@ -1458,7 +1486,8 @@ export default function start(options: BuildOptions) {
       console.warn("[Lyssna Lyrics] Could not leave the other lyrics view:", error);
       return;
     } finally { switchingLyricsView = false; }
-    if (disposed || (mode === "review-edit" && !reviewEditor.request())) return;
+    if (disposed || (mode === "review-edit" && !reviewEditor.request()) ||
+      (mode === "review-preview" && !reviewPreview)) return;
     const parent = document.createElement("div");
     parent.className = "lyssna-lyrics-view";
     const main = host.mainView();
@@ -1476,6 +1505,7 @@ export default function start(options: BuildOptions) {
       enterFullscreen = undefined;
       showMainSettings = undefined;
       renderMainView = undefined;
+      reviewPreview = undefined;
       setCreator(false);
       mainContainer = undefined;
       button?.setActive(false);
@@ -1499,6 +1529,7 @@ export default function start(options: BuildOptions) {
     renderMainView = () => root.render(<SongSheetScope><LyricsView host={host} options={options} close={closeView} parent={parent} capture={capture}
       fullscreenRequest={fullscreenRequest} settingsRequest={settingsRequest} openCreator={() => setCreator(true)}
       closeCreator={creatorOpen ? closeCreator : undefined} reviewEditor={reviewEditor}
+      reviewPreview={reviewPreview} onDismissReviewPreview={dismissReviewPreview}
       onSidebarCover={setSidebarCover} onRecordingPlayback={setRecordingPlayback} /></SongSheetScope>);
     showMainSettings = (request) => {
       settingsRequest = request;
@@ -1511,7 +1542,7 @@ export default function start(options: BuildOptions) {
     };
     if (mode === "review-edit") setCreator(true);
     else if (mode === "creator" && creatorEnabled) setCreator(true);
-    else if (mode && mode !== "creator") enterFullscreen(mode);
+    else if (mode === "display" || mode === "cinema") enterFullscreen(mode);
     else renderMainView();
   }
 
