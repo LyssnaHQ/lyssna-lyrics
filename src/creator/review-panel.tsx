@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type DragEvent } from "react";
 import {
   ArrowLeft,
   CircleCheck,
@@ -16,6 +16,7 @@ import { revalidateLyssnaSong } from "../lyssna-provider";
 import { usePlayback } from "../playback";
 import { spotifySongUri } from "../spotify-song";
 import { TrackArtwork } from "../spotify-artwork";
+import { formatTime } from "./ttml-creator-model";
 import type { Lyrics } from "./types";
 import type { ReviewDraft, ReviewEditor, ReviewOpen } from "./review-editor";
 import {
@@ -49,6 +50,8 @@ const ago = (iso: string) => {
 };
 const who = (submission: ReviewSubmission) =>
   submission.submitter_name ? `@${submission.submitter_name}` : "Deleted user";
+const reviewQuoteType = "application/x-lyssna-review-quote";
+const decisionNoteLimit = 2000;
 
 /** Waiting submissions by lane; picking one hands it to `onPick`. */
 function ReviewQueue({
@@ -256,6 +259,7 @@ function ReviewDetail({ host, submission, playingUri, editing, opening, onPlay, 
   const [commentError, setCommentError] = useState(false);
   const [grade, setGrade] = useState<1 | 2 | 3>(3);
   const [note, setNote] = useState("");
+  const [quoteTooLong, setQuoteTooLong] = useState(false);
   const [reason, setReason] = useState<RejectReason>("low_effort");
   const [busy, setBusy] = useState(false);
   const [correction, setCorrection] = useState<{ original: ReviewSubmission; ttml: string; username: string }>();
@@ -401,6 +405,31 @@ function ReviewDetail({ host, submission, playingUri, editing, opening, onPlay, 
   };
   const changed = diff?.filter((row) => row.kind !== "same" || row.retimed);
 
+  const quoteDrag = (text: string, startMs?: number) => {
+    if (submission.status !== "pending" || correction || busy || !text.trim()) return {};
+    return {
+      draggable: true,
+      title: "Drag into the decision note to quote",
+      onDragStart(event: DragEvent<HTMLLIElement>) {
+        const time = startMs !== undefined ? `${formatTime(startMs)} ` : "";
+        event.dataTransfer.setData(reviewQuoteType, `${time}“${text.trim()}”`);
+        event.dataTransfer.effectAllowed = "copy";
+      },
+    };
+  };
+  const dropQuote = (event: DragEvent<HTMLTextAreaElement>) => {
+    delete event.currentTarget.dataset.quoteOver;
+    const quote = event.dataTransfer.getData(reviewQuoteType);
+    if (!quote) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const separator = note && !note.endsWith("\n") ? "\n" : "";
+    const next = note + separator + quote;
+    setQuoteTooLong(next.length > decisionNoteLimit);
+    if (next.length <= decisionNoteLimit) setNote(next);
+    event.currentTarget.focus({ preventScroll: true });
+  };
+
   return (
     <div className="review-detail">
       <header className="review-head">
@@ -449,7 +478,9 @@ function ReviewDetail({ host, submission, playingUri, editing, opening, onPlay, 
             </button>
           </div>
           {showPreview && <ol className="review-diff">
-            {preview.lines.map((line, index) => <li key={index}>{line.text}</li>)}
+            {preview.lines.map((line, index) => (
+              <li key={index} {...quoteDrag(line.text, preview.synced ? line.start_ms : undefined)}>{line.text}</li>
+            ))}
           </ol>}
         </section>
       )}
@@ -487,6 +518,7 @@ function ReviewDetail({ host, submission, playingUri, editing, opening, onPlay, 
                   <li
                     key={index}
                     data-kind={row.kind === "same" ? "retimed" : row.kind}
+                    {...quoteDrag(row.text)}
                   >
                     {row.text || "(empty line)"}
                   </li>
@@ -620,9 +652,18 @@ function ReviewDetail({ host, submission, playingUri, editing, opening, onPlay, 
               : "Note for the submitter (optional)"
           }
           aria-label="Decision note"
-          maxLength={2000}
-          onChange={(event) => setNote(event.target.value)}
+          maxLength={decisionNoteLimit}
+          onChange={(event) => { setNote(event.target.value); setQuoteTooLong(false); }}
+          onDragOver={(event) => {
+            if (!event.dataTransfer.types.includes(reviewQuoteType)) return;
+            event.preventDefault();
+            event.dataTransfer.dropEffect = "copy";
+            event.currentTarget.dataset.quoteOver = "";
+          }}
+          onDragLeave={(event) => { delete event.currentTarget.dataset.quoteOver; }}
+          onDrop={dropQuote}
         />
+        {quoteTooLong && <p className="review-empty" role="alert">This quote would exceed the 2,000-character note limit.</p>}
         <div className="review-buttons">
           {outcome === "approve" ? (
             <>

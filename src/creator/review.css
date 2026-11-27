@@ -217,6 +217,12 @@
   border-left: 3px solid;
   border-radius: 4px;
 }
+.review-diff li[draggable="true"] {
+  cursor: grab;
+}
+.review-diff li[draggable="true"]:hover {
+  box-shadow: inset 0 0 0 1px #ffffff35;
+}
 .review-diff li[data-kind="added"] {
   border-color: #1ed760;
   background: #1ed7601a;
@@ -252,7 +258,14 @@
 }
 .review-decide textarea {
   min-height: 60px;
-  resize: vertical;
+  inline-size: 100%;
+  box-sizing: border-box;
+  field-sizing: content;
+  resize: none;
+}
+.review-decide textarea[data-quote-over] {
+  outline: 2px solid var(--review-accent);
+  outline-offset: 1px;
 }
 .review-decide {
   --outcome: #1ed760;
