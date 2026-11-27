@@ -1,5 +1,10 @@
 # Lyssna Lyrics patch notes
 
+## v1.2.0-26b3caa
+
+- Give Review a simpler sidebar layout with Spotify-themed colors, lighter header controls, and the same gap from the main view as other panels.
+- Close Review automatically when you open another Spotify sidebar, including Connect, Queue, Now Playing, and Friend Activity.
+
 ## v1.2.0-179c067
 
 - Dock Review in Spotify’s right sidebar. It stays open while you browse or leave TTML Creator and reopens after a restart if you left it open.
