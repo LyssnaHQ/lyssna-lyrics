@@ -1,5 +1,9 @@
 # Lyssna Lyrics patch notes
 
+## v1.2.0-2ede60d
+
+- Fix Ctrl+C copying selected lyric lines and sections in TTML Creator when Spotify intercepts the key press.
+
 ## v1.2.0-3375aa2
 
 - Play song in Review opens the synced TTML Creator preview on the Lyrics page, including any edits you already made in the editor.
