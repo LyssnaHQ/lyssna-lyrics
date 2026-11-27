@@ -1774,6 +1774,12 @@ button[data-testid="fullscreen-mode-button"]:has(+ .lyssna-playbar-fullscreen) {
   text-align: left;
 }
 
+.lyssna-lyrics-view .lyssna-review-quote-menu button:disabled {
+  opacity: .45;
+  cursor: default;
+  background: transparent;
+}
+
 .lyssna-lyrics-view .plugin-settings .setting-pin {
   width: 28px;
   height: 28px;

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type DragEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type DragEvent } from "react";
 import {
   ArrowLeft,
   CircleCheck,
@@ -19,6 +19,7 @@ import { TrackArtwork } from "../spotify-artwork";
 import { formatTime, fromLyrics, joinHyphenated, toLyrics } from "./ttml-creator-model";
 import type { Lyrics } from "./types";
 import type { ReviewDraft, ReviewEditor, ReviewOpen } from "./review-editor";
+import type { ReviewQuote } from "./review-quote-menu";
 import {
   GRADES,
   REJECT_REASONS,
@@ -52,6 +53,8 @@ const who = (submission: ReviewSubmission) =>
   submission.submitter_name ? `@${submission.submitter_name}` : "Deleted user";
 const reviewQuoteType = "application/x-lyssna-review-quote";
 const decisionNoteLimit = 2000;
+const formatQuote = ({ text, startMs }: ReviewQuote) =>
+  `${startMs === undefined ? "" : `${formatTime(startMs)} `}“${text.trim().replace(/\s+/gu, " ")}”`;
 
 /** Waiting submissions by lane; picking one hands it to `onPick`. */
 function ReviewQueue({
@@ -195,7 +198,7 @@ function ReviewSongRow({ host, submission }: { host: Host; submission: ReviewSub
 export function ReviewPanel({ host, editor, onPlay, onOpen, onRefresh, onClose, onDismissPreview }: {
   host: Host;
   editor: ReviewEditor;
-  onPlay(uri: string, lyrics?: Lyrics): void;
+  onPlay(uri: string, lyrics?: Lyrics, onQuote?: (quote: ReviewQuote) => void): void;
   onOpen(open: ReviewOpen): void;
   onRefresh(): void;
   onClose(): void;
@@ -241,7 +244,7 @@ function ReviewDetail({ host, submission, playingUri, editing, opening, onPlay, 
   playingUri?: string;
   editing?: ReviewDraft;
   opening: boolean;
-  onPlay(uri: string, lyrics?: Lyrics): void;
+  onPlay(uri: string, lyrics?: Lyrics, onQuote?: (quote: ReviewQuote) => void): void;
   onOpen(open: ReviewOpen): void;
   onDecided(message: string): void;
   onRefresh(): void;
@@ -261,12 +264,16 @@ function ReviewDetail({ host, submission, playingUri, editing, opening, onPlay, 
   const [commentError, setCommentError] = useState(false);
   const [grade, setGrade] = useState<1 | 2 | 3>(3);
   const [note, setNote] = useState("");
+  const noteField = useRef<HTMLTextAreaElement>(null);
   const [quoteTooLong, setQuoteTooLong] = useState(false);
   const [reason, setReason] = useState<RejectReason>("low_effort");
   const [busy, setBusy] = useState(false);
   const [correction, setCorrection] = useState<{ original: ReviewSubmission; ttml: string; username: string }>();
   const [decisionError, setDecisionError] = useState("");
   const [outcome, setOutcome] = useState<ReviewAction>("approve");
+  const canQuote = submission.status === "pending" && !correction && !busy;
+  const quotingAllowed = useRef(canQuote);
+  quotingAllowed.current = canQuote;
   const id = submission.id;
   useEffect(() => {
     let live = true;
@@ -407,14 +414,29 @@ function ReviewDetail({ host, submission, playingUri, editing, opening, onPlay, 
   };
   const changed = diff?.filter((row) => row.kind !== "same" || row.retimed);
 
+  const appendQuote = useCallback((quote: string, beginComment = false) => {
+    const field = noteField.current;
+    if (!field || !quotingAllowed.current) return;
+    const previous = field.value;
+    const separator = previous && !previous.endsWith("\n") ? "\n" : "";
+    const next = previous + separator + quote + (beginComment ? "\n" : "");
+    const tooLong = next.length > decisionNoteLimit;
+    setQuoteTooLong(tooLong);
+    if (!tooLong) setNote(next);
+    window.requestAnimationFrame(() => {
+      if (!field.isConnected) return;
+      field.focus();
+      if (!tooLong) field.setSelectionRange(next.length, next.length);
+    });
+  }, []);
+  const commentOnQuote = useCallback((quote: ReviewQuote) => appendQuote(formatQuote(quote), true), [appendQuote]);
   const quoteDrag = (text: string, startMs?: number) => {
-    if (submission.status !== "pending" || correction || busy || !text.trim()) return {};
+    if (!canQuote || !text.trim()) return {};
     return {
       draggable: true,
       title: "Drag into the decision note to quote",
       onDragStart(event: DragEvent<HTMLLIElement>) {
-        const time = startMs !== undefined ? `${formatTime(startMs)} ` : "";
-        event.dataTransfer.setData(reviewQuoteType, `${time}“${text.trim()}”`);
+        event.dataTransfer.setData(reviewQuoteType, formatQuote({ text, startMs }));
         event.dataTransfer.effectAllowed = "copy";
       },
     };
@@ -425,11 +447,7 @@ function ReviewDetail({ host, submission, playingUri, editing, opening, onPlay, 
     if (!quote) return;
     event.preventDefault();
     event.stopPropagation();
-    const separator = note && !note.endsWith("\n") ? "\n" : "";
-    const next = note + separator + quote;
-    setQuoteTooLong(next.length > decisionNoteLimit);
-    if (next.length <= decisionNoteLimit) setNote(next);
-    event.currentTarget.focus({ preventScroll: true });
+    appendQuote(quote);
   };
 
   return (
@@ -459,7 +477,7 @@ function ReviewDetail({ host, submission, playingUri, editing, opening, onPlay, 
               (preview?.synced && preview.lines.every(line => line.words.length)
                 ? toLyrics(joinHyphenated(fromLyrics(preview)))
                 : preview);
-            onPlay(uri, draft?.lines.length ? draft : preview);
+            onPlay(uri, draft?.lines.length ? draft : preview, canQuote ? commentOnQuote : undefined);
           }}
         >
           <Play size={14} /> {playingIt ? "Playing" : "Play song"}
@@ -650,6 +668,7 @@ function ReviewDetail({ host, submission, playingUri, editing, opening, onPlay, 
           </>
         )}
         <textarea
+          ref={noteField}
           value={note}
           placeholder={
             outcome === "request-changes"

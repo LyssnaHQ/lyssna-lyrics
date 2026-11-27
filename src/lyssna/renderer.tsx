@@ -62,6 +62,7 @@ export function LyricsDisplay({
   compact = false,
   writers = [],
   upNext,
+  reviewQuotes = false,
 }: {
   lyrics: Lyrics;
   positionMs: number;
@@ -72,6 +73,7 @@ export function LyricsDisplay({
   writers?: string[];
   /** Sits beside the credits at the end of the lyrics. */
   upNext?: ReactNode;
+  reviewQuotes?: boolean;
 }) {
   const scroll = useRef<HTMLDivElement>(null);
   const scrollingWriters = useRef<HTMLDivElement>(null);
@@ -585,6 +587,7 @@ export function LyricsDisplay({
             <Fragment key={`${line.start_ms}-${index}`}>
               <LyricRow
                 line={line}
+                reviewIndex={reviewQuotes ? index : undefined}
                 action={lineActions[index]}
                 playing={playing}
                 past={!playing && scrollTime >= vocalEnd(line)}
@@ -680,6 +683,7 @@ const COUNTDOWN_REACH_MS = 3000;
  *  blur or ink changes render again, not every word of every line. */
 const LyricRow = memo(function LyricRow({
   line,
+  reviewIndex,
   action,
   playing,
   past,
@@ -692,6 +696,7 @@ const LyricRow = memo(function LyricRow({
   translation,
 }: {
   line: Line;
+  reviewIndex?: number;
   action: {
     ref: (element: HTMLButtonElement | null) => void;
     click: () => void;
@@ -712,7 +717,9 @@ const LyricRow = memo(function LyricRow({
       className={`lyric-line ${playing ? "active" : ""} ${line.background ? "background-vocal" : ""} ${line.opposite ? "opposite" : ""} ${past ? "past" : ""}`}
       style={{ "--blur": `${blur}px` } as CSSProperties}
       onClick={action.click}
-      disabled={!synced}
+      disabled={!synced && reviewIndex === undefined}
+      aria-disabled={!synced || undefined}
+      data-review-line={reviewIndex}
       // Clicking seeks without taking focus, so Space stays with play and
       // pause.
       onMouseDown={(event) => event.preventDefault()}
@@ -721,7 +728,7 @@ const LyricRow = memo(function LyricRow({
         {highlighter ? (
           <HighlighterWords line={line} time={time} followingStart={followingStart} />
         ) : (
-          <LyricWords line={line} appleStyle={appleStyle} />
+          <LyricWords line={line} appleStyle={appleStyle} reviewQuotes={reviewIndex !== undefined} />
         )}
       </span>
       {/* Lyrics can carry translations, such as Chinese under English; like
@@ -739,10 +746,17 @@ const LyricRow = memo(function LyricRow({
   );
 });
 
-const LyricWords = memo(function LyricWords({ line, appleStyle }: { line: Line; appleStyle: boolean }) {
+const LyricWords = memo(function LyricWords({ line, appleStyle, reviewQuotes }: {
+  line: Line;
+  appleStyle: boolean;
+  reviewQuotes?: boolean;
+}) {
   const groups = useMemo(() => wordGroups(line.words), [line]);
   if (!line.words.length)
-    return <span className="lyric-plain">{line.text}</span>;
+    return <span className="lyric-plain">{reviewQuotes
+      ? line.text.split(/(\s+)/u).map((part, index) => part.trim()
+        ? <span className="review-plain-word" key={index}>{part}</span> : part)
+      : line.text}</span>;
   return (
     <>
       {groups.flatMap((group, index) => {

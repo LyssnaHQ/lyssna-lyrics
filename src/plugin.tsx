@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactElement, type ReactNode, type RefObject } from "react";
+import { Fragment, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent, type ReactElement, type ReactNode, type RefObject } from "react";
 import { ChevronUp, Disc3, FilePenLine, FoldVertical, ListMusic, MessagesSquare, MicVocal, Music2, PanelLeftOpen, Settings as GearIcon, UnfoldVertical, X } from "lucide-react";
 import { getHost, type CanvasInfo, type Host, type Root, type Track } from "./host";
 import { spotifySongUri } from "./spotify-song";
@@ -56,6 +56,7 @@ import { useFirstUploadNotice } from "./first-upload-notice";
 import { CreatorSurface, type CreatorPlayback } from "./creator/surface";
 import { createReviewEditor, type ReviewEditor, type ReviewOpen } from "./creator/review-editor";
 import { ReviewPanel } from "./creator/review-panel";
+import { ReviewQuoteMenu, reviewQuoteTarget, type ReviewQuote, type ReviewQuoteTarget } from "./creator/review-quote-menu";
 import { resizeReviewSidebar, watchNativeSidebar } from "./creator/review-sidebar";
 import { reviewTopbar } from "./creator/review-topbar";
 import { startCreatorRepeatRecovery } from "./creator/repeat";
@@ -212,10 +213,11 @@ function MissingLyrics({ track, host, openCreator, searchAgain, openTtml }: {
   </div>;
 }
 
-function TrackLyrics({ track, host, playing, settings, compact = false, view = window, fullView = !compact, duration, lyrics, waiting, localPlayback, visualiser }: {
+function TrackLyrics({ track, host, playing, settings, compact = false, view = window, fullView = !compact, duration, lyrics, waiting, localPlayback, visualiser, onReviewQuote }: {
   track: Track; host: Host; playing: boolean; settings: Settings; compact?: boolean; view?: Window; fullView?: boolean;
   duration: number; lyrics?: Lyrics; waiting: boolean; localPlayback?: CreatorPlayback;
   visualiser?: RefObject<VisualiserFrame | null>;
+  onReviewQuote?(quote: ReviewQuote): void;
 }) {
   const playMarker = useLyssnaPlay(host, track.id, lyrics?.lyssna?.songId, lyrics?.external, playing, view);
   const position = usePosition(host, playing, view, localPlayback?.read);
@@ -230,6 +232,8 @@ function TrackLyrics({ track, host, playing, settings, compact = false, view = w
     !lyrics.instrumental && (lyrics.synced || duration > 0);
   const estimateTiming = settings.experimental_word_sync || gravity || (!lyrics?.synced && settings.lyrics_highlighter);
   const [analysis, setAnalysis] = useState<AudioAnalysisData>();
+  const [quoteTarget, setQuoteTarget] = useState<ReviewQuoteTarget>();
+  useEffect(() => setQuoteTarget(undefined), [onReviewQuote]);
   const [extraWriters, setExtraWriters] = useState<{ trackId: string; lyrics: Lyrics; appleEnabled: boolean; names: string[] }>();
   const appleEnabled = !settings.lyrics_sources_disabled.includes("apple");
   useEffect(() => {
@@ -269,23 +273,36 @@ function TrackLyrics({ track, host, playing, settings, compact = false, view = w
     </button>
   </div>;
 
-  if (gravity && rendered?.synced && rendered.lines.some((line) => line.words.length)) {
-    return <div className={fontClass} style={{ display: "contents" }}><span ref={playMarker} hidden /><SpaceGravityLyrics lyrics={rendered} time={time} reduceMotion={settings.reduce_motion}
-      tuning={settings.lyrics_animator} visualiser={visualiser} onSeek={(ms) => seek(ms - (playing && settings.lyrics_seek_compensation ? 300 : 0))}
-      wordDensity={settings.gravity_word_density}
-      showTranslations={settings.lyrics_translations}
-      highlighter={settings.lyrics_highlighter ? markerColour(settings.lyrics_highlighter_color) : undefined}
-      linkWidth={settings.gravity_links ? settings.gravity_link_width / 100 : 0}
-      credits={<div className={upNext ? "lyric-credits-row" : undefined}>
-        <div className="gravity-credit-details">
-          <WriterCredits names={rendered.songwriters?.length ? rendered.songwriters : fallbackWriters ?? []} />
-          <LyricCredits lyrics={rendered} expanded discord={settings.lyrics_discord_usernames} />
-        </div>
-        {upNext}
-      </div>} /></div>;
+  if (rendered) {
+    const openQuoteMenu = onReviewQuote && ((event: MouseEvent<HTMLElement>) => {
+      const target = reviewQuoteTarget(event, rendered);
+      if (!target) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setQuoteTarget(target);
+    });
+    return <div className={fontClass} style={{ display: "contents" }} onContextMenu={openQuoteMenu}>
+      <span ref={playMarker} hidden />
+      {gravity && rendered.synced && rendered.lines.some((line) => line.words.length)
+        ? <SpaceGravityLyrics lyrics={rendered} time={time} reduceMotion={settings.reduce_motion}
+          tuning={settings.lyrics_animator} visualiser={visualiser} onSeek={(ms) => seek(ms - (playing && settings.lyrics_seek_compensation ? 300 : 0))}
+          wordDensity={settings.gravity_word_density}
+          showTranslations={settings.lyrics_translations}
+          highlighter={settings.lyrics_highlighter ? markerColour(settings.lyrics_highlighter_color) : undefined}
+          linkWidth={settings.gravity_links ? settings.gravity_link_width / 100 : 0}
+          credits={<div className={upNext ? "lyric-credits-row" : undefined}>
+            <div className="gravity-credit-details">
+              <WriterCredits names={rendered.songwriters?.length ? rendered.songwriters : fallbackWriters ?? []} />
+              <LyricCredits lyrics={rendered} expanded discord={settings.lyrics_discord_usernames} />
+            </div>
+            {upNext}
+          </div>} />
+        : <LyricsDisplay lyrics={rendered} positionMs={time} playing={playing} settings={settings}
+          onSeek={seek} compact={compact} writers={fallbackWriters} upNext={upNext} reviewQuotes={!!onReviewQuote} />}
+      {onReviewQuote && quoteTarget && <ReviewQuoteMenu target={quoteTarget} view={view}
+        close={() => setQuoteTarget(undefined)} onQuote={onReviewQuote} />}
+    </div>;
   }
-  if (rendered) return <div className={fontClass} style={{ display: "contents" }}><span ref={playMarker} hidden /><LyricsDisplay lyrics={rendered} positionMs={time} playing={playing} settings={settings}
-    onSeek={seek} compact={compact} writers={fallbackWriters} upNext={upNext} /></div>;
   if (waiting && settings.lyrics_skeleton) return <LyricsSkeleton />;
   if (!waiting && !settings.lyrics_no_lyrics_notice) return null;
   return <div className="lyrics-message" role="status"><MicVocal />
@@ -556,7 +573,7 @@ function FullscreenControls({ host, playing, settings, view, trackId, narrating,
 }
 
 type FullscreenMode = "display" | "cinema";
-type ReviewPreview = { uri: string; lyrics: Lyrics };
+type ReviewPreview = { uri: string; lyrics: Lyrics; onQuote?: (quote: ReviewQuote) => void };
 type SettingsRequest = { page: "settings" | "storage"; trigger?: HTMLElement | null };
 
 function requestDisplayFullscreen(parent: HTMLElement) {
@@ -607,6 +624,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
   }, [draftUri, draftMatchesSource]);
   const savedPreview = pendingDraft || draftMatchesSource ? undefined : savedDraft;
   const reviewLyrics = reviewPreview && reviewPreview.uri === draftUri ? reviewPreview.lyrics : undefined;
+  const onReviewQuote = reviewLyrics ? reviewPreview?.onQuote : undefined;
   const draft = reviewLyrics ?? savedPreview;
   const [reviewerOverride, setReviewerOverride] = useState<boolean>();
   const draftReviewer = draft ? reviewerOverride ?? (preferences.ttml_reviewer !== "off") : undefined;
@@ -907,7 +925,8 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
     const keyboard = (event: KeyboardEvent) => {
       if (showCreator && !showSettings) return;
       if (event.key !== "Escape" && event.key !== "F11") return;
-      if (parent.querySelector(".lyssna-song-sheet[open]")) return;
+      if (parent.querySelector(".lyssna-song-sheet[open]") ||
+        (event.key === "Escape" && parent.querySelector(".lyssna-review-quote-menu:popover-open"))) return;
       event.preventDefault();
       event.stopImmediatePropagation();
       if (shownQuickPicker && event.key === "Escape") closeQuickPicker();
@@ -1051,7 +1070,7 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
             })} />
             : <TrackLyrics key={track.id} track={track} host={host} playing={playing} settings={settings} view={view}
               duration={duration} lyrics={lyrics} waiting={waiting} localPlayback={localPlayback}
-              visualiser={showVisualiser ? visualiser : undefined} />}
+              visualiser={showVisualiser ? visualiser : undefined} onReviewQuote={onReviewQuote} />}
         </div>}
         {draft && <div className="ttml-draft-banner">
           <span role="status">{reviewLyrics ? "Showing the review preview" : "Showing your TTML draft"}</span>
@@ -1441,14 +1460,14 @@ export default function start(options: BuildOptions) {
     try { localStorage.setItem(reviewSidebarKey, "1"); } catch { /* Storage may be unavailable. */ }
     reviewButton?.sync(true);
     reviewSidebar.root.render(<ReviewPanel host={host} editor={reviewEditor} onClose={() => closeReview()}
-      onRefresh={() => reviewButton?.refresh()} onOpen={openReviewDraft} onDismissPreview={dismissReviewPreview} onPlay={(uri, lyrics) => {
+      onRefresh={() => reviewButton?.refresh()} onOpen={openReviewDraft} onDismissPreview={dismissReviewPreview} onPlay={(uri, lyrics, onQuote) => {
         const track = host.track();
         if (track && spotifySongUri(track.id) === uri) {
           const playback = creatorWindowPlayback?.trackId === track.id ? creatorWindowPlayback : undefined;
           if (playback ? !playback.playing : !host.playing()) (playback?.toggle ?? host.toggle)();
         } else void host.playTrack(uri).catch(error => host.notifyError(String(error)));
         if (lyrics) {
-          reviewPreview = { uri, lyrics };
+          reviewPreview = { uri, lyrics, onQuote };
           void open("review-preview");
         }
       }} />);
