@@ -55,7 +55,7 @@ import { useFirstUploadNotice } from "./first-upload-notice";
 import { CreatorSurface, type CreatorPlayback } from "./creator/surface";
 import { createReviewEditor, type ReviewEditor, type ReviewOpen } from "./creator/review-editor";
 import { ReviewPanel } from "./creator/review-panel";
-import { watchNativeSidebar } from "./creator/review-sidebar";
+import { resizeReviewSidebar, watchNativeSidebar } from "./creator/review-sidebar";
 import { reviewTopbar } from "./creator/review-topbar";
 import { startCreatorRepeatRecovery } from "./creator/repeat";
 import { restoreCreatorPlaybackTransitions } from "./creator/playback-transitions";
@@ -1126,7 +1126,12 @@ export default function start(options: BuildOptions) {
   let creatorOpen = false;
   let mainContainer: HTMLElement | undefined;
   const reviewEditor = createReviewEditor();
-  let reviewSidebar: { container: HTMLElement; root: Root; native: ReturnType<typeof watchNativeSidebar> } | undefined;
+  let reviewSidebar: {
+    container: HTMLElement;
+    root: Root;
+    native: ReturnType<typeof watchNativeSidebar>;
+    resize: ReturnType<typeof resizeReviewSidebar>;
+  } | undefined;
   let disposed = false;
   let autoRecord = false;
   let recorder: { root: Root; container: HTMLElement } | undefined;
@@ -1369,8 +1374,9 @@ export default function start(options: BuildOptions) {
     const layout = host.mainView()?.parentElement;
     const docked = layout?.classList.contains("Root__top-container");
     const target = docked && layout ? layout : document.body;
-    const { container, native } = reviewSidebar;
+    const { container, native, resize } = reviewSidebar;
     container.classList.toggle("floating", !docked);
+    resize.place(!docked);
     if (container.parentElement !== target) target.append(container);
     native.sync(layout?.querySelector<HTMLElement>(":scope > .Root__right-sidebar") ??
       document.querySelector<HTMLElement>(".Root__right-sidebar"));
@@ -1379,6 +1385,7 @@ export default function start(options: BuildOptions) {
   function closeReview(restoreFocus = true) {
     if (!reviewSidebar) return;
     reviewSidebar.native.dispose();
+    reviewSidebar.resize.dispose();
     reviewEditor.cancel();
     reviewSidebar.root.unmount();
     reviewSidebar.container.remove();
@@ -1399,8 +1406,10 @@ export default function start(options: BuildOptions) {
     style.textContent = `${reviewCss}\n${scrollbars}`;
     const panel = document.createElement("div");
     panel.className = "review-sidebar-content";
-    shadow.append(style, panel);
-    reviewSidebar = { container, root: host.mount(panel), native: watchNativeSidebar(() => closeReview(false)) };
+    panel.id = "lyssna-review-content";
+    const resize = resizeReviewSidebar(container, panel.id);
+    shadow.append(style, resize.handle, panel);
+    reviewSidebar = { container, resize, root: host.mount(panel), native: watchNativeSidebar(() => closeReview(false)) };
     placeReviewSidebar();
     try { localStorage.setItem(reviewSidebarKey, "1"); } catch { /* Storage may be unavailable. */ }
     reviewButton?.sync(true);
@@ -1702,6 +1711,7 @@ export default function start(options: BuildOptions) {
       button?.remove();
       reviewButton?.dispose();
       reviewSidebar?.native.dispose();
+      reviewSidebar?.resize.dispose();
       reviewSidebar?.root.unmount();
       reviewSidebar?.container.remove();
       viewButtons.dispose();

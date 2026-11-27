@@ -1585,7 +1585,7 @@ export function TtmlCreator({
       const emptyAdder = target instanceof window.HTMLInputElement &&
         target.classList.contains("ttml-chip-add") && !target.value;
       if (!emptyAdder && target.closest("input, textarea, select, [contenteditable]:not([contenteditable='false'])")) return;
-      if (target.closest(".lyrics-settings-backdrop, .ttml-recording-popover, .ttml-spectrum-menu, .review-panel") ||
+      if (target.closest(".lyrics-settings-backdrop, .ttml-recording-popover, .ttml-spectrum-menu, .review-panel, .review-resize-handle") ||
         root.querySelector(".ttml-menu, .ttml-dialog")) return;
 
       event.preventDefault();
@@ -1635,7 +1635,7 @@ export function TtmlCreator({
       if (deleteKey !== (event.type === "keyup")) return;
       const target = event.composedPath()[0] as HTMLElement | null;
       if (deleteKey && !root.contains(target)) return;
-      if (target?.closest(".lyrics-settings-backdrop, .ttml-recording-popover, .ttml-spectrum-menu, .review-panel")) return;
+      if (target?.closest(".lyrics-settings-backdrop, .ttml-recording-popover, .ttml-spectrum-menu, .review-panel, .review-resize-handle")) return;
       if (root.querySelector(".ttml-menu, .ttml-dialog")) return;
       if (target?.closest(".ttml-bar button, .ttml-spectrum button") && event.key === "Enter") return;
       if (

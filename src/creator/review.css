@@ -10,6 +10,34 @@
   --review-accent: var(--text-bright-accent, #1ed760);
 }
 
+.review-resize-handle {
+  position: absolute;
+  z-index: 2;
+  inset-block: 0;
+  inset-inline-start: -8px;
+  width: 12px;
+  cursor: col-resize;
+  touch-action: none;
+  user-select: none;
+}
+.review-resize-handle::before {
+  position: absolute;
+  inset-block: 8px;
+  inset-inline-start: 3px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--text-subdued, #a7a7a7);
+  content: "";
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.review-resize-handle:is(:hover, :focus-visible, [data-resizing])::before {
+  opacity: .9;
+}
+.review-resize-handle:focus-visible {
+  outline: none;
+}
+
 .review-panel {
   box-sizing: border-box;
   height: 100%;

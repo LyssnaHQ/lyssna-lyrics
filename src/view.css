@@ -208,7 +208,7 @@ html.lyssna-optimize-volume .main-nowPlayingBar-volumeBar .playback-progressbar-
 .lyssna-review-sidebar {
   grid-area: right-sidebar;
   position: relative;
-  width: clamp(230px, 31vw, 420px);
+  width: var(--lyssna-review-width, clamp(230px, 31vw, 420px));
   min-height: 0;
 }
 .Root__top-container:has(> .lyssna-review-sidebar) > .Root__main-view {
@@ -220,7 +220,7 @@ html.lyssna-optimize-volume .main-nowPlayingBar-volumeBar .playback-progressbar-
 .lyssna-review-sidebar.floating {
   position: fixed;
   inset: 64px 8px 88px auto;
-  width: min(420px, calc(100vw - 16px));
+  width: var(--lyssna-review-width, min(420px, calc(100vw - 16px)));
   z-index: 10001;
 }
 
