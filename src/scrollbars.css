@@ -1,36 +1,36 @@
-:where(.lyssna-lyrics-view, .release-dialog, .lyssna-device-scroll) {
+:where(.lyssna-lyrics-view, .review-panel, .release-dialog, .lyssna-device-scroll) {
   scrollbar-color: auto;
 }
 
-:where(.lyssna-lyrics-view, .release-dialog, .lyssna-device-scroll)::-webkit-scrollbar,
-:where(.lyssna-lyrics-view, .release-dialog, .lyssna-device-scroll) *::-webkit-scrollbar {
+:where(.lyssna-lyrics-view, .review-panel, .release-dialog, .lyssna-device-scroll)::-webkit-scrollbar,
+:where(.lyssna-lyrics-view, .review-panel, .release-dialog, .lyssna-device-scroll) *::-webkit-scrollbar {
   width: 6px;
   height: 6px;
   background: transparent;
 }
 
-:where(.lyssna-lyrics-view, .release-dialog, .lyssna-device-scroll)::-webkit-scrollbar-button,
-:where(.lyssna-lyrics-view, .release-dialog, .lyssna-device-scroll) *::-webkit-scrollbar-button {
+:where(.lyssna-lyrics-view, .review-panel, .release-dialog, .lyssna-device-scroll)::-webkit-scrollbar-button,
+:where(.lyssna-lyrics-view, .review-panel, .release-dialog, .lyssna-device-scroll) *::-webkit-scrollbar-button {
   display: none;
   width: 0;
   height: 0;
 }
 
-:where(.lyssna-lyrics-view, .release-dialog, .lyssna-device-scroll)::-webkit-scrollbar-track,
-:where(.lyssna-lyrics-view, .release-dialog, .lyssna-device-scroll) *::-webkit-scrollbar-track,
-:where(.lyssna-lyrics-view, .release-dialog, .lyssna-device-scroll)::-webkit-scrollbar-corner,
-:where(.lyssna-lyrics-view, .release-dialog, .lyssna-device-scroll) *::-webkit-scrollbar-corner {
+:where(.lyssna-lyrics-view, .review-panel, .release-dialog, .lyssna-device-scroll)::-webkit-scrollbar-track,
+:where(.lyssna-lyrics-view, .review-panel, .release-dialog, .lyssna-device-scroll) *::-webkit-scrollbar-track,
+:where(.lyssna-lyrics-view, .review-panel, .release-dialog, .lyssna-device-scroll)::-webkit-scrollbar-corner,
+:where(.lyssna-lyrics-view, .review-panel, .release-dialog, .lyssna-device-scroll) *::-webkit-scrollbar-corner {
   background: transparent;
 }
 
-:where(.lyssna-lyrics-view, .release-dialog, .lyssna-device-scroll)::-webkit-scrollbar-thumb,
-:where(.lyssna-lyrics-view, .release-dialog, .lyssna-device-scroll) *::-webkit-scrollbar-thumb {
+:where(.lyssna-lyrics-view, .review-panel, .release-dialog, .lyssna-device-scroll)::-webkit-scrollbar-thumb,
+:where(.lyssna-lyrics-view, .review-panel, .release-dialog, .lyssna-device-scroll) *::-webkit-scrollbar-thumb {
   border-radius: 999px;
   background: var(--lyssna-scroll-thumb, light-dark(#0004, #fff4));
 }
 
-:where(.lyssna-lyrics-view, .release-dialog, .lyssna-device-scroll)::-webkit-scrollbar-thumb:hover,
-:where(.lyssna-lyrics-view, .release-dialog, .lyssna-device-scroll) *::-webkit-scrollbar-thumb:hover {
+:where(.lyssna-lyrics-view, .review-panel, .release-dialog, .lyssna-device-scroll)::-webkit-scrollbar-thumb:hover,
+:where(.lyssna-lyrics-view, .review-panel, .release-dialog, .lyssna-device-scroll) *::-webkit-scrollbar-thumb:hover {
   background: var(--lyssna-scroll-thumb-hover, light-dark(#0007, #fff7));
 }
 

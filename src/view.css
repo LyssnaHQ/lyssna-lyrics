@@ -172,6 +172,7 @@ html.lyssna-optimize-volume .main-nowPlayingBar-volumeBar .playback-progressbar-
 }
 
 .lyssna-review-topbar {
+  position: relative;
   display: inline-grid;
   flex: 0 0 32px;
   align-self: center;
@@ -191,6 +192,36 @@ html.lyssna-optimize-volume .main-nowPlayingBar-volumeBar .playback-progressbar-
 }
 .lyssna-review-topbar[aria-pressed="true"] {
   color: var(--text-bright-accent, #1ed760);
+}
+.lyssna-review-count {
+  position: absolute;
+  inset: 0 -4px auto auto;
+  min-width: 15px;
+  padding: 1px 3px;
+  border-radius: 10px;
+  background: var(--text-bright-accent, #1ed760);
+  color: #111;
+  font: 700 10px/13px system-ui, sans-serif;
+  text-align: center;
+  pointer-events: none;
+}
+.lyssna-review-sidebar {
+  grid-area: right-sidebar;
+  position: relative;
+  width: clamp(230px, 31vw, 380px);
+  min-height: 0;
+}
+.Root__top-container:has(> .lyssna-review-sidebar) > .Root__main-view {
+  grid-area: main-view;
+}
+.Root__top-container:has(> .lyssna-review-sidebar) > .Root__right-sidebar {
+  display: none;
+}
+.lyssna-review-sidebar.floating {
+  position: fixed;
+  inset: 64px 8px 88px auto;
+  width: min(380px, calc(100vw - 16px));
+  z-index: 10001;
 }
 
 .lyssna-playbar-button[aria-pressed="true"] {

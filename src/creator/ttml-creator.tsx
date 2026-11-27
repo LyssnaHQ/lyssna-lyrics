@@ -8,9 +8,11 @@ import {
   useCallback,
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import {
   ChevronDown,
@@ -44,10 +46,9 @@ import type { CreatorState } from "./types";
 import type { Lyrics, PlayerRequest, Track } from "./types";
 import { readCreatorSongwriters } from "./current-lyrics";
 import { creatorSpotifyTrack, readCreatorTrackMetadata } from "./track-metadata";
-import { lyricsChanged, parseLocalTtml } from "../local-lyrics";
-import { revalidateLyssnaSong } from "../lyssna-provider";
+import { parseLocalTtml } from "../local-lyrics";
 import type { SubmissionFeedback } from "../lyssna-submission";
-import { ReviewPanel, type ReviewOpen } from "./review-panel";
+import type { ReviewEditor } from "./review-editor";
 import {
   dismissSubmittedDraft,
   forgetWorking,
@@ -338,7 +339,7 @@ export function TtmlCreator({
   barSlot,
   playbar,
   onClose,
-  onCloseReview,
+  reviewEditor,
   instrumentalAction,
   localIsrc,
   draftPreview = false,
@@ -363,7 +364,7 @@ export function TtmlCreator({
   playbar?: CreatorPlaybarSlots;
   onClose?: () => void;
   instrumentalAction?: ReactNode;
-  onCloseReview?: () => void;
+  reviewEditor: ReviewEditor;
   localIsrc?: string;
   draftPreview?: boolean;
 }) {
@@ -371,8 +372,11 @@ export function TtmlCreator({
   const document = window.document;
   const focused = () => (root.getRootNode() as Document | ShadowRoot).activeElement;
   const playing = state.playback.item;
-  const reviewing = !!onCloseReview && !draftPreview;
+  const pendingReview = useSyncExternalStore(reviewEditor.subscribe, reviewEditor.request);
   const [track, setTrack] = useState<Track | undefined>(playing);
+  const [reviewEdit, setReviewEdit] = useState<{ id: string; uri: string; revision?: string; baseline: string }>();
+  const activeReview = !draftPreview && reviewEdit?.uri === track?.uri ? reviewEdit : undefined;
+  const reviewing = !!activeReview || !!pendingReview;
   useEffect(() => {
     if (!track && playing) setTrack(playing);
   }, [track, playing]);
@@ -2032,27 +2036,27 @@ export function TtmlCreator({
     [metadata, songMetadata],
   );
   const ttml = () => (songMetadata ? toTtml(lines, songMetadata, entries) : "");
-  const [pendingReview, setPendingReview] = useState<ReviewOpen | { uri: string; ttml?: never; submission?: never }>();
-  const [reviewEdit, setReviewEdit] = useState<{ id: string; uri: string; baseline: string }>();
+  const reviewPlayback = useRef({ onPlayer, uri: playing?.uri });
+  reviewPlayback.current = { onPlayer, uri: playing?.uri };
   useEffect(() => {
-    if (!pendingReview) return;
-    if (!reviewing) { setPendingReview(undefined); return; }
-    if (playing?.uri !== pendingReview.uri) {
-      const timeout = window.setTimeout(() => {
-        setPendingReview(undefined);
-        notify("Couldn’t open the song in Spotify. Try playing it again.", true);
-      }, 12_000);
-      return () => window.clearTimeout(timeout);
+    if (!pendingReview || draftPreview) return;
+    if (pendingReview.play || reviewPlayback.current.uri !== pendingReview.uri) {
+      reviewPlayback.current.onPlayer({ command: "play", uri: pendingReview.uri });
     }
+    const timeout = window.setTimeout(() => {
+      if (reviewEditor.request() !== pendingReview) return;
+      reviewEditor.cancel(pendingReview);
+      notify("Couldn’t open the submission in Spotify. Try again.", true);
+    }, 12_000);
+    return () => window.clearTimeout(timeout);
+  }, [pendingReview, draftPreview, reviewEditor, notify, window]);
+  useEffect(() => {
+    if (!pendingReview || draftPreview || playing?.uri !== pendingReview.uri) return;
     if (track?.uri !== pendingReview.uri) {
       setTrack(playing);
       return;
     }
     const { ttml: submittedTtml, submission } = pendingReview;
-    if (!submittedTtml || !submission) {
-      setPendingReview(undefined);
-      return;
-    }
     const { uri } = track;
     let live = true;
     void (async () => {
@@ -2071,7 +2075,7 @@ export function TtmlCreator({
           uri, savedAt: Date.now(), lines: previous.lines, text: previous.text, metadata: previous.metadata, appleOriginal: previous.appleOriginal,
         });
       }
-      if (!live) return;
+      if (!live || reviewEditor.request() !== pendingReview) return;
       editedFor.current = uri;
       setAppleOriginal(undefined);
       setLines(loaded);
@@ -2081,52 +2085,34 @@ export function TtmlCreator({
       setTextMode(false);
       setTab("write");
       setReviewEdit({
-        id: submission.id, uri, baseline: toTtml(loaded, song, reviewMetadata),
+        id: submission.id, uri, revision: submission.head_revision_id,
+        baseline: toTtml(loaded, song, withTrackMetadata(reviewMetadata, song)),
       });
-      setPendingReview(undefined);
+      reviewEditor.cancel(pendingReview);
       notify(previous ? "Submission opened. Your earlier draft is in Saves." : "Submission opened for review.");
     })().catch((error) => {
-      if (!live) return;
-      setPendingReview(undefined);
+      if (!live || reviewEditor.request() !== pendingReview) return;
+      reviewEditor.cancel(pendingReview);
       notify(`Couldn’t open the submission: ${String(error)}`, true);
     });
     return () => { live = false; };
-  }, [pendingReview, playing, track, reviewing, setLines, notify, window, flushDraft]);
-  const reviewPanel = reviewing && onCloseReview && (
-    <ReviewPanel
-      playing={playing}
-      isPlaying={isPlaying}
-      editing={done && reviewEdit?.uri === track?.uri ? reviewEdit : undefined}
-      opening={pendingReview?.submission?.id}
-      editorTtml={ttml}
-      onPlay={(uri) => {
-        setPendingReview({ uri });
-        onPlayer({ command: "play", uri });
-      }}
-      onOpen={(open, play) => {
-        setPendingReview(open);
-        if (play || playing?.uri !== open.uri) onPlayer({ command: "play", uri: open.uri });
-      }}
-      onCancelOpen={() => setPendingReview(undefined)}
-      onParse={async (text) => parseLocalTtml(text)}
-      onSubmitFix={async (text) => {
-        if (!track || track.uri !== reviewEdit?.uri) throw new Error("Open the submission in the editor first.");
-        flushDraft();
-        const feedback = await onSubmit(track, text);
-        if (feedback) onSubmitted(feedback);
-      }}
-      onDecided={(_submission, action, uri) => {
-        setReviewEdit(undefined);
-        setPendingReview(undefined);
-        if (action !== "approve" || !uri) return;
-        const trackId = uri.split(":").at(-1)!;
-        revalidateLyssnaSong(trackId);
-        window.dispatchEvent(new CustomEvent(lyricsChanged, { detail: [trackId] }));
-      }}
-      notify={notify}
-      onClose={onCloseReview}
-    />
+  }, [pendingReview, playing, track, draftPreview, reviewEditor, setLines, notify, flushDraft]);
+  const reviewTtml = useMemo(
+    () => activeReview && done && songMetadata ? toTtml(lines, songMetadata, entries) : "",
+    [activeReview, done, songMetadata, lines, entries],
   );
+  useLayoutEffect(() => {
+    reviewEditor.publish(activeReview && {
+      id: activeReview.id,
+      revision: activeReview.revision,
+      changed: !!reviewTtml && reviewTtml !== activeReview.baseline && !textMode,
+      save() {
+        flushDraft();
+        return songMetadata ? toTtml(linesRef.current, songMetadata, entries) : "";
+      },
+    });
+  }, [reviewEditor, activeReview, reviewTtml, songMetadata, entries, textMode, flushDraft]);
+  useLayoutEffect(() => () => reviewEditor.publish(), [reviewEditor]);
   const [editingMeta, setEditingMeta] = useState(false);
   const changeMetadata = (next: MetaEntry[]) => {
     setMetadata(next);
@@ -2421,7 +2407,6 @@ export function TtmlCreator({
         </button>
         {onClose && <button onClick={onClose}>Back to lyrics</button>}
         {savesDialog}
-        {reviewPanel}
       </section>
     );
 
@@ -3638,7 +3623,6 @@ export function TtmlCreator({
       {barSlot && createPortal(
         <CreatorSpectrogramToggle open={spectrogram} id={spectrogramId}
           onToggle={() => showSpectrogram(!spectrogram)} />, playbar?.spectrogram ?? barSlot)}
-      {reviewPanel}
     </section>
   );
 }

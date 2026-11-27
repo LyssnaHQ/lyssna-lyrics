@@ -53,6 +53,8 @@ import { SubmissionNotice } from "./submission-notice";
 import { useLocalTrackIsrc } from "./local-track-isrc";
 import { useFirstUploadNotice } from "./first-upload-notice";
 import { CreatorSurface, type CreatorPlayback } from "./creator/surface";
+import { createReviewEditor, type ReviewEditor, type ReviewOpen } from "./creator/review-editor";
+import { ReviewPanel } from "./creator/review-panel";
 import { reviewTopbar } from "./creator/review-topbar";
 import { startCreatorRepeatRecovery } from "./creator/repeat";
 import { restoreCreatorPlaybackTransitions } from "./creator/playback-transitions";
@@ -66,11 +68,13 @@ import fontCss from "./fonts/fonts.css?inline";
 import desktopCss from "./lyssna/lyrics.css?inline";
 import settingsCss from "./lyssna/settings.css?inline";
 import ttmlCss from "./lyssna/load-ttml.css?inline";
+import reviewCss from "./creator/review.css?inline";
 import viewCss from "./view.css?inline";
 import meterCss from "./creator/recording-meter.css?inline";
 import scrollbars from "./scrollbars.css?inline";
 
 const popupGlassAttribute = "data-lyssna-liquid-glass";
+const reviewSidebarKey = "lyssna-lyrics.review-sidebar-open";
 
 function useLiveSettings() {
   const [settings, setSettings] = useState(readSettings);
@@ -559,14 +563,14 @@ function requestDisplayFullscreen(parent: HTMLElement) {
 }
 
 function LyricsView({ host, options, close, parent, view = window, fullscreenRequest = 0, settingsRequest,
-  openCreator, closeCreator, closeReview, onSidebarCover, onRecordingPlayback, capture, detachedPreview }: {
+  openCreator, closeCreator, reviewEditor, onSidebarCover, onRecordingPlayback, capture, detachedPreview }: {
   host: Host; options: BuildOptions; close: () => void; parent: HTMLElement; view?: Window;
   capture: SpotifyCapture;
   fullscreenRequest?: number;
   settingsRequest?: SettingsRequest;
   openCreator?(): void;
   closeCreator?(): void;
-  closeReview?(): void;
+  reviewEditor?: ReviewEditor;
   onSidebarCover?(cover?: string): void;
   onRecordingPlayback?(playback?: CreatorPlayback): void;
   detachedPreview?: DetachedPreview;
@@ -996,9 +1000,9 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
     {!showCreator && backgroundImage && <img className="lyrics-background" src={backgroundImage}
       style={{ "--artwork-blur": `${settings.lyrics_background_blur}px` } as CSSProperties}
       onError={banner ? () => setArtistHeader((current) => current?.url === banner && current.uri === artistUri ? undefined : current) : undefined} alt="" />}
-    {(showCreator || keepCreator) && <div className="lyssna-creator-container" ref={creatorPage} style={pageStyle} data-draft-preview={keepCreator || undefined}>
+    {reviewEditor && (showCreator || keepCreator) && <div className="lyssna-creator-container" ref={creatorPage} style={pageStyle} data-draft-preview={keepCreator || undefined}>
       <CreatorSurface host={host} view={view} settings={preferences} close={closeCreator ?? close}
-        closeReview={closeReview} previewing={keepCreator} capture={capture} confirmFirstUpload={confirmFirstUpload}
+        reviewEditor={reviewEditor} previewing={keepCreator} capture={capture} confirmFirstUpload={confirmFirstUpload}
         onSubmitted={showSubmission}
         onLocalPlayback={setCreatorPlayback} manageStoredData={(trigger) => {
         settingsTrigger.current = trigger ?? undefined;
@@ -1120,8 +1124,8 @@ export default function start(options: BuildOptions) {
   let creatorEnabled = false;
   let creatorOpen = false;
   let mainContainer: HTMLElement | undefined;
-  let reviewOpen = false;
-  let reviewReusesCreator = false;
+  const reviewEditor = createReviewEditor();
+  let reviewSidebar: { container: HTMLElement; root: Root } | undefined;
   let disposed = false;
   let autoRecord = false;
   let recorder: { root: Root; container: HTMLElement } | undefined;
@@ -1129,7 +1133,7 @@ export default function start(options: BuildOptions) {
   let recorderPlayback: CreatorPlayback | undefined;
   let renderMainView: (() => void) | undefined;
   function syncRecorder() {
-    if (disposed || (!creatorEnabled && !reviewOpen)) {
+    if (disposed || (!creatorEnabled && !(reviewSidebar && creatorOpen))) {
       if (capture.state().status !== "idle") void capture.stop();
       recorder?.root.unmount();
       recorder?.container.remove();
@@ -1158,21 +1162,17 @@ export default function start(options: BuildOptions) {
     if (!playbarButtons) return;
     const controls = findPlaybarControls();
     button?.sync?.(controls);
-    playbarButtons.sync(controls, showPlaybarPopout, showPlaybarCinema && host.developerMode !== false, creatorEnabled || reviewOpen, creatorOpen);
+    playbarButtons.sync(controls, showPlaybarPopout, showPlaybarCinema && host.developerMode !== false, creatorEnabled || creatorOpen, creatorOpen);
   }
-  function setCreator(open: boolean, review = open && reviewOpen) {
-    if (creatorOpen === open && reviewOpen === review) return;
+  function setCreator(open: boolean) {
+    if (creatorOpen === open) return;
+    if (!open) reviewEditor.cancel();
     creatorOpen = open;
-    reviewOpen = review;
     mainContainer?.toggleAttribute("data-lyssna-creator-open", open);
     renderMainView?.();
     syncPlaybar();
     syncRecorder();
     detached?.renderPreview();
-    reviewButton?.sync(reviewOpen);
-  }
-  function closeReview() {
-    if (reviewOpen) setCreator(creatorEnabled && reviewReusesCreator, false);
   }
   type DetachedMode = "popout" | "cinema";
   let detached: { mode: DetachedMode; view: Window; dismiss(): void; renderPreview(): void } | undefined;
@@ -1191,7 +1191,7 @@ export default function start(options: BuildOptions) {
       showSpotifyMotion = motion;
       syncSpotifyMotion?.();
     }
-    if (!creatorEnabled && !reviewOpen) setCreator(false);
+    if (!creatorEnabled && !reviewSidebar) setCreator(false);
     syncPlaybar();
     syncRecorder();
     setFrameCap(settings.animation_fps_cap_enabled ? settings.animation_fps_cap : 0);
@@ -1363,26 +1363,72 @@ export default function start(options: BuildOptions) {
     });
   }
 
-  function activateReview() {
-    reviewReusesCreator = creatorOpen;
-    setCreator(true, true);
+  function placeReviewSidebar() {
+    if (!reviewSidebar) return;
+    const layout = host.mainView()?.parentElement;
+    const docked = layout?.classList.contains("Root__top-container");
+    const target = docked && layout ? layout : document.body;
+    const { container } = reviewSidebar;
+    container.classList.toggle("floating", !docked);
+    if (container.parentElement !== target) target.append(container);
   }
 
-  function toggleReviewQueue() {
-    if (disposed) return;
-    if (reviewOpen) closeReview();
-    else void open("review");
+  function closeReview() {
+    if (!reviewSidebar) return;
+    reviewEditor.cancel();
+    reviewSidebar.root.unmount();
+    reviewSidebar.container.remove();
+    reviewSidebar = undefined;
+    try { localStorage.removeItem(reviewSidebarKey); } catch { /* Storage may be unavailable. */ }
+    if (!creatorEnabled) setCreator(false);
+    reviewButton?.sync(false);
+    reviewButton?.focus();
   }
 
-  async function open(mode?: FullscreenMode | "creator" | "review") {
+  function openReviewSidebar() {
+    if (disposed || reviewSidebar) return;
+    const container = document.createElement("div");
+    container.className = "lyssna-review-sidebar";
+    container.setAttribute("data-scroll-size-contained", "");
+    const shadow = container.attachShadow({ mode: "open" });
+    const style = document.createElement("style");
+    style.textContent = `${reviewCss}\n${scrollbars}`;
+    const panel = document.createElement("div");
+    panel.className = "review-sidebar-content";
+    shadow.append(style, panel);
+    reviewSidebar = { container, root: host.mount(panel) };
+    placeReviewSidebar();
+    try { localStorage.setItem(reviewSidebarKey, "1"); } catch { /* Storage may be unavailable. */ }
+    reviewButton?.sync(true);
+    reviewSidebar.root.render(<ReviewPanel host={host} editor={reviewEditor} onClose={closeReview}
+      onRefresh={() => reviewButton?.refresh()} onOpen={openReviewDraft} onPlay={(uri) => {
+        const track = host.track();
+        if (track && spotifySongUri(track.id) === uri) {
+          const playback = creatorWindowPlayback?.trackId === track.id ? creatorWindowPlayback : undefined;
+          if (playback ? !playback.playing : !host.playing()) (playback?.toggle ?? host.toggle)();
+        } else void host.playTrack(uri).catch(error => host.notifyError(String(error)));
+      }} />);
+  }
+
+  function openReviewDraft(request: ReviewOpen) {
+    reviewEditor.open(request);
+    void open("review-edit").then(() => {
+      if (creatorOpen || reviewEditor.request() !== request) return;
+      reviewEditor.cancel(request);
+      host.notifyError("Couldn’t open TTML Creator. Try opening the submission again.");
+    });
+  }
+
+  async function open(mode?: FullscreenMode | "creator" | "review-edit") {
     if (mode === "cinema" && creatorOpen) {
       openCinemaWindow();
       return;
     }
-    if (mode === "creator" && !creatorEnabled) return;
+    if (mode === "creator" && !creatorEnabled && !creatorOpen) return;
+    if (mode === "review-edit" && !reviewSidebar) return;
     pendingView = undefined;
     if (close) {
-      if (mode === "review") activateReview();
+      if (mode === "review-edit") setCreator(true);
       else if (mode === "creator") setCreator(!creatorOpen);
       else if (mode) {
         setCreator(false);
@@ -1397,10 +1443,9 @@ export default function start(options: BuildOptions) {
     try { await host.leaveOtherLyricsView(); }
     catch (error) {
       console.warn("[Lyssna Lyrics] Could not leave the other lyrics view:", error);
-      if (mode === "review") host.notifyError("Couldn’t open the Creator. Try opening the review queue again.");
       return;
     } finally { switchingLyricsView = false; }
-    if (disposed) return;
+    if (disposed || (mode === "review-edit" && !reviewEditor.request())) return;
     const parent = document.createElement("div");
     parent.className = "lyssna-lyrics-view";
     const main = host.mainView();
@@ -1435,18 +1480,13 @@ export default function start(options: BuildOptions) {
     let settingsRequest: SettingsRequest | undefined;
     const closeView = () => dismiss();
     const closeCreator = () => {
-      const wasReviewing = reviewOpen;
       setCreator(false);
-      window.requestAnimationFrame(() => wasReviewing ? reviewButton?.focus() : playbarButtons?.focusCreator());
-    };
-    const dismissReview = () => {
-      closeReview();
-      window.requestAnimationFrame(() => reviewButton?.focus());
+      window.requestAnimationFrame(() => reviewSidebar ? reviewButton?.focus() : playbarButtons?.focusCreator());
     };
     renderMainView = () => root.render(<SongSheetScope><LyricsView host={host} options={options} close={closeView} parent={parent} capture={capture}
       fullscreenRequest={fullscreenRequest} settingsRequest={settingsRequest} openCreator={() => setCreator(true)}
-      closeCreator={creatorOpen ? closeCreator : undefined}
-      closeReview={reviewOpen ? dismissReview : undefined} onSidebarCover={setSidebarCover} onRecordingPlayback={setRecordingPlayback} /></SongSheetScope>);
+      closeCreator={creatorOpen ? closeCreator : undefined} reviewEditor={reviewEditor}
+      onSidebarCover={setSidebarCover} onRecordingPlayback={setRecordingPlayback} /></SongSheetScope>);
     showMainSettings = (request) => {
       settingsRequest = request;
       renderMainView?.();
@@ -1456,7 +1496,7 @@ export default function start(options: BuildOptions) {
       renderMainView?.();
       if (next === "display") requestDisplayFullscreen(parent);
     };
-    if (mode === "review") activateReview();
+    if (mode === "review-edit") setCreator(true);
     else if (mode === "creator" && creatorEnabled) setCreator(true);
     else if (mode && mode !== "creator") enterFullscreen(mode);
     else renderMainView();
@@ -1491,7 +1531,16 @@ export default function start(options: BuildOptions) {
   );
   const stopProfileSettings = host.profileMenuItem("Lyssna Lyrics settings", openProfileSettings);
   const uploadAs = uploadAsTopbar(host);
-  reviewButton = reviewTopbar(host, toggleReviewQueue, closeReview);
+  reviewButton = reviewTopbar(host, () => {
+    if (reviewSidebar) closeReview();
+    else {
+      openReviewSidebar();
+      reviewButton?.refresh();
+    }
+  }, closeReview, () => {
+    try { if (localStorage.getItem(reviewSidebarKey) === "1") openReviewSidebar(); }
+    catch { /* Storage may be unavailable. */ }
+  });
   const stopReleaseNotices = startReleaseNotices(host, options);
   const stopEnhancementStartup = startEnhancements(host);
   const stopLocalPlaylistPlayback = startLocalPlaylistPlayback(host);
@@ -1588,7 +1637,8 @@ export default function start(options: BuildOptions) {
     if (unloading) return;
     syncPlaybar();
     uploadAs.sync();
-    reviewButton?.sync(reviewOpen);
+    reviewButton?.sync(!!reviewSidebar);
+    placeReviewSidebar();
     if (pendingView) restoreView();
     else if (!rememberedView && !switchingLyricsView && host.viewLocation()) rememberView(false);
     const main = mainContainer && host.mainView();
@@ -1647,6 +1697,8 @@ export default function start(options: BuildOptions) {
       uploadAs.dispose();
       button?.remove();
       reviewButton?.dispose();
+      reviewSidebar?.root.unmount();
+      reviewSidebar?.container.remove();
       viewButtons.dispose();
       playbarArtwork.dispose();
       nowPlayingMotion.dispose();

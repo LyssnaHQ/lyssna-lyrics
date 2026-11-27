@@ -26,6 +26,7 @@ import { useCreatorRepeat } from "./repeat";
 import { useCreatorPlaybackTransitions } from "./playback-transitions";
 import { creatorPitchSpectrum, creatorSpectrum, creatorWaveform } from "./audio";
 import { TtmlCreator } from "./ttml-creator";
+import type { ReviewEditor } from "./review-editor";
 import { currentCreatorLyrics, within } from "./current-lyrics";
 import { dismissDraft } from "./ttml-working";
 import type { CreatorState, PlayerRequest, Track } from "./types";
@@ -63,10 +64,10 @@ async function seedTimings(host: Host, lyrics: Lyrics, duration: number, trackId
   } : undefined) ?? lyrics;
 }
 
-export function CreatorSurface({ host, view: owner, settings, close, closeReview, previewing, onLocalPlayback, onSubmitted, manageStoredData, capture, confirmFirstUpload }: {
+export function CreatorSurface({ host, view: owner, settings, close, reviewEditor, previewing, onLocalPlayback, onSubmitted, manageStoredData, capture, confirmFirstUpload }: {
   host: Host; view: Window; settings: Settings; close: () => void; previewing: boolean;
   capture: SpotifyCapture;
-  closeReview?: () => void;
+  reviewEditor: ReviewEditor;
   onLocalPlayback(playback: CreatorPlayback | undefined): void; manageStoredData(trigger: HTMLElement | null): void;
   onSubmitted(feedback: SubmissionFeedback, closeEditor?: boolean): void;
   confirmFirstUpload: () => Promise<boolean>;
@@ -623,7 +624,7 @@ export function CreatorSurface({ host, view: owner, settings, close, closeReview
           onSpeed={setSpeed} notify={notify} barSlot={previewing ? undefined : playbar?.wave ?? bar} playbar={playbar}
           onClose={close}
           onSubmitted={onSubmitted}
-          onCloseReview={closeReview}
+          reviewEditor={reviewEditor}
           localIsrc={localIsrc}
           instrumentalAction={track && !track.local && seed?.uri === current?.uri &&
             !seed?.lyrics?.lines.length && !seed?.lyrics?.instrumental

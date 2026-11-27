@@ -1,4 +1,5 @@
-import { hasLyssnaSession, lyssnaAccountRequest } from "../lyssna-account";
+import type { Host } from "../host";
+import { cachedLyssnaProfile, hasLyssnaSession, lyssnaAccountRequest, readLyssnaProfile } from "../lyssna-account";
 import type { Line, Lyrics } from "./types";
 
 export type ReviewLane = "priority" | "backlog";
@@ -59,6 +60,7 @@ interface ReviewSong {
   title: string;
   artists?: string[];
   links?: ReviewLink[];
+  current_revision_id?: string;
 }
 
 async function request(path: string, body?: object) {
@@ -95,9 +97,22 @@ export const decideReview = (
   decision: { grade?: number; reason?: RejectReason; note?: string },
 ) => post<ReviewSubmission>(`/v1/submissions/${segment(id)}/${action}`, decision);
 
+export async function submitReviewEdit(original: ReviewSubmission, ttml: string, username: string) {
+  const song = await get<ReviewSong>(`/v1/songs/${segment(original.song_id)}`);
+  if (!original.head_revision_id || song.current_revision_id !== original.head_revision_id) {
+    throw new Error("The live lyrics changed after approval. Check them before submitting your edit.");
+  }
+  const account = cachedLyssnaProfile() ?? await readLyssnaProfile();
+  if (account?.username !== username || !canReview(account.role)) {
+    throw new Error("Sign in with the Lyssna account that approved this submission.");
+  }
+  // This is the reviewer's own revision, independent of the admin upload identity.
+  return post<ReviewSubmission>("/v1/submissions", { song_id: original.song_id, ttml });
+}
+
 /** The Spotify track a submission is for: the song's own link, or for a new
  *  song, the one its submitter proposed. */
-export async function reviewTrackUri(submission: ReviewSubmission) {
+async function reviewTrack(submission: ReviewSubmission) {
   const spotify = (links?: ReviewLink[]) =>
     links?.find(
       (link) =>
@@ -105,12 +120,37 @@ export async function reviewTrackUri(submission: ReviewSubmission) {
         /^[A-Za-z0-9]{22}$/.test(link.external_id),
     )?.external_id;
   const proposed = spotify(submission.proposed_links);
-  if (proposed) return `spotify:track:${proposed}`;
+  if (proposed) return { id: proposed };
   const song = await get<ReviewSong>(`/v1/songs/${segment(submission.song_id)}`).catch(
     () => undefined,
   );
   const linked = spotify(song?.links);
-  return linked ? `spotify:track:${linked}` : undefined;
+  return { id: linked, artists: song?.artists?.join(", ") };
+}
+
+export type ReviewTrack = { uri?: string; cover?: string; artists?: string };
+const reviewTracks = new Map<string, Promise<ReviewTrack>>();
+
+export function reviewTrackInfo(submission: ReviewSubmission, host: Host) {
+  const cached = reviewTracks.get(submission.id);
+  if (cached) return cached;
+  const info = reviewTrack(submission).then(async ({ id, artists }) => {
+    if (!id) return { artists };
+    const uri = `spotify:track:${id}`;
+    const playing = host.track();
+    if (playing?.id === id && playing.cover) return { uri, cover: playing.cover, artists: playing.artists };
+    const track = await host.lookupTrack(id).catch(() => undefined);
+    const covers = track?.album?.images;
+    return { uri, cover: covers?.at(-1)?.url, artists: track?.artists?.map(artist => artist.name).join(", ") || artists };
+  });
+  reviewTracks.set(submission.id, info);
+  if (reviewTracks.size > 128) reviewTracks.delete(reviewTracks.keys().next().value!);
+  void info.then(track => {
+    if (!track.cover && reviewTracks.get(submission.id) === info) reviewTracks.delete(submission.id);
+  }, () => {
+    if (reviewTracks.get(submission.id) === info) reviewTracks.delete(submission.id);
+  });
+  return info;
 }
 
 export const REVIEWER_ROLES = ["reviewer", "moderator", "admin"];

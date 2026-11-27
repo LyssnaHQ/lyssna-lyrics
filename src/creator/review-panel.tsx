@@ -1,8 +1,6 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   ArrowLeft,
-  Maximize2,
-  Minimize2,
   CircleCheck,
   CircleX,
   MessageSquareWarning,
@@ -11,7 +9,15 @@ import {
   SquarePen,
   X,
 } from "lucide-react";
-import type { Lyrics, Track } from "./types";
+import type { Host } from "../host";
+import { cachedLyssnaProfile, readLyssnaProfile } from "../lyssna-account";
+import { parseLocalTtml, lyricsChanged } from "../local-lyrics";
+import { revalidateLyssnaSong } from "../lyssna-provider";
+import { usePlayback } from "../playback";
+import { spotifySongUri } from "../spotify-song";
+import { TrackArtwork } from "../spotify-artwork";
+import type { Lyrics } from "./types";
+import type { ReviewDraft, ReviewEditor, ReviewOpen } from "./review-editor";
 import {
   GRADES,
   REJECT_REASONS,
@@ -22,8 +28,9 @@ import {
   reviewComments,
   reviewQueue,
   reviewSubmission,
-  reviewTrackUri,
+  reviewTrackInfo,
   revisionTtml,
+  submitReviewEdit,
   type DiffRow,
   type EditKind,
   type RejectReason,
@@ -31,13 +38,8 @@ import {
   type ReviewComment,
   type ReviewLane,
   type ReviewSubmission,
+  type ReviewTrack,
 } from "./review-api";
-
-export interface ReviewOpen {
-  submission: ReviewSubmission;
-  uri: string;
-  ttml: string;
-}
 
 const ago = (iso: string) => {
   const minutes = Math.max(0, (Date.now() - Date.parse(iso)) / 60000);
@@ -50,15 +52,19 @@ const who = (submission: ReviewSubmission) =>
 
 /** Waiting submissions by lane; picking one hands it to `onPick`. */
 function ReviewQueue({
+  host,
   lane,
   onLane,
   onPick,
   onClose,
+  onRefresh,
 }: {
+  host: Host;
   lane: ReviewLane;
   onLane: (lane: ReviewLane) => void;
   onPick: (submission: ReviewSubmission) => void;
   onClose: () => void;
+  onRefresh(): void;
 }) {
   const [items, setItems] = useState<ReviewSubmission[] | null>(null);
   const [failed, setFailed] = useState<string>();
@@ -97,6 +103,7 @@ function ReviewQueue({
         <button disabled={!!opening} onClick={() => {
           setOpenError(undefined);
           setRefresh((count) => count + 1);
+          onRefresh();
         }} title="Refresh" aria-label="Refresh queue">
           <RefreshCw size={15} />
         </button>
@@ -135,7 +142,7 @@ function ReviewQueue({
           {items.map((item) => (
             <li key={item.id}>
               <button disabled={!!opening} aria-busy={opening === item.id} onClick={() => void pick(item)}>
-                <ReviewSongRow submission={item} />
+                <ReviewSongRow host={host} submission={item} />
               </button>
             </li>
           ))}
@@ -145,11 +152,27 @@ function ReviewQueue({
   );
 }
 
-function ReviewSongRow({ submission }: { submission: ReviewSubmission }) {
+function useReviewTrack(host: Host, submission: ReviewSubmission) {
+  const [track, setTrack] = useState<ReviewTrack>();
+  useEffect(() => {
+    let active = true;
+    void reviewTrackInfo(submission, host).then(
+      info => { if (active) setTrack(info); },
+      () => { if (active) setTrack({}); },
+    );
+    return () => { active = false; };
+  }, [host, submission]);
+  return track;
+}
+
+function ReviewSongRow({ host, submission }: { host: Host; submission: ReviewSubmission }) {
+  const track = useReviewTrack(host, submission);
   return (
     <>
+      <TrackArtwork className="review-cover" src={track?.cover} />
       <span className="review-song">
         <strong>{submission.song_title}</strong>
+        {track?.artists && <span>{track.artists}</span>}
         <small>
           {submission.instrumental ? "Instrumental" : submission.kind === "edit" ? "Edit" : "New"} · {who(submission)} ·
           Tier {submission.submitter_tier} · {ago(submission.submitted_at)}
@@ -164,139 +187,62 @@ function ReviewSongRow({ submission }: { submission: ReviewSubmission }) {
   );
 }
 
-/** The TTML Creator's review side panel: a submission's changes, comments
- *  and decision, or the queue to pick another. */
-export function ReviewPanel({
-  playing,
-  isPlaying,
-  editing,
-  opening,
-  editorTtml,
-  onPlay,
-  onOpen,
-  onCancelOpen,
-  onParse,
-  onSubmitFix,
-  onDecided,
-  notify,
-  onClose,
-}: {
-  playing?: Track;
-  isPlaying: boolean;
-  /** The submission loaded in the editor and the TTML it opened with. */
-  editing?: { id: string; baseline: string };
-  opening?: string;
-  editorTtml: () => string;
-  onPlay: (uri: string) => void;
-  onOpen: (open: ReviewOpen, play?: boolean) => void;
-  onCancelOpen: () => void;
-  onParse: (ttml: string) => Promise<Lyrics>;
-  onSubmitFix: (ttml: string) => Promise<void>;
-  onDecided: (submission: ReviewSubmission, action: ReviewAction, uri: string | null | undefined) => void;
-  notify: (message: string, error?: boolean) => void;
-  onClose: () => void;
+export function ReviewPanel({ host, editor, onPlay, onOpen, onRefresh, onClose }: {
+  host: Host;
+  editor: ReviewEditor;
+  onPlay(uri: string): void;
+  onOpen(open: ReviewOpen): void;
+  onRefresh(): void;
+  onClose(): void;
 }) {
   const [picked, setPicked] = useState<ReviewSubmission>();
   const [lane, setLane] = useState<ReviewLane>("priority");
-  const [minimised, setMinimised] = useState(false);
+  const [notice, setNotice] = useState("");
+  const { track, playing } = usePlayback(host);
+  const editing = useSyncExternalStore(editor.subscribe, editor.draft);
+  const opening = useSyncExternalStore(editor.subscribe, editor.request);
   const panel = useRef<HTMLElement>(null);
   useLayoutEffect(() => panel.current?.focus({ preventScroll: true }), []);
+  const back = () => {
+    const request = editor.request();
+    if (request && request.submission.id === picked?.id) editor.cancel(request);
+    setPicked(undefined);
+  };
   return (
-    <aside
-      className={`review-panel${minimised ? " minimised" : ""}`}
-      aria-label="Review"
-      ref={panel}
-      tabIndex={-1}
-      onKeyDown={(event) => {
-        if (event.key !== "Escape") return;
-        event.preventDefault();
-        event.stopPropagation();
-        onClose();
-      }}
-    >
-      {minimised && picked && (
-        <button
-          className="review-restore"
-          onClick={() => setMinimised(false)}
-          aria-label="Show review"
-        >
-          <span>
-            Reviewing <strong>{picked.song_title}</strong>
-          </span>
-          <Maximize2 size={14} />
-        </button>
-      )}
+    <aside className="review-panel" aria-label="Review" ref={panel} tabIndex={-1}>
       {picked ? (
-        <ReviewDetail
-          hidden={minimised}
-          onMinimise={() => setMinimised(true)}
-          key={picked.id}
-          submission={picked}
-          playing={playing}
-          isPlaying={isPlaying}
-          editing={editing?.id === picked.id ? editing : undefined}
-          opening={opening === picked.id}
-          editorTtml={editorTtml}
-          onPlay={onPlay}
-          onOpen={onOpen}
-          onParse={onParse}
-          onSubmitFix={onSubmitFix}
-          notify={notify}
-          onClose={onClose}
-          onBack={() => {
-            onCancelOpen();
-            setMinimised(false);
-            setPicked(undefined);
-          }}
-          onDecided={(submission, action, uri) => {
-            setMinimised(false);
-            setPicked(undefined);
-            onDecided(submission, action, uri);
-          }}
-        />
+        <ReviewDetail key={picked.id} host={host} submission={picked}
+          playingUri={playing && track ? spotifySongUri(track.id) : undefined}
+          editing={editing?.id === picked.id && editing.revision === picked.head_revision_id ? editing : undefined}
+          opening={opening?.submission.id === picked.id}
+          onPlay={onPlay} onOpen={onOpen} onClose={onClose} onBack={back}
+          onDecided={(message) => { setNotice(message); onRefresh(); setPicked(undefined); }} onRefresh={onRefresh} />
       ) : (
-        <ReviewQueue lane={lane} onLane={setLane} onPick={setPicked} onClose={onClose} />
+        <ReviewQueue host={host} lane={lane} onLane={setLane} onPick={(submission) => {
+          setNotice("");
+          setPicked(submission);
+        }} onClose={onClose} onRefresh={onRefresh} />
       )}
+      {notice && <p className="review-notice" role="status">{notice}</p>}
     </aside>
   );
 }
 
-function ReviewDetail({
-  submission,
-  playing,
-  isPlaying,
-  editing,
-  opening,
-  editorTtml,
-  onPlay,
-  onOpen,
-  onParse,
-  onSubmitFix,
-  notify,
-  onBack,
-  onClose,
-  hidden,
-  onMinimise,
-  onDecided,
-}: {
+function ReviewDetail({ host, submission, playingUri, editing, opening, onPlay, onOpen, onDecided, onRefresh, onBack, onClose }: {
+  host: Host;
   submission: ReviewSubmission;
-  playing?: Track;
-  isPlaying: boolean;
-  editing?: { id: string; baseline: string };
+  playingUri?: string;
+  editing?: ReviewDraft;
   opening: boolean;
-  editorTtml: () => string;
-  onPlay: (uri: string) => void;
-  onOpen: (open: ReviewOpen, play?: boolean) => void;
-  onParse: (ttml: string) => Promise<Lyrics>;
-  onSubmitFix: (ttml: string) => Promise<void>;
-  notify: (message: string, error?: boolean) => void;
-  onBack: () => void;
-  onClose: () => void;
-  hidden: boolean;
-  onMinimise: () => void;
-  onDecided: (submission: ReviewSubmission, action: ReviewAction, uri: string | null | undefined) => void;
+  onPlay(uri: string): void;
+  onOpen(open: ReviewOpen): void;
+  onDecided(message: string): void;
+  onRefresh(): void;
+  onBack(): void;
+  onClose(): void;
 }) {
-  const [uri, setUri] = useState<string | null>();
+  const track = useReviewTrack(host, submission);
+  const uri = track?.uri;
   const [ttml, setTtml] = useState<string | null>();
   const [preview, setPreview] = useState<Lyrics>();
   const [showPreview, setShowPreview] = useState(false);
@@ -310,32 +256,24 @@ function ReviewDetail({
   const [note, setNote] = useState("");
   const [reason, setReason] = useState<RejectReason>("low_effort");
   const [busy, setBusy] = useState(false);
+  const [correction, setCorrection] = useState<{ original: ReviewSubmission; ttml: string; username: string }>();
+  const [decisionError, setDecisionError] = useState("");
   const [outcome, setOutcome] = useState<ReviewAction>("approve");
   const id = submission.id;
-  // Callers pass fresh callbacks each render; the fetches below run once.
-  const parse = useRef(onParse);
-  parse.current = onParse;
-  const tell = useRef(notify);
-  tell.current = notify;
   useEffect(() => {
     let live = true;
-    void reviewTrackUri(submission).then(
-      (found) => live && setUri(found ?? null),
-    );
     if (submission.head_revision_id && !submission.instrumental)
       revisionTtml(submission.head_revision_id).then(
         (text) => {
           if (!live) return;
           setTtml(text);
-          void parse.current(text).then(
-            (lyrics) => { if (live) setPreview(lyrics); },
-            (error) => { if (live) tell.current(String(error), true); },
-          );
+          try { setPreview(parseLocalTtml(text)); }
+          catch (error) { host.notifyError(String(error)); }
         },
         (error) => {
           if (!live) return;
           setTtml(null);
-          tell.current(String(error), true);
+          host.notifyError(String(error));
         },
       );
     reviewComments(id).then(
@@ -345,7 +283,7 @@ function ReviewDetail({
     return () => {
       live = false;
     };
-  }, [submission, id]);
+  }, [submission, id, host]);
   useEffect(() => {
     if (!ttml || submission.kind !== "edit" || !submission.base_revision_id)
       return setDiff(null);
@@ -355,7 +293,7 @@ function ReviewDetail({
         .filter((line) => !line.background)
         .map((line) => ({ text: line.text, startMs: line.start_ms }));
     revisionTtml(submission.base_revision_id)
-      .then((base) => Promise.all([parse.current(base), parse.current(ttml)]))
+      .then((base) => [parseLocalTtml(base), parseLocalTtml(ttml)] as const)
       .then(
         ([before, after]) => {
           if (!live) return;
@@ -368,21 +306,52 @@ function ReviewDetail({
       live = false;
     };
   }, [ttml, submission]);
-  const playingIt = isPlaying && !!uri && playing?.uri === uri;
+  const playingIt = !!uri && playingUri === uri;
   const instrumental = !!submission.instrumental;
   const canDecide = instrumental || !!ttml;
-  const fixed = !instrumental && !!editing && editorTtml() !== editing.baseline;
-  const decide = async (
-    action: "approve" | "reject" | "request-changes",
-    then?: () => Promise<void>,
-  ) => {
-    if (busy || submission.status !== "pending" || !canDecide) return;
-    setBusy(true);
+  const refreshPublished = (published: ReviewSubmission) => {
+    const trackId = uri?.split(":").at(-1);
+    if (!trackId) return;
+    revalidateLyssnaSong(trackId, undefined, published.head_revision_id
+      ? { songId: published.song_id, revision: published.head_revision_id }
+      : undefined);
+    window.dispatchEvent(new CustomEvent(lyricsChanged, { detail: [trackId] }));
+  };
+  const publishCorrection = async (saved: NonNullable<typeof correction>) => {
     try {
+      const edited = await submitReviewEdit(saved.original, saved.ttml, saved.username);
+      if (edited.status === "approved") refreshPublished(edited);
+      onDecided(edited.status === "approved"
+        ? `Approved ${submission.song_title}. Your edit is live on Lyssna.`
+        : `Approved ${submission.song_title}. Your edit was submitted separately.`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setDecisionError(message);
+      host.notifyError(`Original approved. Couldn’t confirm your edit. ${message}`);
+    }
+  };
+  const retryCorrection = async () => {
+    if (busy || !correction) return;
+    setBusy(true);
+    setDecisionError("");
+    try { await publishCorrection(correction); }
+    finally { setBusy(false); }
+  };
+  const decide = async (action: ReviewAction, withEdits = false) => {
+    if (busy || submission.status !== "pending" || !canDecide) return;
+    if (withEdits && !editing?.changed) return;
+    setBusy(true);
+    setDecisionError("");
+    try {
+      const edit = withEdits && editing ? editing.save() : undefined;
+      if (withEdits && !edit) throw new Error("The editor draft is unavailable.");
+      const account = edit ? cachedLyssnaProfile() ?? await readLyssnaProfile() : undefined;
+      if (edit && !account) throw new Error("Sign in to Lyssna to submit your edit.");
       const latest = await reviewSubmission(id);
       if (latest.status !== "pending" || latest.head_revision_id !== submission.head_revision_id ||
         !!latest.instrumental !== instrumental) {
-        notify("This submission changed. Open it again from the queue.", true);
+        host.notifyError("This submission changed. Open it again from the queue.");
+        onRefresh();
         onBack();
         return;
       }
@@ -391,24 +360,25 @@ function ReviewDetail({
         reason: action === "reject" ? reason : undefined,
         note: note.trim() || undefined,
       });
-      if (then) {
-        try { await then(); }
-        catch (error) {
-          notify(`Approved ${submission.song_title}. Couldn’t submit your corrections: ${String(error)}`, true);
-          onDecided(decided, action, uri);
-          return;
-        }
+      if (action === "approve") refreshPublished(decided);
+      if (edit && account) {
+        const saved = { original: decided, ttml: edit, username: account.username };
+        setCorrection(saved);
+        onRefresh();
+        await publishCorrection(saved);
+        return;
       }
-      notify(
+      onDecided(
         action === "approve"
           ? `Approved ${submission.song_title}.`
           : action === "reject"
             ? `Rejected ${submission.song_title}.`
             : `Asked for changes to ${submission.song_title}.`,
       );
-      onDecided(decided, action, uri);
     } catch (error) {
-      notify(String(error), true);
+      const message = error instanceof Error ? error.message : String(error);
+      setDecisionError(message);
+      host.notifyError(message);
     } finally {
       setBusy(false);
     }
@@ -422,7 +392,7 @@ function ReviewDetail({
       setComments((list) => [...(list ?? []), comment]);
       setReply((current) => current.trim() === body ? "" : current);
     } catch (error) {
-      notify(String(error), true);
+      host.notifyError(String(error));
     } finally {
       setSending(false);
     }
@@ -430,19 +400,13 @@ function ReviewDetail({
   const changed = diff?.filter((row) => row.kind !== "same" || row.retimed);
 
   return (
-    <div className="review-detail" hidden={hidden}>
+    <div className="review-detail">
       <header className="review-head">
-        <button onClick={onBack} aria-label="Back to the queue">
+        <button disabled={busy} onClick={onBack} aria-label="Back to the queue">
           <ArrowLeft size={16} />
         </button>
+        <TrackArtwork className="review-cover" src={track?.cover} />
         <h3 title={submission.song_title}>{submission.song_title}</h3>
-        <button
-          onClick={onMinimise}
-          title="Minimise, to work on the lyrics"
-          aria-label="Minimise review"
-        >
-          <Minimize2 size={15} />
-        </button>
         <button onClick={onClose} aria-label="Close review">
           <X size={16} />
         </button>
@@ -454,19 +418,19 @@ function ReviewDetail({
       </p>
       <div className="review-buttons">
         <button
-          disabled={!uri || opening || (!instrumental && !!submission.head_revision_id && ttml === undefined)}
-          title={uri === null ? "No Spotify link for this song" : undefined}
+          disabled={!uri || opening || busy || (!instrumental && !!submission.head_revision_id && ttml === undefined)}
+          title={track && !uri ? "No Spotify link for this song" : undefined}
           onClick={() => {
             if (!uri) return;
-            if (ttml && !editing && !instrumental) onOpen({ submission, uri, ttml }, true);
+            if (ttml && !editing && !instrumental && !correction) onOpen({ submission, uri, ttml, play: true });
             else onPlay(uri);
           }}
         >
           <Play size={14} /> {playingIt ? "Playing" : "Play song"}
         </button>
-        {!instrumental && <button
-          disabled={!uri || !ttml || !!editing || opening}
-          onClick={() => uri && ttml && onOpen({ submission, uri, ttml })}
+        {!instrumental && !correction && <button
+          disabled={!uri || !ttml || !!editing || opening || busy}
+          onClick={() => uri && ttml && onOpen({ submission, uri, ttml, play: false })}
         >
           <SquarePen size={14} />{" "}
           {opening ? "Opening…" : editing ? "Opened in editor" : "Open in editor"}
@@ -566,10 +530,19 @@ function ReviewDetail({
           </button>
         </div>
       </section>
-      {submission.status !== "pending" ? (
+      {correction ? (
+        <section className="review-section">
+          <h4>Original approved</h4>
+          {decisionError
+            ? <><p role="alert">{decisionError}</p>
+                <button disabled={busy} onClick={() => void retryCorrection()}>Retry submitting your edit</button></>
+            : <p role="status">Submitting your edit…</p>}
+        </section>
+      ) : submission.status !== "pending" ? (
         <p className="review-empty">This submission is no longer waiting for review.</p>
       ) : <section className="review-section review-decide" data-outcome={outcome}>
         <h4>Decision</h4>
+        {decisionError && <p className="review-empty" role="alert">{decisionError}</p>}
         <div
           className="review-outcomes"
           role="radiogroup"
@@ -659,17 +632,15 @@ function ReviewDetail({
                 <CircleCheck size={14} /> {instrumental ? "Approve as instrumental" : "Approve"}
               </button>
               {!instrumental && <button
-                disabled={busy || !ttml || !fixed}
+                disabled={busy || !ttml || !editing?.changed}
                 title={
-                  fixed
+                  editing?.changed
                     ? "Approve, then submit your corrections as an edit credited to you"
                     : "Open it in the editor and make corrections first"
                 }
-                onClick={() =>
-                  void decide("approve", () => onSubmitFix(editorTtml()))
-                }
+                onClick={() => void decide("approve", true)}
               >
-                <SquarePen size={14} /> Fix and approve
+                <SquarePen size={14} /> Approve with edits
               </button>}
             </>
           ) : outcome === "request-changes" ? (
