@@ -1,5 +1,9 @@
 # Lyssna Lyrics patch notes
 
+## v1.2.0-dfb863d
+
+- Keep your current lyrics when you close TTML Creator without edits. Open the draft preview automatically only when your changes differ from the lyrics source.
+
 ## v1.2.0-2ede60d
 
 - Fix Ctrl+C copying selected lyric lines and sections in TTML Creator when Spotify intercepts the key press.
