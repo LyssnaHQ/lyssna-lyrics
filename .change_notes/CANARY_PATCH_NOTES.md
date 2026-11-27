@@ -1,5 +1,9 @@
 # Lyssna Lyrics patch notes
 
+## v1.2.0-bcb4fab
+
+- Drag the divider beside Review to resize the sidebar. The divider also supports arrow keys, and Review remembers its width.
+
 ## v1.2.0-26b3caa
 
 - Give Review a simpler sidebar layout with Spotify-themed colors, lighter header controls, and the same gap from the main view as other panels.
