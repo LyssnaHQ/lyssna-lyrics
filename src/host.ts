@@ -30,6 +30,7 @@ export type AudioSegment = { start: number; duration: number; pitches: number[];
 type AudioAnalysis = { segments?: AudioSegment[]; beats?: { start: number; duration: number }[]; track?: { duration?: number } };
 type ImageSource = { url?: string; width?: number; maxWidth?: number };
 type SpotifyHttp = { get(url: string): Promise<unknown> };
+type ClipboardAPI = { copy?(value: string): Promise<void> | void };
 type PlaybackToggle = { getValue(): Promise<boolean>; setValue(value: boolean): Promise<unknown> };
 type HeaderImages = { sources?: ImageSource[] };
 type TrackCredit = { name?: string; role?: string };
@@ -463,6 +464,11 @@ export function getHost() {
     notifyError(message: string) {
       if (spice?.showNotification) spice.showNotification(message, true);
       else console.warn(`[Lyssna Lyrics] ${message}`);
+    },
+    async copyText(text: string, view = window) {
+      const clipboard = (kit?.Platform.ClipboardAPI ?? spice?.Platform?.ClipboardAPI) as ClipboardAPI | undefined;
+      if (clipboard?.copy) await clipboard.copy(text);
+      else await view.navigator.clipboard.writeText(text);
     },
     track(): Track | null {
       const track = kit?.Player.track ?? currentTrack();

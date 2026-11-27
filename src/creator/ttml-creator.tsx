@@ -1581,6 +1581,50 @@ export function TtmlCreator({
   const revealTimingWord = useRef(false);
   const editable = !draftPreview && !textMode && lines.length > 0 && !previewing;
   useEffect(() => {
+    if (!editable) return;
+    let copiedOnPress = false;
+    const resetCopyKey = () => { copiedOnPress = false; };
+    const onCopyKey = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() !== "c") return;
+      const released = event.type === "keyup";
+      if (released && copiedOnPress) {
+        resetCopyKey();
+        return;
+      }
+      const shortcut = IS_MAC ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
+      if (!shortcut || event.shiftKey || event.altKey || event.isComposing || event.repeat) return;
+      const target = event.composedPath()[0];
+      if (!(target instanceof window.Element) || !root.contains(target) ||
+        target.closest("input, textarea, select, [contenteditable]:not([contenteditable='false'])") ||
+        root.querySelector(".ttml-menu, .ttml-dialog")) return;
+      const tree = root.getRootNode() as Node & { getSelection?(): Selection | null };
+      const selection = tree.getSelection?.() ?? window.getSelection();
+      if (selection?.toString()) return;
+
+      const { lines, cursor } = stateRef.current;
+      const picked = pickedRef.current;
+      const selected = picked.size ? lines.filter((_, index) => picked.has(index)) : lines.slice(cursor.line, cursor.line + 1);
+      const text = selected.map(textOf).join("\n");
+      if (!text.trim()) return;
+      // Spotify's desktop client may consume the press and deliver only the release.
+      copiedOnPress = !released;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      void host.copyText(text, window).then(
+        () => notify("Lyrics copied."),
+        () => notify("Couldn’t copy lyrics.", true),
+      );
+    };
+    window.addEventListener("keydown", onCopyKey, true);
+    window.addEventListener("keyup", onCopyKey, true);
+    window.addEventListener("blur", resetCopyKey);
+    return () => {
+      window.removeEventListener("keydown", onCopyKey, true);
+      window.removeEventListener("keyup", onCopyKey, true);
+      window.removeEventListener("blur", resetCopyKey);
+    };
+  }, [editable, host, notify, root, window]);
+  useEffect(() => {
     if (!track || draftPreview || textMode || previewing) return;
     const pressed = new Set<string>();
     const onHistoryKey = (event: KeyboardEvent) => {
@@ -1675,19 +1719,7 @@ export function TtmlCreator({
         gaps = spacesRef.current;
       const pickedLines = pickedRef.current;
       let handled = true;
-      if (ctrl && key === "c") {
-        if (event.isComposing || event.shiftKey || !root.contains(target)) return;
-        const tree = root.getRootNode() as Node & { getSelection?(): Selection | null };
-        const selection = tree.getSelection?.() ?? window.getSelection();
-        if (selection && !selection.isCollapsed) return;
-        const selected = pickedLines.size ? lines.filter((_, index) => pickedLines.has(index)) : [lines[cursor.line]];
-        const text = selected.filter(Boolean).map(textOf).join("\n");
-        if (!text.trim()) return;
-        void window.navigator.clipboard.writeText(text).then(
-          () => notify("Lyrics copied."),
-          () => notify("Couldn’t copy lyrics.", true),
-        );
-      } else if (!ctrl && erase && pickedLines.size) {
+      if (!ctrl && erase && pickedLines.size) {
         const next = removeLines(lines, pickedLines);
         setLines(next);
         setCursor(clampCursor(next, cursor));
@@ -1840,7 +1872,6 @@ export function TtmlCreator({
     setLines,
     changeSpeed,
     rate,
-    notify,
     root,
     window,
   ]);
@@ -2236,7 +2267,7 @@ export function TtmlCreator({
     />
   );
   const copy = () =>
-    void window.navigator.clipboard.writeText(ttml()).then(
+    void host.copyText(ttml(), window).then(
       () => notify("TTML copied."),
       () => notify("Couldn't copy the TTML.", true),
     );
