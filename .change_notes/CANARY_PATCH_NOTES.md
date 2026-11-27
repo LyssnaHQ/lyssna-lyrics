@@ -1,5 +1,9 @@
 # Lyssna Lyrics patch notes
 
+## v1.2.0-b2b0dc6
+
+- Approve with edits now recognizes a changed Creator draft for the same song and keeps it available after you close Creator. Use Resume saved draft in Review to recover a correction after reloading Spotify.
+
 ## v1.2.0-5d7630a
 
 - Right-click a lyric in the review preview to comment on the line or word. The decision note gets a timestamped quote and is ready for your feedback.
