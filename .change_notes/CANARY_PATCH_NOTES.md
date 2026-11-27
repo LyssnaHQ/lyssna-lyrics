@@ -1,5 +1,9 @@
 # Lyssna Lyrics patch notes
 
+## v1.2.0-1f0d9dd
+
+- Let decision notes grow as you type and drag lyrics from the review preview or changes list into a note as quotes. Timed preview lines include their timestamps.
+
 ## v1.2.0-bcb4fab
 
 - Drag the divider beside Review to resize the sidebar. The divider also supports arrow keys, and Review remembers its width.
