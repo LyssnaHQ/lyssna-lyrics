@@ -1,5 +1,10 @@
 # Lyssna Lyrics patch notes
 
+## v1.2.0-77988c4
+
+- Right-click lines or words in TTML Creator to add timestamped quotes to the open review for that song.
+- Keep the review comment menu available when you leave Creator and view the draft preview.
+
 ## v1.2.0-b2b0dc6
 
 - Approve with edits now recognizes a changed Creator draft for the same song and keeps it available after you close Creator. Use Resume saved draft in Review to recover a correction after reloading Spotify.
