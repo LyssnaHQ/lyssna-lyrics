@@ -1,5 +1,11 @@
 # Lyssna Lyrics patch notes
 
+## v1.2.0-3375aa2
+
+- Play song in Review opens the synced TTML Creator preview on the Lyrics page, including any edits you already made in the editor.
+- Press Ctrl+C or Cmd+C to copy selected lyric lines as plain text. Right-click a section heading and choose Select section to copy the whole section.
+- Opening Review closes Spotify’s Now Playing View and clears its playbar button.
+
 ## v1.2.0-16eba48
 
 - Play song in Review starts playback and opens the Submitted lyrics preview. Use Open in editor to edit the submission.
