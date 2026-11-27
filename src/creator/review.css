@@ -1,9 +1,13 @@
 .review-sidebar-content {
   height: 100%;
-  color: #fff;
-  font: 14px "Lyssna Metropolis", "Segoe UI", sans-serif;
+  color: var(--text-base, #f5f5f5);
+  font-size: 14px;
+  font-family: var(--encore-body-font-stack, inherit);
   color-scheme: dark;
-  --muted: #a9a9a9;
+  --muted: var(--text-subdued, #b3b3b3);
+  --review-surface: var(--background-base, #121212);
+  --review-hover: var(--background-elevated-base, #242424);
+  --review-accent: var(--text-bright-accent, #1ed760);
 }
 
 .review-panel {
@@ -11,13 +15,9 @@
   height: 100%;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 16px;
-  overflow-y: auto;
-  border: 1px solid #ffffff17;
-  border-radius: 14px;
-  background: var(--lyssna-popup-fill-dark, #1c1c1c);
-  backdrop-filter: var(--lyssna-popup-blur, none);
+  overflow: hidden auto;
+  border-radius: 8px;
+  background: var(--review-surface);
   text-align: left;
 }
 .review-panel:focus {
@@ -45,18 +45,53 @@
   cursor: default;
 }
 .review-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   display: flex;
+  flex: none;
+  min-height: 64px;
+  padding-inline: 16px;
   align-items: center;
   gap: 8px;
+  background: var(--review-surface);
 }
 .review-head h3 {
   flex: 1;
   min-width: 0;
   margin: 0;
   overflow: hidden;
-  font-size: 18px;
+  font-size: 16px;
+  font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.review-head .review-icon {
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  justify-content: center;
+  padding: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+}
+.review-head .review-icon:hover:not(:disabled) {
+  color: inherit;
+  background: var(--review-hover);
+}
+.review-queue,
+.review-detail {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  padding-bottom: 16px;
+  gap: 12px;
+}
+.review-queue {
+  padding-inline: 8px;
+}
+.review-detail > :not(.review-head) {
+  margin-inline: 16px;
 }
 .review-lanes,
 .review-choice,
@@ -65,14 +100,28 @@
   flex-wrap: wrap;
   gap: 6px;
 }
-.review-lanes button.active,
+.review-lanes {
+  margin: 0 8px;
+  border-bottom: 1px solid #ffffff12;
+}
+.review-lanes button {
+  border-radius: 6px 6px 0 0;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  background: transparent;
+  font-weight: 600;
+}
+.review-lanes button.active {
+  border-bottom-color: var(--review-accent);
+  color: var(--text-base, #f5f5f5);
+}
 .review-choice button.active {
   color: #000;
   background: #f3f3f3;
 }
 .review-list {
   display: grid;
-  gap: 6px;
+  gap: 4px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -83,6 +132,9 @@
   color: #a9a9a9;
   font-size: 12px;
 }
+.review-queue > .review-empty {
+  margin-inline: 8px;
+}
 .review-instrumental {
   margin: 0;
   padding: 10px 12px;
@@ -90,11 +142,6 @@
   border-radius: 8px;
   color: #d6d6d6;
   font-size: 13px;
-}
-.review-detail {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 12px;
 }
 .review-section {
   display: grid;
@@ -230,15 +277,22 @@
 .review-list button {
   display: flex;
   width: 100%;
-  padding: 8px 10px;
+  gap: 12px;
+  padding: 10px 12px;
+  background: transparent;
   text-align: left;
+}
+.review-list button:hover:not(:disabled),
+.review-list button[aria-busy="true"] {
+  background: var(--review-hover);
 }
 .review-song {
   display: grid;
-  gap: 4px;
+  gap: 3px;
   min-width: 0;
 }
 .review-song strong {
+  font-size: 14px;
   overflow-wrap: anywhere;
 }
 .review-song small {
@@ -265,7 +319,7 @@
   height: 19px;
 }
 .review-notice {
-  margin: 0;
+  margin: 0 16px 16px;
   color: #a8ecbc;
   font-size: 13px;
 }

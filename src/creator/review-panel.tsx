@@ -100,54 +100,56 @@ function ReviewQueue({
     <>
       <header className="review-head">
         <h3>Review</h3>
-        <button disabled={!!opening} onClick={() => {
+        <button className="review-icon" disabled={!!opening} onClick={() => {
           setOpenError(undefined);
           setRefresh((count) => count + 1);
           onRefresh();
         }} title="Refresh" aria-label="Refresh queue">
           <RefreshCw size={15} />
         </button>
-        <button onClick={onClose} aria-label="Close review">
+        <button className="review-icon" onClick={onClose} aria-label="Close review">
           <X size={16} />
         </button>
       </header>
-      <div className="review-lanes" role="tablist">
-        {(
-          [
-            ["priority", "Priority"],
-            ["backlog", "Backlog"],
-          ] as const
-        ).map(([value, label]) => (
-          <button
-            key={value}
-            role="tab"
-            aria-selected={lane === value}
-            disabled={!!opening}
-            className={lane === value ? "active" : ""}
-            onClick={() => { setOpenError(undefined); onLane(value); }}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-      {openError && <p className="review-empty" role="alert">{openError}</p>}
-      {failed ? (
-        <p className="review-empty">{failed}</p>
-      ) : items === null ? (
-        <p className="review-empty">Loading…</p>
-      ) : !items.length ? (
-        <p className="review-empty">Nothing waiting here.</p>
-      ) : (
-        <ul className="review-list">
-          {items.map((item) => (
-            <li key={item.id}>
-              <button disabled={!!opening} aria-busy={opening === item.id} onClick={() => void pick(item)}>
-                <ReviewSongRow host={host} submission={item} />
-              </button>
-            </li>
+      <div className="review-queue">
+        <div className="review-lanes" role="tablist" aria-label="Review queues">
+          {(
+            [
+              ["priority", "Priority"],
+              ["backlog", "Backlog"],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              role="tab"
+              aria-selected={lane === value}
+              disabled={!!opening}
+              className={lane === value ? "active" : ""}
+              onClick={() => { setOpenError(undefined); onLane(value); }}
+            >
+              {label}
+            </button>
           ))}
-        </ul>
-      )}
+        </div>
+        {openError && <p className="review-empty" role="alert">{openError}</p>}
+        {failed ? (
+          <p className="review-empty">{failed}</p>
+        ) : items === null ? (
+          <p className="review-empty">Loading…</p>
+        ) : !items.length ? (
+          <p className="review-empty">Nothing waiting here.</p>
+        ) : (
+          <ul className="review-list">
+            {items.map((item) => (
+              <li key={item.id}>
+                <button disabled={!!opening} aria-busy={opening === item.id} onClick={() => void pick(item)}>
+                  <ReviewSongRow host={host} submission={item} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </>
   );
 }
@@ -402,12 +404,12 @@ function ReviewDetail({ host, submission, playingUri, editing, opening, onPlay, 
   return (
     <div className="review-detail">
       <header className="review-head">
-        <button disabled={busy} onClick={onBack} aria-label="Back to the queue">
+        <button className="review-icon" disabled={busy} onClick={onBack} aria-label="Back to the queue">
           <ArrowLeft size={16} />
         </button>
         <TrackArtwork className="review-cover" src={track?.cover} />
         <h3 title={submission.song_title}>{submission.song_title}</h3>
-        <button onClick={onClose} aria-label="Close review">
+        <button className="review-icon" onClick={onClose} aria-label="Close review">
           <X size={16} />
         </button>
       </header>

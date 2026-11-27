@@ -318,7 +318,7 @@ html.ll-enhancements-profile-cleanup :is(
   display: none !important;
 }
 
-.spotify-plus-disable-peek:has([data-spotify-plus-peek-hidden="true"]) :is(#main-view, .Root__main-view) {
+.spotify-plus-disable-peek:has([data-spotify-plus-peek-hidden="true"]) :is(#main-view, .Root__main-view):not(:has(~ .lyssna-review-sidebar)) {
   width: calc(100% + var(--panel-gap));
 }
 
