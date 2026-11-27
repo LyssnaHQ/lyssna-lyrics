@@ -1,5 +1,11 @@
 # Lyssna Lyrics patch notes
 
+## v1.2.0-179c067
+
+- Dock Review in Spotify’s right sidebar. It stays open while you browse or leave TTML Creator and reopens after a restart if you left it open.
+- Show album covers in the review queue and on submissions. The top-bar button shows how many submissions are waiting across Priority and Backlog.
+- Approve with edits publishes the original submission, then sends your corrections as a separate revision under your signed-in Lyssna account. If the correction fails, retry it from the review sidebar.
+
 ## v1.2.0-dcfa5ba
 
 - Reduce stalls during TTML Creator playback by keeping word controls near the viewport and suspending layout for the Spotify page covered by the editor.
