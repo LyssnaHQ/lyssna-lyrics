@@ -1,5 +1,9 @@
 # Lyssna Lyrics patch notes
 
+## v1.2.0-5d7630a
+
+- Right-click a lyric in the review preview to comment on the line or word. The decision note gets a timestamped quote and is ready for your feedback.
+
 ## v1.2.0-dfb863d
 
 - Keep your current lyrics when you close TTML Creator without edits. Open the draft preview automatically only when your changes differ from the lyrics source.
