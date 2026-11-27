@@ -10,6 +10,8 @@ export type ReviewQuoteTarget = {
   word?: ReviewQuote;
 };
 
+const wordSelector = ".lyric-main :is(.lyric-word-group, .highlighter-word, .review-plain-word), .gravity-word";
+
 export function reviewQuoteTarget(event: MouseEvent<HTMLElement>, lyrics: Lyrics): ReviewQuoteTarget | undefined {
   if (!(event.target instanceof Element)) return;
   const row = event.target.closest<HTMLElement>(".lyric-line[data-review-line], .gravity-line[data-line]");
@@ -17,7 +19,10 @@ export function reviewQuoteTarget(event: MouseEvent<HTMLElement>, lyrics: Lyrics
   const lyric = lyrics.lines[Number(row.dataset.reviewLine ?? row.dataset.line)];
   if (!lyric?.text.trim()) return;
   const line = { text: lyric.text, startMs: lyrics.synced ? lyric.start_ms : undefined };
-  const wordElement = event.target.closest(".lyric-main :is(.lyric-word-group, .highlighter-word, .review-plain-word), .gravity-word");
+  const wordElement = event.target.closest(wordSelector) ?? Array.from(row.querySelectorAll(wordSelector)).find(word =>
+    Array.from(word.getClientRects()).some(rect =>
+      event.clientX >= rect.left && event.clientX <= rect.right &&
+      event.clientY >= rect.top && event.clientY <= rect.bottom));
   const wordText = wordElement?.textContent?.trim();
   const firstSyllable = wordElement?.querySelector<HTMLElement>(".lyric-syllable[data-start]");
   const start = Number(firstSyllable?.dataset.start);

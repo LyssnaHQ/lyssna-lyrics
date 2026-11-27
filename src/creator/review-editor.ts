@@ -1,4 +1,6 @@
+import { useSyncExternalStore } from "react";
 import type { ReviewSubmission } from "./review-api";
+import type { ReviewQuote } from "./review-quote-menu";
 import type { CreatorLine } from "./ttml-creator-model";
 
 export type ReviewOpen = {
@@ -17,10 +19,18 @@ export type ReviewDraft = {
   save(): string;
 };
 
+type ReviewQuoteContext = {
+  uri: string;
+  id: string;
+  revision?: string;
+  comment(quote: ReviewQuote): void;
+};
+
 /** The editor and the Spotify sidebar have independent lifetimes. */
 export function createReviewEditor() {
   let request: ReviewOpen | undefined;
   let draft: ReviewDraft | undefined;
+  let quoteContext: ReviewQuoteContext | undefined;
   const listeners = new Set<() => void>();
   const update = () => listeners.forEach(listener => listener());
   return {
@@ -30,6 +40,16 @@ export function createReviewEditor() {
     },
     request: () => request,
     draft: () => draft,
+    quoteContext: () => quoteContext,
+    registerQuoteContext(context: ReviewQuoteContext) {
+      quoteContext = context;
+      update();
+      return () => {
+        if (quoteContext !== context) return;
+        quoteContext = undefined;
+        update();
+      };
+    },
     open(next: ReviewOpen) {
       request = next;
       update();
@@ -53,3 +73,14 @@ export function createReviewEditor() {
 }
 
 export type ReviewEditor = ReturnType<typeof createReviewEditor>;
+
+const noQuoteContext = () => undefined;
+const noReviewSubscription = () => () => {};
+
+export function useReviewComments(editor: ReviewEditor | undefined, uri: string | undefined,
+  submission?: { id: string; revision?: string }) {
+  const context = useSyncExternalStore(editor?.subscribe ?? noReviewSubscription, editor?.quoteContext ?? noQuoteContext);
+  if (!context || context.uri !== uri) return;
+  if (submission && (context.id !== submission.id || context.revision !== submission.revision)) return;
+  return context.comment;
+}

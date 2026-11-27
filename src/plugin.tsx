@@ -54,7 +54,7 @@ import { SubmissionNotice } from "./submission-notice";
 import { useLocalTrackIsrc } from "./local-track-isrc";
 import { useFirstUploadNotice } from "./first-upload-notice";
 import { CreatorSurface, type CreatorPlayback } from "./creator/surface";
-import { createReviewEditor, type ReviewEditor, type ReviewOpen } from "./creator/review-editor";
+import { createReviewEditor, useReviewComments, type ReviewEditor, type ReviewOpen } from "./creator/review-editor";
 import { ReviewPanel } from "./creator/review-panel";
 import { ReviewQuoteMenu, reviewQuoteTarget, type ReviewQuote, type ReviewQuoteTarget } from "./creator/review-quote-menu";
 import { resizeReviewSidebar, watchNativeSidebar } from "./creator/review-sidebar";
@@ -573,7 +573,7 @@ function FullscreenControls({ host, playing, settings, view, trackId, narrating,
 }
 
 type FullscreenMode = "display" | "cinema";
-type ReviewPreview = { uri: string; lyrics: Lyrics; onQuote?: (quote: ReviewQuote) => void };
+type ReviewPreview = { uri: string; lyrics: Lyrics };
 type SettingsRequest = { page: "settings" | "storage"; trigger?: HTMLElement | null };
 
 function requestDisplayFullscreen(parent: HTMLElement) {
@@ -624,8 +624,10 @@ function LyricsView({ host, options, close, parent, view = window, fullscreenReq
   }, [draftUri, draftMatchesSource]);
   const savedPreview = pendingDraft || draftMatchesSource ? undefined : savedDraft;
   const reviewLyrics = reviewPreview && reviewPreview.uri === draftUri ? reviewPreview.lyrics : undefined;
-  const onReviewQuote = reviewLyrics ? reviewPreview?.onQuote : undefined;
   const draft = reviewLyrics ?? savedPreview;
+  const editorDraft = reviewEditor?.draft();
+  const onReviewQuote = useReviewComments(reviewEditor, draft ? draftUri : undefined,
+    !reviewLyrics && editorDraft?.uri === draftUri ? editorDraft?.submission : undefined);
   const [reviewerOverride, setReviewerOverride] = useState<boolean>();
   const draftReviewer = draft ? reviewerOverride ?? (preferences.ttml_reviewer !== "off") : undefined;
   const settings = useReviewerSettings(preferences, trackId, draftReviewer);
@@ -1460,14 +1462,14 @@ export default function start(options: BuildOptions) {
     try { localStorage.setItem(reviewSidebarKey, "1"); } catch { /* Storage may be unavailable. */ }
     reviewButton?.sync(true);
     reviewSidebar.root.render(<ReviewPanel host={host} editor={reviewEditor} onClose={() => closeReview()}
-      onRefresh={() => reviewButton?.refresh()} onOpen={openReviewDraft} onDismissPreview={dismissReviewPreview} onPlay={(uri, lyrics, onQuote) => {
+      onRefresh={() => reviewButton?.refresh()} onOpen={openReviewDraft} onDismissPreview={dismissReviewPreview} onPlay={(uri, lyrics) => {
         const track = host.track();
         if (track && spotifySongUri(track.id) === uri) {
           const playback = creatorWindowPlayback?.trackId === track.id ? creatorWindowPlayback : undefined;
           if (playback ? !playback.playing : !host.playing()) (playback?.toggle ?? host.toggle)();
         } else void host.playTrack(uri).catch(error => host.notifyError(String(error)));
         if (lyrics) {
-          reviewPreview = { uri, lyrics, onQuote };
+          reviewPreview = { uri, lyrics };
           void open("review-preview");
         }
       }} />);

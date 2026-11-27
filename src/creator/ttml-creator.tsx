@@ -48,7 +48,7 @@ import { readCreatorSongwriters } from "./current-lyrics";
 import { creatorSpotifyTrack, readCreatorTrackMetadata } from "./track-metadata";
 import { parseLocalTtml } from "../local-lyrics";
 import type { SubmissionFeedback } from "../lyssna-submission";
-import type { ReviewEditor } from "./review-editor";
+import { useReviewComments, type ReviewEditor } from "./review-editor";
 import {
   dismissSubmittedDraft,
   publishDraftPreview,
@@ -376,6 +376,7 @@ export function TtmlCreator({
   const [track, setTrack] = useState<Track | undefined>(playing);
   const [reviewEdit, setReviewEdit] = useState<{ id: string; uri: string; revision?: string; baseline: string }>();
   const activeReview = reviewEdit?.uri === track?.uri ? reviewEdit : undefined;
+  const commentOnQuote = useReviewComments(reviewEditor, track?.uri, activeReview);
   const reviewing = !!activeReview || !!pendingReview;
   useEffect(() => {
     if (!track && playing) setTrack(playing);
@@ -1218,6 +1219,28 @@ export function TtmlCreator({
       run: () => setLines(setUnitVoice(lines, targets, voice)),
     }))];
   };
+  const commentActions = (index: number, unit?: number): MenuAction[][] => {
+    const line = lines[index];
+    const text = line && textOf(line);
+    if (!commentOnQuote || !text?.trim()) return [];
+    const startMs = lineSpan(line)?.start;
+    const actions: MenuAction[] = [{
+      label: "Comment on line…",
+      run: () => commentOnQuote({ text, startMs }),
+    }];
+    if (unit !== undefined && line.units[unit]) {
+      const { start, end } = wordBounds(line.units, unit);
+      const parts = line.units.slice(start, end);
+      actions.push({
+        label: "Comment on word…",
+        run: () => commentOnQuote({
+          text: parts.map(part => part.text).join(""),
+          startMs: parts.find(part => part.start !== undefined)?.start ?? startMs,
+        }),
+      });
+    }
+    return [actions];
+  };
   const lineMenuGroups = (index: number): MenuAction[][] => {
     const line = lines[index];
     if (!line) return [];
@@ -1228,6 +1251,7 @@ export function TtmlCreator({
     };
     const span = lineSpan(line);
     return [
+      ...commentActions(index),
       [
         { label: "Insert line above", run: () => addAt(index - 1) },
         { label: "Insert line below", run: () => addAt(index) },
@@ -1285,6 +1309,7 @@ export function TtmlCreator({
       ...group.filter((each) => each.line === at.line).map((each) => each.unit),
     );
     return [
+      ...commentActions(at.line, at.unit),
       [
         { label: "Split word…", run: () => syncRoman && unit.roman ? setSplittingReading(at) : setSplitting(at) },
         ...(!syncRoman && unit.roman ? [{ label: "Split reading…", run: () => setSplittingReading(at) }] : []),

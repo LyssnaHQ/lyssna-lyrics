@@ -199,7 +199,7 @@ function ReviewSongRow({ host, submission }: { host: Host; submission: ReviewSub
 export function ReviewPanel({ host, editor, onPlay, onOpen, onRefresh, onClose, onDismissPreview }: {
   host: Host;
   editor: ReviewEditor;
-  onPlay(uri: string, lyrics?: Lyrics, onQuote?: (quote: ReviewQuote) => void): void;
+  onPlay(uri: string, lyrics?: Lyrics): void;
   onOpen(open: ReviewOpen): void;
   onRefresh(): void;
   onClose(): void;
@@ -222,7 +222,7 @@ export function ReviewPanel({ host, editor, onPlay, onOpen, onRefresh, onClose, 
   return (
     <aside className="review-panel" aria-label="Review" ref={panel} tabIndex={-1}>
       {picked ? (
-        <ReviewDetail key={picked.id} host={host} submission={picked}
+        <ReviewDetail key={picked.id} host={host} editor={editor} submission={picked}
           playingUri={playing && track ? spotifySongUri(track.id) : undefined}
           draft={draft}
           opening={opening?.submission.id === picked.id}
@@ -239,13 +239,14 @@ export function ReviewPanel({ host, editor, onPlay, onOpen, onRefresh, onClose, 
   );
 }
 
-function ReviewDetail({ host, submission, playingUri, draft, opening, onPlay, onOpen, onDecided, onRefresh, onBack, onClose }: {
+function ReviewDetail({ host, editor, submission, playingUri, draft, opening, onPlay, onOpen, onDecided, onRefresh, onBack, onClose }: {
   host: Host;
+  editor: ReviewEditor;
   submission: ReviewSubmission;
   playingUri?: string;
   draft?: ReviewDraft;
   opening: boolean;
-  onPlay(uri: string, lyrics?: Lyrics, onQuote?: (quote: ReviewQuote) => void): void;
+  onPlay(uri: string, lyrics?: Lyrics): void;
   onOpen(open: ReviewOpen): void;
   onDecided(message: string): void;
   onRefresh(): void;
@@ -449,6 +450,11 @@ function ReviewDetail({ host, submission, playingUri, draft, opening, onPlay, on
     });
   }, []);
   const commentOnQuote = useCallback((quote: ReviewQuote) => appendQuote(formatQuote(quote), true), [appendQuote]);
+  useLayoutEffect(() => {
+    if (uri && ttml && canQuote && !instrumental) {
+      return editor.registerQuoteContext({ uri, id, revision: submission.head_revision_id, comment: commentOnQuote });
+    }
+  }, [editor, uri, id, submission.head_revision_id, ttml, canQuote, instrumental, commentOnQuote]);
   const quoteDrag = (text: string, startMs?: number) => {
     if (!canQuote || !text.trim()) return {};
     return {
@@ -496,7 +502,7 @@ function ReviewDetail({ host, submission, playingUri, draft, opening, onPlay, on
               (preview?.synced && preview.lines.every(line => line.words.length)
                 ? sourceLyrics
                 : preview);
-            onPlay(uri, playedDraft?.lines.length ? playedDraft : preview, canQuote ? commentOnQuote : undefined);
+            onPlay(uri, playedDraft?.lines.length ? playedDraft : preview);
           }}
         >
           <Play size={14} /> {playingIt ? "Playing" : "Play song"}
