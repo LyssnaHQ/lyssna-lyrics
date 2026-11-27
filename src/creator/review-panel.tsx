@@ -449,19 +449,19 @@ function ReviewDetail({ host, submission, playingUri, editing, opening, onPlay, 
       </p>
       <div className="review-buttons">
         <button
-          disabled={!uri || opening || busy || (!instrumental && !!submission.head_revision_id && ttml === undefined)}
+          disabled={!uri || opening || busy}
           title={track && !uri ? "No Spotify link for this song" : undefined}
           onClick={() => {
             if (!uri) return;
-            if (ttml && !editing && !instrumental && !correction) onOpen({ submission, uri, ttml, play: true });
-            else onPlay(uri);
+            setShowPreview(true);
+            onPlay(uri);
           }}
         >
           <Play size={14} /> {playingIt ? "Playing" : "Play song"}
         </button>
         {!instrumental && !correction && <button
           disabled={!uri || !ttml || !!editing || opening || busy}
-          onClick={() => uri && ttml && onOpen({ submission, uri, ttml, play: false })}
+          onClick={() => uri && ttml && onOpen({ submission, uri, ttml })}
         >
           <SquarePen size={14} />{" "}
           {opening ? "Opening…" : editing ? "Opened in editor" : "Open in editor"}

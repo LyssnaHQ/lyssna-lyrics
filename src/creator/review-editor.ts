@@ -4,7 +4,6 @@ export type ReviewOpen = {
   submission: ReviewSubmission;
   uri: string;
   ttml: string;
-  play: boolean;
 };
 
 export type ReviewDraft = {

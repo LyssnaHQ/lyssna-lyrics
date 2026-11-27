@@ -2040,7 +2040,7 @@ export function TtmlCreator({
   reviewPlayback.current = { onPlayer, uri: playing?.uri };
   useEffect(() => {
     if (!pendingReview || draftPreview) return;
-    if (pendingReview.play || reviewPlayback.current.uri !== pendingReview.uri) {
+    if (reviewPlayback.current.uri !== pendingReview.uri) {
       reviewPlayback.current.onPlayer({ command: "play", uri: pendingReview.uri });
     }
     const timeout = window.setTimeout(() => {
